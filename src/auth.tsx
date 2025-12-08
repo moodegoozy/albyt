@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { onAuthStateChanged, signOut, User } from 'firebase/auth'
 import { auth, db } from './firebase'
-import { doc, getDoc } from 'firebase/firestore'
+import { doc, getDoc, setDoc } from 'firebase/firestore'
 
 type Role = 'owner' | 'courier' | 'customer'
 
@@ -29,8 +29,30 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
       setUser(u)
       if (u) {
         const snap = await getDoc(doc(db, 'users', u.uid))
-        const r = snap.exists() ? (snap.data().role as Role) : null
+        const data = snap.data()
+        const r = snap.exists() ? (data?.role as Role) : null
         setRole(r)
+
+        // تأكد من وجود مستند المطعم لأصحاب المطاعم
+        if (r === 'owner') {
+          try {
+            const restRef = doc(db, 'restaurants', u.uid)
+            const restSnap = await getDoc(restRef)
+            if (!restSnap.exists()) {
+              await setDoc(restRef, {
+                name: data?.restaurantName || data?.name || 'مطعم جديد',
+                ownerId: u.uid,
+                email: data?.email || u.email || '',
+                phone: '',
+                city: '',
+                location: '',
+                logoUrl: '',
+              }, { merge: true })
+            }
+          } catch (err) {
+            console.warn('تعذر إنشاء مستند المطعم للمالك', err)
+          }
+        }
       } else {
         setRole(null)
       }

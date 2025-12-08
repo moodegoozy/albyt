@@ -6,15 +6,18 @@ import App from './App'
 import './index.css'
 import { AuthProvider } from './auth'
 import { CartProvider } from './context/CartContext'   // ✅ استيراد مزود السلة
+import { ToastProvider } from './components/ui/Toast'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
-      <AuthProvider>
-        <CartProvider>   {/* ✅ لف التطبيق بالسلة */}
-          <App />
-        </CartProvider>
-      </AuthProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <CartProvider>   {/* ✅ لف التطبيق بالسلة */}
+            <App />
+          </CartProvider>
+        </AuthProvider>
+      </ToastProvider>
     </BrowserRouter>
   </React.StrictMode>,
 )

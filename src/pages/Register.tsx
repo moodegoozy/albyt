@@ -28,6 +28,18 @@ export const Register: React.FC = () => {
         role,
         restaurantName: role === 'owner' ? restaurantName : null // 👈 نخزن اسم المطعم فقط للـ Owner
       })
+
+      if (role === 'owner') {
+        await setDoc(doc(db, 'restaurants', cred.user.uid), {
+          name: restaurantName || name || 'مطعم جديد',
+          ownerId: cred.user.uid,
+          email,
+          phone: '',
+          city: '',
+          location: '',
+          logoUrl: '',
+        }, { merge: true })
+      }
       nav('/')
     } catch (e: any) {
       alert(e.message)
