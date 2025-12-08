@@ -1,67 +1,68 @@
-// src/App.tsx
 import React from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { Header } from './components/Header'
 import { Footer } from './components/Footer'
 import { TopBar } from './components/TopBar'
+
+// صفحات المستخدم
+import { Landing } from './pages/Landing'
+import { RestaurantsPage } from './pages/RestaurantsPage'
 import { MenuPage } from './pages/MenuPage'
+import { CartPage } from './pages/CartPage'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
+import PrivacyPolicy from './pages/PrivacyPolicy'
+import AccountDeleted from './pages/AccountDeleted'
+
+// صفحات العميل
 import { CheckoutPage } from './pages/CheckoutPage'
 import { TrackOrders } from './pages/TrackOrders'
+
+// صفحات صاحب المطعم
 import { OwnerDashboard } from './pages/OwnerDashboard'
 import { ManageMenu } from './pages/ManageMenu'
 import { OrdersAdmin } from './pages/OrdersAdmin'
-import { CourierApp } from './pages/CourierApp'
-import { ProtectedRoute } from './routes/ProtectedRoute'
-import { RoleGate } from './routes/RoleGate'
 import { EditRestaurant } from './pages/EditRestaurant'
-import { Landing } from './pages/Landing'
-import { CartPage } from './pages/CartPage'
-import { Developer } from './pages/Developer'
-import { RestaurantsPage } from './pages/RestaurantsPage'
-
-// ✅ صفحات إضافية
-import { CourierHiring } from './pages/CourierHiring'
 import { CourierRequests } from './pages/CourierRequests'
 
-// ✅ صفحة التشخيص
+// صفحات المندوب
+import { CourierApp } from './pages/CourierApp'
+import { CourierHiring } from './pages/CourierHiring'
+
+// صفحات المطور
+import { Developer } from './pages/Developer'
+
+// مسارات محمية
+import { ProtectedRoute } from './routes/ProtectedRoute'
+import { RoleGate } from './routes/RoleGate'
+
+// صفحة تصحيح الطلبات
 import { DebugOrders } from './pages/DebugOrders'
-
-// ✅ صفحة تم حذف الحساب
-import AccountDeleted from './pages/AccountDeleted'
-
-// ✅ صفحة سياسة الخصوصية
-import PrivacyPolicy from './pages/PrivacyPolicy'
 
 export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-secondary text-dark">
-      {/* ✅ شريط علوي (اختياري) */}
+      {/* الشريط العلوي */}
       <TopBar />
-      
-      {/* ✅ الهيدر */}
+      {/* رأس الصفحة */}
       <Header />
 
-      {/* ✅ المحتوى الرئيسي */}
+      {/* المحتوى الرئيسي */}
       <main className="flex-1 max-w-6xl mx-auto px-4 py-8 bg-gradient-to-br from-secondary via-[#FCEBCB] to-[#F7DDA6] rounded-xl shadow-inner">
         <Routes>
-          {/* 🏠 صفحة البداية */}
+          {/* الصفحة الرئيسية */}
           <Route path="/" element={<Landing />} />
 
-          {/* 👤 صفحات عامة */}
+          {/* صفحات المطاعم */}
           <Route path="/restaurants" element={<RestaurantsPage />} />
           <Route path="/menu" element={<MenuPage />} />
+          <Route path="/cart" element={<CartPage />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          <Route path="/cart" element={<CartPage />} />
-          <Route path="/developer" element={<Developer />} />
           <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-
-          {/* ✅ صفحة تم حذف الحساب */}
           <Route path="/account-deleted" element={<AccountDeleted />} />
 
-          {/* ✅ صفحات العميل فقط */}
+          {/* صفحات العميل */}
           <Route
             path="/checkout"
             element={
@@ -83,7 +84,7 @@ export default function App() {
             }
           />
 
-          {/* 🍽️ صاحب المطعم */}
+          {/* صفحات صاحب المطعم */}
           <Route
             path="/owner"
             element={
@@ -135,7 +136,7 @@ export default function App() {
             }
           />
 
-          {/* 🚚 المندوب */}
+          {/* صفحات المندوب */}
           <Route
             path="/courier"
             element={
@@ -157,12 +158,27 @@ export default function App() {
             }
           />
 
-          {/* 🧪 صفحة التشخيص */}
+          {/* صفحة المطور */}
+          <Route
+            path="/developer"
+            element={
+              <ProtectedRoute>
+                <RoleGate allow={['developer', 'admin']}>
+                  <Developer />
+                </RoleGate>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* صفحة تصحيح الطلبات */}
           <Route path="/__debug_orders" element={<DebugOrders />} />
+
+          {/* صفحة 404 */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
 
-      {/* ✅ الفوتر */}
+      {/* الفوتر */}
       <Footer />
     </div>
   )
