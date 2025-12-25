@@ -4,6 +4,7 @@ import { db } from '@/firebase'
 import { collection, getDocs, addDoc, query, where, getDocs as getDocsQ, serverTimestamp } from 'firebase/firestore'
 import { useAuth } from '@/auth'
 import { Briefcase, CheckCircle2, XCircle, Clock } from 'lucide-react'
+import { useDialog } from '@/components/ui/ConfirmDialog'
 
 type Restaurant = {
   id: string
@@ -18,6 +19,7 @@ type HiringRequest = {
 
 export const CourierHiring: React.FC = () => {
   const { user } = useAuth()
+  const dialog = useDialog()
   const [restaurants, setRestaurants] = useState<Restaurant[]>([])
   const [requests, setRequests] = useState<Record<string, HiringRequest>>({})
   const [loading, setLoading] = useState(true)
@@ -49,7 +51,7 @@ export const CourierHiring: React.FC = () => {
   }, [user])
 
   const sendRequest = async (r: Restaurant) => {
-    if (!user) return alert('سجل دخول أولاً')
+    if (!user) { dialog.warning('سجل دخول أولاً'); return }
     setSending(r.id)
 
     await addDoc(collection(db, 'hiringRequests'), {

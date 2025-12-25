@@ -3,7 +3,7 @@ import { onAuthStateChanged, signOut, User } from 'firebase/auth'
 import { auth, db } from './firebase'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 
-type Role = 'owner' | 'courier' | 'customer'
+type Role = 'owner' | 'courier' | 'customer' | 'admin' | 'developer'
 
 type AuthContextType = {
   user: User | null,

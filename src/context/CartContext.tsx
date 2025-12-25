@@ -1,48 +1,16 @@
-import React, { createContext, useContext, useState } from "react";
+/**
+ * ⚠️ DEPRECATED: This file is kept only for backwards compatibility during migration.
+ * Please use hooks/useCart.ts instead.
+ * 
+ * This context was replaced with useCart hook that uses localStorage,
+ * providing better persistence and simpler state management.
+ */
 
-type CartItem = {
-  id: string;
-  name: string;
-  price: number;
-  qty: number;
-};
+import React, { createContext } from "react";
 
-type CartContextType = {
-  cart: CartItem[];
-  addToCart: (item: CartItem) => void;
-  removeFromCart: (id: string) => void;
-};
+const CartContext = createContext<any>(undefined);
 
-const CartContext = createContext<CartContextType | undefined>(undefined);
-
+// This provider is now a no-op since CartProvider is not needed
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [cart, setCart] = useState<CartItem[]>([]);
-
-  const addToCart = (item: CartItem) => {
-    setCart((prev) => {
-      const exist = prev.find((i) => i.id === item.id);
-      if (exist) {
-        return prev.map((i) =>
-          i.id === item.id ? { ...i, qty: i.qty + 1 } : i
-        );
-      }
-      return [...prev, { ...item, qty: 1 }];
-    });
-  };
-
-  const removeFromCart = (id: string) => {
-    setCart((prev) => prev.filter((i) => i.id !== id));
-  };
-
-  return (
-    <CartContext.Provider value={{ cart, addToCart, removeFromCart }}>
-      {children}
-    </CartContext.Provider>
-  );
-};
-
-export const useCart = () => {
-  const ctx = useContext(CartContext);
-  if (!ctx) throw new Error("useCart must be used inside CartProvider");
-  return ctx;
+  return <>{children}</>;
 };

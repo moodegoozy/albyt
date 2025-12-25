@@ -7,16 +7,19 @@ import './index.css'
 import { AuthProvider } from './auth'
 import { CartProvider } from './context/CartContext'   // ✅ استيراد مزود السلة
 import { ToastProvider } from './components/ui/Toast'
+import { DialogProvider } from './components/ui/ConfirmDialog' // ✅ نظام الحوارات
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
       <ToastProvider>
-        <AuthProvider>
-          <CartProvider>   {/* ✅ لف التطبيق بالسلة */}
-            <App />
-          </CartProvider>
-        </AuthProvider>
+        <DialogProvider>
+          <AuthProvider>
+            <CartProvider>   {/* ✅ لف التطبيق بالسلة */}
+              <App />
+            </CartProvider>
+          </AuthProvider>
+        </DialogProvider>
       </ToastProvider>
     </BrowserRouter>
   </React.StrictMode>,

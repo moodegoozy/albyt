@@ -1,28 +1,29 @@
 import React, { useEffect, useState } from 'react'
-import { collection, doc, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, onSnapshot, orderBy, query, updateDoc, where, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useAuth } from '@/auth'
+import { Order } from '@/types'
 
 export const CourierApp: React.FC = () => {
   const { user } = useAuth()
-  const [ready, setReady] = useState<any[]>([])
-  const [mine, setMine] = useState<any[]>([])
+  const [ready, setReady] = useState<Order[]>([])
+  const [mine, setMine] = useState<Order[]>([])
 
   useEffect(() => {
     const q1 = query(collection(db, 'orders'), where('status','in',['ready']), orderBy('createdAt','desc'))
-    const u1 = onSnapshot(q1, (snap) => setReady(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))))
+    const u1 = onSnapshot(q1, (snap) => setReady(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order))))
     const q2 = query(collection(db, 'orders'), where('courierId','==', user?.uid || ''), orderBy('createdAt','desc'))
-    const u2 = onSnapshot(q2, (snap) => setMine(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))))
+    const u2 = onSnapshot(q2, (snap) => setMine(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order))))
     return () => { u1(); u2(); }
   }, [user?.uid])
 
   const take = async (id: string) => {
     if (!user) return
-    await updateDoc(doc(db, 'orders', id), { courierId: user.uid, status: 'out_for_delivery', updatedAt: new Date() as any })
+    await updateDoc(doc(db, 'orders', id), { courierId: user!.uid, status: 'out_for_delivery', updatedAt: serverTimestamp() })
   }
 
   const delivered = async (id: string) => {
-    await updateDoc(doc(db, 'orders', id), { status: 'delivered', updatedAt: new Date() as any })
+    await updateDoc(doc(db, 'orders', id), { status: 'delivered', updatedAt: serverTimestamp() })
   }
 
   return (

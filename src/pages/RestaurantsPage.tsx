@@ -18,7 +18,7 @@ export const RestaurantsPage: React.FC = () => {
   useEffect(() => {
     (async () => {
       const snap = await getDocs(collection(db, 'restaurants'))
-      setRestaurants(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
+      setRestaurants(snap.docs.map(d => ({ id: d.id, ...d.data() } as Restaurant)))
       setLoading(false)
     })()
   }, [])

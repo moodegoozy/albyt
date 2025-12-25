@@ -1,18 +1,26 @@
 import React, { useState, useEffect } from 'react'
-import { addDoc, collection, doc, getDoc, serverTimestamp } from 'firebase/firestore'
+import { addDoc, collection, doc, getDoc, updateDoc, increment, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useCart } from '@/hooks/useCart'
 import { useAuth } from '@/auth'
 import { useNavigate } from 'react-router-dom'
 import { RoleGate } from '@/routes/RoleGate'
+import { useDialog } from '@/components/ui/ConfirmDialog'
+import { useToast } from '@/components/ui/Toast'
+
+// 💰 رسوم التطبيق الثابتة
+const PLATFORM_FEE = 1.5 // ريال ونصف لكل طلب
+const ADMIN_COMMISSION = 0.5 // 50 هللة للمشرف
 
 export const CheckoutPage: React.FC = () => {
   const { items, subtotal, clear } = useCart()
   const { user } = useAuth()
   const nav = useNavigate()
+  const dialog = useDialog()
+  const toast = useToast()
   const [address, setAddress] = useState('')
   const [saving, setSaving] = useState(false)
-  const [restaurant, setRestaurant] = useState<{ id: string; name: string } | null>(null)
+  const [restaurant, setRestaurant] = useState<{ id: string; name: string; referredBy?: string; referrerType?: string } | null>(null)
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null)
 
   const deliveryFee = 7
@@ -41,22 +49,31 @@ export const CheckoutPage: React.FC = () => {
 
       const rSnap = await getDoc(doc(db, 'restaurants', ownerId))
       const rData = rSnap.exists() ? (rSnap.data() as any) : null
-      setRestaurant({ id: ownerId, name: rData?.name || 'مطعم' })
+      setRestaurant({ 
+        id: ownerId, 
+        name: rData?.name || 'مطعم',
+        referredBy: rData?.referredBy,
+        referrerType: rData?.referrerType
+      })
     }
     loadRestaurant()
   }, [items])
 
   // ✅ تحديد موقعي عبر GPS
   const getMyLocation = () => {
-    if (!navigator.geolocation) return alert('المتصفح لا يدعم تحديد الموقع')
+    if (!navigator.geolocation) {
+      dialog.warning('المتصفح لا يدعم تحديد الموقع')
+      return
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         console.log('📍 موقعك الحالي:', pos.coords)
         setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        toast.success('تم تحديد موقعك بنجاح 📍')
       },
       (err) => {
         console.error('خطأ في تحديد الموقع:', err)
-        alert('تعذر تحديد الموقع. تأكد من منح إذن الوصول للموقع.')
+        dialog.error('تعذر تحديد الموقع. تأكد من منح إذن الوصول للموقع.')
       },
       { enableHighAccuracy: true }
     )
@@ -65,9 +82,9 @@ export const CheckoutPage: React.FC = () => {
   // ✅ إرسال الطلب
   const placeOrder = async () => {
     if (!user) return
-    if (items.length === 0) return alert('السلة فارغة')
-    if (!address) return alert('أدخل العنوان')
-    if (!location) return alert('حدّد موقعك على الخريطة')
+    if (items.length === 0) { dialog.warning('السلة فارغة'); return }
+    if (!address) { dialog.warning('أدخل العنوان'); return }
+    if (!location) { dialog.warning('حدّد موقعك على الخريطة'); return }
 
     let restId = restaurant?.id
     if (!restId && items[0]?.id) {
@@ -77,12 +94,21 @@ export const CheckoutPage: React.FC = () => {
     }
 
     if (!restId) {
-      alert('تعذر تحديد المطعم للطلب. أعد الإضافة من القائمة.')
+      dialog.error('تعذر تحديد المطعم للطلب. أعد الإضافة من القائمة.')
       return
     }
 
     setSaving(true)
-    await addDoc(collection(db, 'orders'), {
+    
+    // 💰 حساب العمولات
+    // إذا المطعم مسجل عن طريق مشرف: المشرف يأخذ 0.5 + التطبيق يأخذ 1
+    // إذا المطعم مسجل عن طريق المطور أو بدون إحالة: التطبيق يأخذ 1.5 كاملة
+    const referredByAdmin = restaurant?.referrerType === 'admin' && restaurant?.referredBy
+    const adminCommission = referredByAdmin ? ADMIN_COMMISSION : 0
+    const appEarnings = PLATFORM_FEE - adminCommission // 1 ريال إذا فيه مشرف، 1.5 إذا ما فيه
+
+    // إنشاء الطلب مع معلومات العمولة
+    const orderRef = await addDoc(collection(db, 'orders'), {
       customerId: user.uid,
       restaurantId: restId,
       restaurantName: restaurant?.name || 'مطعم',
@@ -102,7 +128,69 @@ export const CheckoutPage: React.FC = () => {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       paymentMethod: 'cod',
+      // 💰 معلومات العمولة
+      platformFee: PLATFORM_FEE,
+      adminCommission: adminCommission,
+      referredBy: restaurant?.referredBy || null,
     })
+
+    // 💰 تحديث محفظة المشرف إذا كان المطعم مسجل عن طريقه
+    if (referredByAdmin && restaurant?.referredBy) {
+      try {
+        const walletRef = doc(db, 'wallets', restaurant.referredBy)
+        const walletSnap = await getDoc(walletRef)
+        
+        if (walletSnap.exists()) {
+          // تحديث المحفظة الموجودة
+          await updateDoc(walletRef, {
+            balance: increment(ADMIN_COMMISSION),
+            totalEarnings: increment(ADMIN_COMMISSION),
+            updatedAt: serverTimestamp(),
+          })
+        } else {
+          // إنشاء محفظة جديدة للمشرف
+          const { setDoc } = await import('firebase/firestore')
+          await setDoc(walletRef, {
+            balance: ADMIN_COMMISSION,
+            totalEarnings: ADMIN_COMMISSION,
+            totalWithdrawn: 0,
+            transactions: [],
+            updatedAt: serverTimestamp(),
+          })
+        }
+        
+        // إضافة المعاملة للسجل (اختياري - يمكن إضافته لاحقاً)
+        console.log(`✅ تم إضافة ${ADMIN_COMMISSION} ريال لمحفظة المشرف ${restaurant.referredBy}`)
+      } catch (err) {
+        console.error('خطأ في تحديث محفظة المشرف:', err)
+      }
+    }
+
+    // 💰 تحديث محفظة التطبيق (المطور الرئيسي)
+    try {
+      const appWalletRef = doc(db, 'wallets', 'app_earnings')
+      const appWalletSnap = await getDoc(appWalletRef)
+      
+      if (appWalletSnap.exists()) {
+        await updateDoc(appWalletRef, {
+          balance: increment(appEarnings),
+          totalEarnings: increment(appEarnings),
+          updatedAt: serverTimestamp(),
+        })
+      } else {
+        const { setDoc } = await import('firebase/firestore')
+        await setDoc(appWalletRef, {
+          balance: appEarnings,
+          totalEarnings: appEarnings,
+          totalWithdrawn: 0,
+          transactions: [],
+          updatedAt: serverTimestamp(),
+        })
+      }
+      console.log(`✅ تم إضافة ${appEarnings} ريال لمحفظة التطبيق`)
+    } catch (err) {
+      console.error('خطأ في تحديث محفظة التطبيق:', err)
+    }
 
     clear()
     setSaving(false)
@@ -110,7 +198,7 @@ export const CheckoutPage: React.FC = () => {
   }
 
   return (
-    <RoleGate allow={['customer']}>
+    <RoleGate allow={['customer', 'admin']}>
       <div className="max-w-xl mx-auto bg-white rounded-2xl shadow p-6 text-gray-900">
         <h1 className="text-xl font-bold mb-4">إتمام الطلب</h1>
 

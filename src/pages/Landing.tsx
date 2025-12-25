@@ -2,60 +2,107 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/auth";
+import { Sparkles, ChefHat, Truck, Star, ArrowLeft } from "lucide-react";
 
 export const Landing: React.FC = () => {
   const { user } = useAuth();
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-primary via-dark to-[#3a1a1a] text-center px-6 text-secondary relative overflow-hidden">
-      {/* خلفية زخرفية ناعمة */}
-      <div className="absolute top-0 left-0 w-80 h-80 bg-accent/10 rounded-full blur-3xl animate-pulse"></div>
-      <div className="absolute bottom-0 right-0 w-80 h-80 bg-primary/30 rounded-full blur-3xl animate-pulse"></div>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-sky-50 via-white to-sky-100 text-center px-4 sm:px-6 relative overflow-hidden">
+      
+      {/* ✨ خلفية زخرفية فخمة */}
+      <div className="absolute top-0 left-0 w-64 sm:w-96 h-64 sm:h-96 bg-gradient-to-br from-sky-400/20 to-sky-300/10 rounded-full blur-3xl animate-pulse"></div>
+      <div className="absolute bottom-0 right-0 w-64 sm:w-96 h-64 sm:h-96 bg-gradient-to-tl from-sky-500/20 to-sky-400/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] sm:w-[600px] h-[300px] sm:h-[600px] bg-gradient-radial from-sky-200/30 to-transparent rounded-full blur-3xl"></div>
+      
+      {/* ⭐ نجوم متطايرة - مخفية على الجوال */}
+      <div className="hidden sm:block absolute top-20 left-20 text-sky-300 float">
+        <Sparkles className="w-8 h-8" />
+      </div>
+      <div className="hidden sm:block absolute top-40 right-32 text-sky-400 float delay-500">
+        <Star className="w-6 h-6 fill-current" />
+      </div>
+      <div className="hidden sm:block absolute bottom-32 left-32 text-sky-300 float delay-1000">
+        <Star className="w-5 h-5 fill-current" />
+      </div>
 
-      {/* المحتوى */}
-      <div className="relative z-10 flex flex-col items-center">
+      {/* المحتوى الرئيسي */}
+      <div className="relative z-10 flex flex-col items-center max-w-3xl w-full">
+        
+        {/* 🍗 الشعار الفخم */}
+        <div className="mb-6 sm:mb-8 relative">
+          <div className="w-24 h-24 sm:w-32 sm:h-32 bg-gradient-to-br from-sky-500 to-sky-600 rounded-[2rem] sm:rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-sky-300/50 glow">
+            <span className="text-5xl sm:text-7xl drop-shadow-lg">🍗</span>
+          </div>
+          <div className="absolute -top-1 -right-1 sm:-top-2 sm:-right-2 w-6 h-6 sm:w-8 sm:h-8 bg-gradient-to-br from-yellow-400 to-orange-400 rounded-full flex items-center justify-center shadow-lg">
+            <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
+          </div>
+        </div>
+
         {/* عنوان الموقع */}
-        <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold text-accent mb-4 drop-shadow-[0_4px_10px_rgba(0,0,0,0.4)]">
-          🍗 سفرة البيت
+        <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-sky-600 via-sky-500 to-sky-600 mb-4 sm:mb-6 drop-shadow-sm">
+          سفرة البيت
         </h1>
 
         {/* وصف الموقع */}
-        <p className="text-lg sm:text-xl md:text-2xl text-secondary/90 max-w-2xl mb-8 leading-relaxed font-medium">
-          استمتع بأشهى الأكلات البيتية والبرست الطازج 😋  
-          اطلب وجبتك بكل سهولة، وخليها توصلك لين باب بيتك 🚗💨
+        <p className="text-base sm:text-lg md:text-xl lg:text-2xl text-sky-700/80 max-w-2xl mb-6 sm:mb-10 leading-relaxed font-medium px-2">
+          استمتع بأشهى الأكلات البيتية والبرست الطازج 😋
+          <br className="hidden sm:block" />
+          <span className="text-sky-500">اطلب وجبتك بكل سهولة، وخليها توصلك لين باب بيتك</span> 🚗💨
         </p>
 
+        {/* ✨ ميزات سريعة */}
+        <div className="flex flex-wrap justify-center gap-2 sm:gap-4 mb-6 sm:mb-10 px-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 bg-white/80 backdrop-blur-sm px-3 sm:px-5 py-2 sm:py-3 rounded-xl sm:rounded-2xl shadow-lg border border-sky-100">
+            <ChefHat className="w-4 h-4 sm:w-5 sm:h-5 text-sky-500" />
+            <span className="text-sky-700 font-semibold text-xs sm:text-base">أكل بيتي طازج</span>
+          </div>
+          <div className="flex items-center gap-1.5 sm:gap-2 bg-white/80 backdrop-blur-sm px-3 sm:px-5 py-2 sm:py-3 rounded-xl sm:rounded-2xl shadow-lg border border-sky-100">
+            <Truck className="w-4 h-4 sm:w-5 sm:h-5 text-sky-500" />
+            <span className="text-sky-700 font-semibold text-xs sm:text-base">توصيل سريع</span>
+          </div>
+          <div className="flex items-center gap-1.5 sm:gap-2 bg-white/80 backdrop-blur-sm px-3 sm:px-5 py-2 sm:py-3 rounded-xl sm:rounded-2xl shadow-lg border border-sky-100">
+            <Star className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500 fill-yellow-500" />
+            <span className="text-sky-700 font-semibold text-xs sm:text-base">جودة عالية</span>
+          </div>
+        </div>
+
         {/* صورة الواجهة */}
-        <img
-          src="/landing.png" // ✅ تأكد أن الصورة داخل مجلد public
-          alt="طبق سفرة البيت"
-          className="w-64 sm:w-80 md:w-96 mb-10 rounded-3xl shadow-2xl border-4 border-accent/40 object-cover hover:scale-105 transition-transform duration-300"
-        />
+        <div className="relative mb-8 sm:mb-12">
+          <div className="absolute inset-0 bg-gradient-to-br from-sky-400/30 to-sky-500/30 rounded-[1.5rem] sm:rounded-[2rem] blur-2xl scale-110"></div>
+          <img
+            src="/landing.png"
+            alt="طبق سفرة البيت"
+            className="relative w-56 sm:w-72 md:w-80 lg:w-96 rounded-[1.5rem] sm:rounded-[2rem] shadow-2xl shadow-sky-200/50 border-2 sm:border-4 border-white object-cover hover:scale-105 transition-transform duration-500"
+          />
+        </div>
 
         {/* الأزرار */}
         {user ? (
           <Link
             to="/restaurants"
-            className="px-10 py-4 rounded-full text-lg font-semibold text-primary bg-accent shadow-[0_4px_10px_rgba(0,0,0,0.3)] hover:scale-105 hover:shadow-lg transition-transform duration-300"
+            className="group flex items-center gap-2 sm:gap-3 px-8 sm:px-10 py-4 sm:py-5 rounded-full text-lg sm:text-xl font-bold text-white bg-gradient-to-r from-sky-500 via-sky-400 to-sky-500 shadow-2xl shadow-sky-300/50 hover:shadow-sky-400/60 hover:scale-105 transition-all duration-300"
           >
             🍴 تصفح المطاعم
+            <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 group-hover:-translate-x-1 transition-transform" />
           </Link>
         ) : (
-          <div className="flex flex-col items-center gap-4">
+          <div className="flex flex-col items-center gap-4 sm:gap-5 w-full px-4">
             <Link
               to="/login"
-              className="px-10 py-4 rounded-full text-lg font-semibold text-primary bg-accent shadow-[0_4px_10px_rgba(0,0,0,0.3)] hover:scale-105 hover:shadow-lg transition-transform duration-300"
+              className="group flex items-center justify-center gap-2 sm:gap-3 w-full max-w-xs px-8 sm:px-12 py-4 sm:py-5 rounded-full text-lg sm:text-xl font-bold text-white bg-gradient-to-r from-sky-500 via-sky-400 to-sky-500 shadow-2xl shadow-sky-300/50 hover:shadow-sky-400/60 hover:scale-105 transition-all duration-300"
             >
               تسجيل الدخول
+              <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 group-hover:-translate-x-1 transition-transform" />
             </Link>
 
-            <p className="text-secondary/80">
+            <p className="text-sky-600/80 text-base sm:text-lg">
               ماعندك حساب؟{" "}
               <Link
                 to="/register"
-                className="text-accent font-semibold hover:underline hover:text-yellow-300 transition"
+                className="text-sky-500 font-bold hover:text-sky-600 hover:underline transition"
               >
-                أنشئ حساب الآن
+                أنشئ حساب الآن ✨
               </Link>
             </p>
           </div>

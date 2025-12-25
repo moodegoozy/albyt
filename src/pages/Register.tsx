@@ -3,21 +3,24 @@ import React, { useState } from 'react'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { auth, db } from '@/firebase'
 import { doc, setDoc } from 'firebase/firestore'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
+import { User, Mail, Lock, Store, UserPlus, Truck, ChefHat, Users } from 'lucide-react'
+import { useDialog } from '@/components/ui/ConfirmDialog'
 
 export const Register: React.FC = () => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
-  const [restaurantName, setRestaurantName] = useState('') // 👈 اسم المطعم
+  const [restaurantName, setRestaurantName] = useState('')
   const [role, setRole] = useState<'customer'|'courier'|'owner'|''>('')
   const [loading, setLoading] = useState(false)
   const nav = useNavigate()
+  const dialog = useDialog()
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!role) return alert('اختر نوع الحساب')
-    if (role === 'owner' && !restaurantName) return alert('أدخل اسم المطعم')
+    if (!role) { dialog.warning('اختر نوع الحساب'); return }
+    if (role === 'owner' && !restaurantName) { dialog.warning('أدخل اسم المطعم'); return }
 
     setLoading(true)
     try {
@@ -26,7 +29,7 @@ export const Register: React.FC = () => {
         name,
         email,
         role,
-        restaurantName: role === 'owner' ? restaurantName : null // 👈 نخزن اسم المطعم فقط للـ Owner
+        restaurantName: role === 'owner' ? restaurantName : null
       })
 
       if (role === 'owner') {
@@ -42,64 +45,130 @@ export const Register: React.FC = () => {
       }
       nav('/')
     } catch (e: any) {
-      alert(e.message)
+      dialog.error(e.message, { title: 'خطأ في إنشاء الحساب' })
     } finally { setLoading(false) }
   }
 
-  return (
-    <div className="max-w-md mx-auto bg-gradient-to-br from-gray-700 via-gray-800 to-gray-900 rounded-2xl shadow-xl p-6 text-white">
-      <h1 className="text-xl font-bold mb-4 text-center">إنشاء حساب</h1>
-      <form onSubmit={submit} className="space-y-3">
-        <input 
-          className="w-full border rounded-xl p-3 text-black" 
-          placeholder="الاسم" 
-          value={name} 
-          onChange={e=>setName(e.target.value)} 
-        />
-        <input 
-          className="w-full border rounded-xl p-3 text-black" 
-          placeholder="الإيميل" 
-          value={email} 
-          onChange={e=>setEmail(e.target.value)} 
-        />
-        <input 
-          className="w-full border rounded-xl p-3 text-black" 
-          placeholder="كلمة المرور" 
-          type="password" 
-          value={password} 
-          onChange={e=>setPassword(e.target.value)} 
-        />
+  const roleOptions = [
+    { value: 'customer', label: 'عميل', icon: Users, color: 'sky' },
+    { value: 'courier', label: 'مندوب', icon: Truck, color: 'emerald' },
+    { value: 'owner', label: 'صاحب مطعم', icon: ChefHat, color: 'orange' },
+  ]
 
-        {/* اختيار نوع الحساب */}
-        <div className="grid grid-cols-3 gap-2">
-          <label className={"border rounded-xl p-3 text-center cursor-pointer " + (role==='customer'?'bg-yellow-500 text-black':'bg-gray-100 text-gray-800')}>
-            <input type="radio" name="role" value="customer" className="hidden" onChange={()=>setRole('customer')} /> عميل
-          </label>
-          <label className={"border rounded-xl p-3 text-center cursor-pointer " + (role==='courier'?'bg-yellow-500 text-black':'bg-gray-100 text-gray-800')}>
-            <input type="radio" name="role" value="courier" className="hidden" onChange={()=>setRole('courier')} /> مندوب
-          </label>
-          <label className={"border rounded-xl p-3 text-center cursor-pointer " + (role==='owner'?'bg-yellow-500 text-black':'bg-gray-100 text-gray-800')}>
-            <input type="radio" name="role" value="owner" className="hidden" onChange={()=>setRole('owner')} /> صاحب المطعم
-          </label>
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sky-50 via-white to-sky-100 px-4 py-8">
+      {/* خلفية زخرفية */}
+      <div className="absolute top-0 left-0 w-72 h-72 bg-sky-300/20 rounded-full blur-3xl"></div>
+      <div className="absolute bottom-0 right-0 w-72 h-72 bg-sky-400/20 rounded-full blur-3xl"></div>
+
+      <div className="relative bg-white/80 backdrop-blur-xl border border-sky-100 rounded-[2rem] shadow-2xl shadow-sky-200/50 w-full max-w-md p-8">
+        
+        {/* شعار */}
+        <div className="flex flex-col items-center mb-6">
+          <div className="w-16 h-16 bg-gradient-to-br from-sky-500 to-sky-600 rounded-2xl flex items-center justify-center shadow-xl shadow-sky-300/50 mb-3">
+            <UserPlus className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="text-2xl font-black text-sky-600">إنشاء حساب جديد</h1>
         </div>
 
-        {/* حقل اسم المطعم يظهر فقط لو الدور Owner */}
-        {role === 'owner' && (
-          <input 
-            className="w-full border rounded-xl p-3 text-black" 
-            placeholder="اسم المطعم" 
-            value={restaurantName} 
-            onChange={e=>setRestaurantName(e.target.value)} 
-          />
-        )}
+        <form onSubmit={submit} className="space-y-4">
+          {/* الاسم */}
+          <div className="relative">
+            <User className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-sky-400" />
+            <input 
+              className="w-full rounded-2xl p-4 pr-12 bg-sky-50 text-sky-900 border-2 border-sky-100 focus:outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100 transition-all" 
+              placeholder="الاسم" 
+              value={name} 
+              onChange={e=>setName(e.target.value)} 
+            />
+          </div>
 
-        <button 
-          disabled={loading} 
-          className="w-full rounded-xl p-3 bg-yellow-500 text-black font-bold hover:bg-yellow-600 transition"
-        >
-          {loading ? '...' : 'تسجيل'}
-        </button>
-      </form>
+          {/* الإيميل */}
+          <div className="relative">
+            <Mail className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-sky-400" />
+            <input 
+              className="w-full rounded-2xl p-4 pr-12 bg-sky-50 text-sky-900 border-2 border-sky-100 focus:outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100 transition-all" 
+              placeholder="الإيميل" 
+              type="email"
+              value={email} 
+              onChange={e=>setEmail(e.target.value)} 
+            />
+          </div>
+
+          {/* كلمة المرور */}
+          <div className="relative">
+            <Lock className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-sky-400" />
+            <input 
+              className="w-full rounded-2xl p-4 pr-12 bg-sky-50 text-sky-900 border-2 border-sky-100 focus:outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100 transition-all" 
+              placeholder="كلمة المرور" 
+              type="password" 
+              value={password} 
+              onChange={e=>setPassword(e.target.value)} 
+            />
+          </div>
+
+          {/* اختيار نوع الحساب */}
+          <div className="grid grid-cols-3 gap-3">
+            {roleOptions.map(opt => {
+              const Icon = opt.icon
+              const isSelected = role === opt.value
+              return (
+                <label 
+                  key={opt.value}
+                  className={`relative flex flex-col items-center gap-2 p-4 rounded-2xl cursor-pointer transition-all duration-300 ${
+                    isSelected 
+                      ? 'bg-gradient-to-br from-sky-500 to-sky-600 text-white shadow-lg shadow-sky-300/50 scale-105' 
+                      : 'bg-sky-50 text-sky-600 hover:bg-sky-100 border-2 border-sky-100'
+                  }`}
+                >
+                  <input 
+                    type="radio" 
+                    name="role" 
+                    value={opt.value} 
+                    className="hidden" 
+                    onChange={()=>setRole(opt.value as any)} 
+                  />
+                  <Icon className="w-6 h-6" />
+                  <span className="text-sm font-bold">{opt.label}</span>
+                </label>
+              )
+            })}
+          </div>
+
+          {/* حقل اسم المطعم */}
+          {role === 'owner' && (
+            <div className="relative">
+              <Store className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-orange-400" />
+              <input 
+                className="w-full rounded-2xl p-4 pr-12 bg-orange-50 text-orange-900 border-2 border-orange-200 focus:outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-100 transition-all" 
+                placeholder="اسم المطعم" 
+                value={restaurantName} 
+                onChange={e=>setRestaurantName(e.target.value)} 
+              />
+            </div>
+          )}
+
+          <button 
+            disabled={loading} 
+            className="w-full flex items-center justify-center gap-3 bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white font-bold p-4 rounded-2xl shadow-xl shadow-sky-300/50 transition-all hover:scale-[1.02]"
+          >
+            {loading ? 'جارٍ التسجيل...' : (
+              <>
+                <UserPlus className="w-5 h-5" />
+                تسجيل
+              </>
+            )}
+          </button>
+        </form>
+
+        {/* رابط تسجيل الدخول */}
+        <p className="mt-6 text-center text-sky-600">
+          عندك حساب؟{' '}
+          <Link className="text-sky-500 hover:text-sky-700 font-bold" to="/login">
+            سجّل دخول ✨
+          </Link>
+        </p>
+      </div>
     </div>
   )
 }

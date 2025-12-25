@@ -3,8 +3,7 @@ import React, { useEffect, useState } from 'react'
 import { collection, onSnapshot, orderBy, query, where, updateDoc, doc, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useAuth } from '@/auth'
-
-type Order = any
+import { Order } from '@/types'
 
 export const RestaurantOrders: React.FC = () => {
   const { user } = useAuth()
@@ -20,7 +19,7 @@ export const RestaurantOrders: React.FC = () => {
       orderBy('createdAt', 'desc')
     )
     const unsub = onSnapshot(q, (snap) => {
-      setOrders(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })))
+      setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order)))
       setLoading(false)
     })
     return () => unsub()
@@ -46,7 +45,7 @@ export const RestaurantOrders: React.FC = () => {
           </div>
 
           <div className="mt-1 text-sm text-gray-700">
-            {o.items.map((i: any) => `${i.name}×${i.qty}`).join(' • ')}
+            {o.items.map((i) => `${i.name}×${i.qty}`).join(' • ')}
           </div>
           <div className="mt-2 text-sm">العنوان: {o.address}</div>
           <div className="mt-2 text-sm text-gray-500">العميل: {o.customerId}</div>

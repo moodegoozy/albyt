@@ -3,36 +3,46 @@ import React, { useEffect, useState } from 'react'
 import { db } from '@/firebase'
 import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
 import { useCart } from '@/hooks/useCart'
-import { Link } from 'react-router-dom'
-import { useAuth } from '@/auth'   // ✅ عشان نجيب الدور
+import { Link, useSearchParams } from 'react-router-dom'
+import { useAuth } from '@/auth'
+import { useToast } from '@/components/ui/Toast'
+import { MenuItem, Restaurant } from '@/types'
 
-type Item = { 
-  id: string, 
-  name: string, 
-  desc?: string, 
-  price: number, 
-  imageUrl?: string, 
-  available: boolean, 
-  categoryId?: string,
-  ownerId?: string
-}
-
-type Restaurant = {
-  name: string
-  logoUrl?: string
-}
+type MenuItemWithRestaurant = MenuItem & { restaurant?: Restaurant }
 
 export const MenuPage: React.FC = () => {
-  const [items, setItems] = useState<(Item & { restaurant?: Restaurant })[]>([])
+  const [items, setItems] = useState<MenuItemWithRestaurant[]>([])
   const [loading, setLoading] = useState(true)
+  const [restaurantName, setRestaurantName] = useState<string | null>(null)
   const { add, subtotal, items: cartItems } = useCart()
-  const { role } = useAuth()   // ✅ نجيب الدور
+  const { role } = useAuth()
+  const toast = useToast()
+  const [searchParams] = useSearchParams()
+  const restaurantId = searchParams.get('restaurant')
 
   useEffect(() => {
     (async () => {
-      const qy = query(collection(db, 'menuItems'), where('available', '==', true))
+      let qy
+      
+      // إذا تم تحديد مطعم معين، نفلتر الأصناف حسبه
+      if (restaurantId) {
+        qy = query(
+          collection(db, 'menuItems'), 
+          where('available', '==', true),
+          where('ownerId', '==', restaurantId)
+        )
+        
+        // جلب اسم المطعم
+        const rSnap = await getDoc(doc(db, 'restaurants', restaurantId))
+        if (rSnap.exists()) {
+          setRestaurantName((rSnap.data() as Restaurant).name)
+        }
+      } else {
+        qy = query(collection(db, 'menuItems'), where('available', '==', true))
+      }
+      
       const snap = await getDocs(qy)
-      const itemsData: Item[] = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
+      const itemsData: MenuItem[] = snap.docs.map(d => ({ id: d.id, ...d.data() } as MenuItem))
 
       const enriched = await Promise.all(
         itemsData.map(async (it) => {
@@ -48,17 +58,17 @@ export const MenuPage: React.FC = () => {
       setItems(enriched)
       setLoading(false)
     })()
-  }, [])
+  }, [restaurantId])
 
-  const handleAdd = (it: Item) => {
+  const handleAdd = (it: MenuItem) => {
     if (!it.ownerId) {
-      alert('⚠️ الصنف غير مرتبط بمطعم (ownerId مفقود)')
+      toast.warning('⚠️ الصنف غير مرتبط بمطعم', { title: 'تنبيه' })
       return
     }
 
     const currentRestaurantId = cartItems[0]?.ownerId
     if (currentRestaurantId && currentRestaurantId !== it.ownerId) {
-      alert('⚠️ لا يمكن إضافة منتجات من أكثر من مطعم في نفس الطلب')
+      toast.warning('⚠️ لا يمكن إضافة منتجات من أكثر من مطعم في نفس الطلب', { title: 'تحذير' })
       return
     }
 
@@ -68,6 +78,7 @@ export const MenuPage: React.FC = () => {
       price: it.price, 
       ownerId: it.ownerId 
     })
+    toast.success('تم إضافة المنتج للسلة ✅')
   }
 
   if (loading) {
@@ -78,11 +89,22 @@ export const MenuPage: React.FC = () => {
     )
   }
 
+  // هل يمكن للمستخدم الطلب؟
+  const canOrder = role === 'customer' || role === 'admin'
+
   return (
     <div className="py-10">
       <h1 className="text-3xl font-extrabold text-center mb-8 text-yellow-400">
-        🍗 قائمة الأصناف
+        {restaurantName ? `🍽️ قائمة ${restaurantName}` : '🍗 قائمة الأصناف'}
       </h1>
+
+      {restaurantId && (
+        <div className="text-center mb-6">
+          <Link to="/restaurants" className="text-sky-400 hover:text-sky-300 underline">
+            ← العودة لقائمة المطاعم
+          </Link>
+        </div>
+      )}
 
       {items.length === 0 && (
         <div className="text-center text-gray-400">😔 لا توجد أصناف حالياً</div>
@@ -135,8 +157,8 @@ export const MenuPage: React.FC = () => {
             <div className="mt-3 flex items-center justify-between">
               <span className="font-bold text-xl text-yellow-400">{it.price.toFixed(2)} ر.س</span>
               
-              {/* ✅ زر الإضافة يظهر فقط للعميل */}
-              {role === 'customer' && (
+              {/* ✅ زر الإضافة يظهر للعميل والمشرف */}
+              {canOrder && (
                 <button 
                   onClick={() => handleAdd(it)}
                   disabled={!it.ownerId}
@@ -154,14 +176,14 @@ export const MenuPage: React.FC = () => {
         ))}
       </div>
 
-      {/* ✅ السلة تظهر فقط للعميل */}
-      {subtotal > 0 && role === 'customer' && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2">
+      {/* ✅ السلة تظهر للعميل والمشرف */}
+      {subtotal > 0 && canOrder && (
+        <div className="fixed bottom-4 left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-40">
           <Link 
             to="/checkout" 
-            className="px-6 py-3 rounded-full bg-yellow-500 text-black shadow-xl font-bold hover:bg-yellow-600 transition"
+            className="block w-full sm:w-auto text-center px-6 py-4 rounded-2xl bg-sky-600 text-white shadow-xl font-bold hover:bg-sky-700 transition text-base sm:text-lg"
           >
-            إتمام الطلب • المجموع: {subtotal.toFixed(2)} ر.س
+            🛒 إتمام الطلب • {subtotal.toFixed(2)} ر.س
           </Link>
         </div>
       )}

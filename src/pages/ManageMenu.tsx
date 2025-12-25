@@ -18,6 +18,7 @@ import {
   uploadBytesResumable,
 } from 'firebase/storage'
 import { useAuth } from '@/auth'
+import { useDialog } from '@/components/ui/ConfirmDialog'
 
 /* =======================
    Toast محلي بسيط داخل الصفحة
@@ -91,6 +92,7 @@ async function compressImage(file: File, maxW = 900, quality = 0.8): Promise<Blo
 
 export const ManageMenu: React.FC = () => {
   const { user } = useAuth()
+  const confirmDialog = useDialog()
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState<Item>(emptyItem())
@@ -235,7 +237,8 @@ export const ManageMenu: React.FC = () => {
   // ✅ حذف متفائل
   const remove = async (id?: string) => {
     if (!id) return
-    if (!confirm('حذف الصنف نهائيًا؟')) return
+    const confirmed = await confirmDialog.confirm('هل أنت متأكد من حذف هذا الصنف نهائيًا؟', { dangerous: true, title: 'حذف الصنف' })
+    if (!confirmed) return
     const prev = items
     setItems(p => p.filter(x => x.id !== id))
     try {

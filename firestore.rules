@@ -22,37 +22,83 @@ service cloud.firestore {
       return signedIn() && myRole() == 'customer';
     }
 
+    function isAdmin() {
+      return signedIn() && myRole() == 'admin';
+    }
+
+    function isDeveloper() {
+      return signedIn() && myRole() == 'developer';
+    }
+
     /* ===== users ===== */
     match /users/{uid} {
-      allow read: if isOwner() || (signedIn() && request.auth.uid == uid);
+      allow read: if isOwner() || isAdmin() || isDeveloper() || (signedIn() && request.auth.uid == uid);
       allow create: if signedIn() && request.auth.uid == uid;
-      allow update: if signedIn() && request.auth.uid == uid;
-      allow delete: if false;
+      allow update: if signedIn() && request.auth.uid == uid || isDeveloper();
+      allow delete: if isDeveloper();
+    }
+
+    /* ===== restaurants ===== */
+    match /restaurants/{ownerId} {
+      allow read: if true;
+      allow create: if isOwner() && request.auth.uid == ownerId || isAdmin() || isDeveloper();
+      allow update: if isOwner() && request.auth.uid == ownerId || isAdmin() || isDeveloper();
+      allow delete: if isDeveloper();
     }
 
     /* ===== menu ===== */
     match /menuItems/{itemId} {
       allow read: if true;
-      allow create, update, delete: if isOwner();
+      allow create: if isOwner() && request.resource.data.ownerId == request.auth.uid || isAdmin() || isDeveloper();
+      allow update: if isOwner() 
+                    && resource.data.ownerId == request.auth.uid
+                    && request.resource.data.ownerId == request.auth.uid
+                    || isAdmin()
+                    || isDeveloper();
+      allow delete: if isDeveloper();
     }
 
     /* ===== orders ===== */
     match /orders/{orderId} {
       allow read: if isOwner()
                   || (isCourier() && (resource.data.courierId == request.auth.uid || resource.data.status in ['ready', 'out_for_delivery']))
-                  || (isCustomer() && resource.data.customerId == request.auth.uid);
+                  || (isCustomer() && resource.data.customerId == request.auth.uid)
+                  || isAdmin()
+                  || isDeveloper();
 
-      allow create: if isCustomer() && request.resource.data.customerId == request.auth.uid;
+      allow create: if (isCustomer() && request.resource.data.customerId == request.auth.uid)
+                    || (isAdmin() && request.resource.data.customerId == request.auth.uid);
 
       allow update: if isOwner()
-                    || (isCourier() && resource.data.courierId == request.auth.uid);
-      allow delete: if false;
+                    || (isCourier() && resource.data.courierId == request.auth.uid)
+                    || isAdmin()
+                    || isDeveloper();
+      allow delete: if isDeveloper();
+    }
+
+    /* ===== wallets (for admins and app) ===== */
+    match /wallets/{walletId} {
+      // القراءة: المطور أو صاحب المحفظة (المشرف)
+      allow read: if isDeveloper() || (isAdmin() && request.auth.uid == walletId);
+      
+      // الإنشاء: المشرف لمحفظته + المطور + العملاء (لإنشاء محفظة المشرف عند الطلب)
+      allow create: if isDeveloper() 
+                    || (isAdmin() && request.auth.uid == walletId)
+                    || (isCustomer() && walletId != request.auth.uid); // العميل يمكنه إنشاء محفظة المشرف
+      
+      // التحديث: المطور أو العملاء (لتحديث محفظة المشرف عند الطلب)
+      allow update: if isDeveloper() 
+                    || (isCustomer() && walletId != request.auth.uid); // العميل يمكنه تحديث محفظة المشرف
+      
+      allow delete: if isDeveloper();
     }
 
     /* ===== settings (single doc like settings/general) ===== */
     match /settings/{doc} {
       allow read: if true;
-      allow create, update, delete: if isOwner();
+      allow create, update, delete: if isOwner() || isDeveloper();
     }
   }
 }
+
+

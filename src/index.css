@@ -1,12 +1,82 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Tajawal:wght@400;500;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root {
-  height: 100%;
+/* ===== إعادات عامة ===== */
+*, *::before, *::after {
+  box-sizing: border-box;
 }
 
-/* ✅ أنيميشن النص يمشي */
+html {
+  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: 'Cairo', 'Tajawal', sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ===== تحسينات الجوال ===== */
+@media (max-width: 640px) {
+  /* منع تحديد النص غير المرغوب */
+  button, a {
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+  
+  /* تحسين أداء التمرير */
+  .overflow-y-auto,
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* إخفاء شريط التمرير على الجوال */
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}
+
+/* ===== Safe Area للأجهزة الحديثة ===== */
+@supports (padding: max(0px)) {
+  .safe-area-top {
+    padding-top: max(env(safe-area-inset-top), 0px);
+  }
+  .safe-area-bottom {
+    padding-bottom: max(env(safe-area-inset-bottom), 16px);
+  }
+}
+
+/* ✨ تأثيرات فخمة */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(14, 165, 233, 0.4); }
+  50% { box-shadow: 0 0 40px rgba(56, 189, 248, 0.6); }
+}
+
 @keyframes marquee {
   0% { transform: translateX(100%); }
   100% { transform: translateX(-100%); }
@@ -17,14 +87,71 @@ html, body, #root {
   white-space: nowrap;
   animation: marquee 12s linear infinite;
 }
-/* ✅ خلي النصوص داخل الفورم سوداء في أي بطاقة بيضاء */
+
+.float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.glow {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+.shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* 💎 بطاقات فخمة */
+.luxury-card {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(14, 165, 233, 0.1);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.luxury-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 30px 80px rgba(14, 165, 233, 0.2);
+}
+
+/* 🌊 أزرار فخمة */
+.btn-luxury {
+  background: linear-gradient(135deg, #0EA5E9 0%, #38BDF8 100%);
+  color: white;
+  font-weight: 700;
+  padding: 1rem 2rem;
+  border-radius: 9999px;
+  box-shadow: 0 10px 40px rgba(14, 165, 233, 0.4);
+  transition: all 0.3s ease;
+}
+
+.btn-luxury:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 15px 50px rgba(14, 165, 233, 0.5);
+}
+
+/* ⚪ خلفية زجاجية */
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* 🎨 تنسيق النماذج */
 .bg-white input,
 .bg-white textarea,
 .bg-white select {
-  color: black !important;
+  color: #0C4A6E !important;
 }
 
 .bg-white input::placeholder,
 .bg-white textarea::placeholder {
-  color: #6b7280 !important; /* رمادي لطيف */
+  color: #94A3B8 !important;
+}
+
+/* ✨ تدرج خلفية فخم */
+.bg-luxury {
+  background: linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 50%, #BAE6FD 100%);
 }

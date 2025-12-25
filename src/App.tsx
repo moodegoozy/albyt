@@ -29,7 +29,10 @@ import { CourierRequests } from './pages/CourierRequests'
 import { CourierApp } from './pages/CourierApp'
 import { CourierHiring } from './pages/CourierHiring'
 
-// صفحات المطور
+// صفحات الإدمن والمطور
+import { AdminDashboard } from './pages/AdminDashboard'
+import { AdminRestaurants } from './pages/AdminRestaurants'
+import { AdminOrders } from './pages/AdminOrders'
 import { Developer } from './pages/Developer'
 
 // مسارات محمية
@@ -41,14 +44,18 @@ import { DebugOrders } from './pages/DebugOrders'
 
 export default function App() {
   return (
-    <div className="min-h-screen flex flex-col bg-secondary text-dark">
-      {/* الشريط العلوي */}
-      <TopBar />
-      {/* رأس الصفحة */}
-      <Header />
+    <div className="min-h-screen flex flex-col bg-gradient-to-b from-sky-50 via-white to-sky-50 text-sky-900">
+      {/* الشريط العلوي + رأس الصفحة - ثابتين في أعلى الشاشة تماماً */}
+      <div className="fixed top-0 left-0 right-0 z-50">
+        <TopBar />
+        <Header />
+      </div>
+
+      {/* مسافة فارغة بحجم الهيدر */}
+      <div className="h-[100px] sm:h-[120px]" />
 
       {/* المحتوى الرئيسي */}
-      <main className="flex-1 max-w-6xl mx-auto px-4 py-8 bg-gradient-to-br from-secondary via-[#FCEBCB] to-[#F7DDA6] rounded-xl shadow-inner">
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
         <Routes>
           {/* الصفحة الرئيسية */}
           <Route path="/" element={<Landing />} />
@@ -67,7 +74,7 @@ export default function App() {
             path="/checkout"
             element={
               <ProtectedRoute>
-                <RoleGate allow={['customer']}>
+                <RoleGate allow={['customer', 'admin']}>
                   <CheckoutPage />
                 </RoleGate>
               </ProtectedRoute>
@@ -77,7 +84,7 @@ export default function App() {
             path="/orders"
             element={
               <ProtectedRoute>
-                <RoleGate allow={['customer']}>
+                <RoleGate allow={['customer', 'admin']}>
                   <TrackOrders />
                 </RoleGate>
               </ProtectedRoute>
@@ -153,6 +160,38 @@ export default function App() {
               <ProtectedRoute>
                 <RoleGate allow={['courier']}>
                   <CourierHiring />
+                </RoleGate>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* صفحات الإدمن (المشرف) */}
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <RoleGate allow={['admin', 'developer']}>
+                  <AdminDashboard />
+                </RoleGate>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/restaurants"
+            element={
+              <ProtectedRoute>
+                <RoleGate allow={['admin', 'developer']}>
+                  <AdminRestaurants />
+                </RoleGate>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/orders"
+            element={
+              <ProtectedRoute>
+                <RoleGate allow={['admin', 'developer']}>
+                  <AdminOrders />
                 </RoleGate>
               </ProtectedRoute>
             }

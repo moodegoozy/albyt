@@ -3,9 +3,11 @@ import React, { useEffect, useState } from "react"
 import { db } from "@/firebase"
 import { useAuth } from "@/auth"
 import { doc, getDoc, updateDoc } from "firebase/firestore"
+import { useDialog } from '@/components/ui/ConfirmDialog'
 
 export const ProfileEdit: React.FC = () => {
   const { user } = useAuth()
+  const dialog = useDialog()
   const [form, setForm] = useState({
     restaurantName: "",
     phone: "",
@@ -37,7 +39,7 @@ export const ProfileEdit: React.FC = () => {
     e.preventDefault()
     if (!user) return
     await updateDoc(doc(db, "users", user.uid), form)
-    alert("✅ تم تحديث بيانات المطعم")
+    dialog.success('تم تحديث بيانات المطعم بنجاح')
   }
 
   if (loading) return <div>جارِ تحميل البيانات...</div>

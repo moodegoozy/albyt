@@ -3,14 +3,13 @@ import React, { useEffect, useState } from 'react'
 import { collection, getDocs, onSnapshot, orderBy, query, where, limit } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useAuth } from '@/auth'
-
-type Order = any
+import { Order } from '@/types'
 
 export const TrackOrders: React.FC = () => {
   const { user } = useAuth()
-  const [orders, setOrders] = useState<Order[]>([])
   const [err, setErr] = useState<string | null>(null)
-  const [diag, setDiag] = useState<any>(null)
+  const [orders, setOrders] = useState<Order[]>([])
+  const [diag, setDiag] = useState<{ uid: string; fallbackCount: number; sample: any[] } | null>(null)
 
   useEffect(() => {
     if (!user) return
@@ -28,7 +27,7 @@ export const TrackOrders: React.FC = () => {
     const unsub = onSnapshot(
       q1,
       snap => {
-        setOrders(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
+        setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order)))
         setErr(null)
       },
       async (e) => {
@@ -41,7 +40,7 @@ export const TrackOrders: React.FC = () => {
           where('customerId', '==', user.uid)
         )
         const s2 = await getDocs(q2)
-        const list = s2.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
+        const list = s2.docs.map(d => ({ id: d.id, ...d.data() } as Order))
 
         // تشخيص سريع: نعرض عينة من أحدث 5 طلبات عامة
         const q3 = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(5))
@@ -98,7 +97,7 @@ export const TrackOrders: React.FC = () => {
               {Array.isArray(diag.sample) && diag.sample.length > 0 && (
                 <div className="mt-1">
                   <div className="font-semibold">عينة (أحدث 5):</div>
-                  {diag.sample.map((x: any) => (
+                  {diag.sample.map((x) => (
                     <div key={x.id} className="truncate">
                       #{x.id} • customerId: {String(x.customerId)} • restaurantId: {String(x.restaurantId)} • createdAt: {x.createdAt || '—'}
                     </div>
@@ -121,12 +120,12 @@ export const TrackOrders: React.FC = () => {
 
           {o.restaurantName && (
             <div className="mt-1 text-yellow-600 font-semibold">
-              المطعم: {o.restaurantName}
+              المطعم: {String(o.restaurantName)}
             </div>
           )}
 
           <div className="mt-2 text-sm text-gray-700">
-            {o.items?.map((i: any) => `${i.name}×${i.qty}`).join(' • ')}
+            {o.items?.map((i) => `${i.name}×${i.qty}`).join(' • ')}
           </div>
           <div className="mt-2 font-bold">
             المجموع: {o.total?.toFixed?.(2)} ر.س

@@ -4,13 +4,34 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['system-ui', 'Tahoma', 'Arial', 'ui-sans-serif', 'sans-serif'],
+        sans: ['Cairo', 'Tajawal', 'system-ui', 'sans-serif'],
       },
       colors: {
-        primary: '#7B0000',      // ❤️ الأحمر العنّابي (اللون الرئيسي)
-        secondary: '#F8DEB0',    // 🤍 البيج الفاتح (الخلفية)
-        accent: '#C89B3C',       // ✨ الذهبي
-        dark: '#2B1A16',         // 🖤 الأسود الفاتح للنصوص
+        primary: '#0EA5E9',      // 💎 سماوي فاخر
+        secondary: '#F0F9FF',    // ⚪ أبيض سماوي خفيف
+        accent: '#38BDF8',       // ✨ سماوي لامع
+        dark: '#0C4A6E',         // 🌊 أزرق داكن فخم
+        sky: {
+          50: '#F0F9FF',
+          100: '#E0F2FE',
+          200: '#BAE6FD',
+          300: '#7DD3FC',
+          400: '#38BDF8',
+          500: '#0EA5E9',
+          600: '#0284C7',
+          700: '#0369A1',
+          800: '#075985',
+          900: '#0C4A6E',
+        },
+      },
+      boxShadow: {
+        'luxury': '0 25px 50px -12px rgba(14, 165, 233, 0.25)',
+        'glow': '0 0 40px rgba(56, 189, 248, 0.4)',
+        'card': '0 10px 40px rgba(0, 0, 0, 0.1)',
+      },
+      backgroundImage: {
+        'gradient-luxury': 'linear-gradient(135deg, #0EA5E9 0%, #38BDF8 50%, #7DD3FC 100%)',
+        'gradient-white': 'linear-gradient(180deg, #FFFFFF 0%, #F0F9FF 100%)',
       },
     },
   },
