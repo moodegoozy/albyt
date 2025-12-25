@@ -69,15 +69,15 @@ export const Header: React.FC = () => {
             </button>
           )}
           
-          <Link
-            to="/"
+          <button
+            onClick={() => window.location.href = '/'}
             className="text-xl sm:text-2xl font-black text-white flex items-center gap-2 sm:gap-3 hover:scale-105 transition-transform drop-shadow-lg"
           >
             <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg">
               <span className="text-xl sm:text-2xl">🍗</span>
             </div>
             <span className="text-lg sm:text-2xl">سفرة البيت</span>
-          </Link>
+          </button>
         </div>
 
         {/* أزرار الديسكتوب */}
