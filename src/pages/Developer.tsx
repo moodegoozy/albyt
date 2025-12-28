@@ -3,10 +3,12 @@ import { useAuth } from '@/auth'
 import { RoleGate } from '@/routes/RoleGate'
 import { 
   Trash2, Users, Settings, RefreshCw, Database, Shield, Server, 
-  Edit3, Save, X, ChevronDown, ChevronUp, Building2, Wallet, Package, Truck
+  Edit3, Save, X, ChevronDown, ChevronUp, Building2, Wallet, Package, Truck, UserPlus
 } from 'lucide-react'
 import { useToast } from '@/components/ui/Toast'
-import { db, app } from '@/firebase'
+import { useDialog } from '@/components/ui/ConfirmDialog'
+import { db, app, auth } from '@/firebase'
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth'
 import { 
   collection, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, 
   serverTimestamp 
@@ -104,6 +106,7 @@ type Tab = 'overview' | 'restaurants' | 'orders' | 'users' | 'couriers' | 'admin
 export const Developer: React.FC = () => {
   const { user } = useAuth()
   const toast = useToast()
+  const dialog = useDialog()
   const storage = getStorage(app)
   
   const [activeTab, setActiveTab] = useState<Tab>('overview')
@@ -135,6 +138,84 @@ export const Developer: React.FC = () => {
   const [orderFilter, setOrderFilter] = useState<string>('all')
   const [userFilter, setUserFilter] = useState<string>('all')
   const [expandedAdmin, setExpandedAdmin] = useState<string | null>(null)
+  
+  // إضافة مشرف جديد
+  const [showAddAdmin, setShowAddAdmin] = useState(false)
+  const [newAdminEmail, setNewAdminEmail] = useState('')
+  const [newAdminName, setNewAdminName] = useState('')
+  const [newAdminPassword, setNewAdminPassword] = useState('')
+  const [newAdminPhone, setNewAdminPhone] = useState('')
+  const [creatingAdmin, setCreatingAdmin] = useState(false)
+  
+  // حفظ بيانات المطور الحالي لإعادة تسجيل الدخول
+  const currentDeveloperEmail = user?.email || ''
+
+  // ===== إنشاء مشرف جديد =====
+  const handleCreateNewAdmin = async () => {
+    if (!newAdminEmail.trim() || !newAdminPassword.trim()) {
+      toast.warning('أدخل البريد الإلكتروني وكلمة المرور')
+      return
+    }
+    if (newAdminPassword.length < 6) {
+      toast.warning('كلمة المرور يجب أن تكون 6 أحرف على الأقل')
+      return
+    }
+
+    const confirmed = await dialog.confirm(
+      `سيتم إنشاء حساب مشرف جديد:\n\n📧 ${newAdminEmail}\n👤 ${newAdminName || 'بدون اسم'}\n\nملاحظة: سيتم تسجيل خروجك مؤقتاً، قم بتسجيل الدخول مرة أخرى.`,
+      { title: 'إنشاء مشرف جديد' }
+    )
+    if (!confirmed) return
+
+    setCreatingAdmin(true)
+    try {
+      // إنشاء المستخدم الجديد في Firebase Auth
+      const userCred = await createUserWithEmailAndPassword(auth, newAdminEmail.trim(), newAdminPassword)
+      const newUid = userCred.user.uid
+
+      // إنشاء مستند المستخدم في Firestore
+      await setDoc(doc(db, 'users', newUid), {
+        email: newAdminEmail.trim(),
+        name: newAdminName.trim() || 'مشرف جديد',
+        phone: newAdminPhone.trim() || '',
+        role: 'admin',
+        createdAt: serverTimestamp(),
+      })
+
+      // إنشاء محفظة للمشرف الجديد
+      await setDoc(doc(db, 'wallets', newUid), {
+        balance: 0,
+        totalEarnings: 0,
+        totalWithdrawn: 0,
+        transactions: [],
+        updatedAt: serverTimestamp(),
+      })
+
+      toast.success('تم إنشاء حساب المشرف بنجاح ✅')
+      toast.info('⚠️ تم تسجيل خروجك، يرجى تسجيل الدخول مرة أخرى')
+      
+      // إعادة تعيين النموذج
+      setNewAdminEmail('')
+      setNewAdminName('')
+      setNewAdminPassword('')
+      setNewAdminPhone('')
+      setShowAddAdmin(false)
+      
+    } catch (err: any) {
+      console.error('خطأ في إنشاء المشرف:', err)
+      if (err.code === 'auth/email-already-in-use') {
+        toast.error('البريد الإلكتروني مستخدم مسبقاً')
+      } else if (err.code === 'auth/invalid-email') {
+        toast.error('البريد الإلكتروني غير صالح')
+      } else if (err.code === 'auth/weak-password') {
+        toast.error('كلمة المرور ضعيفة جداً')
+      } else {
+        toast.error('فشل إنشاء المشرف: ' + (err.message || 'خطأ غير معروف'))
+      }
+    } finally {
+      setCreatingAdmin(false)
+    }
+  }
 
   // ===== تحميل البيانات =====
   const loadData = async () => {
@@ -219,8 +300,8 @@ export const Developer: React.FC = () => {
           workingHours: { open: '09:00', close: '23:00' },
           maintenanceMode: false,
           appVersion: '1.0.0',
-          platformFee: 1.5,
-          adminCommissionRate: 0.5,
+          platformFee: 1.0, // 1 ريال للتطبيق لكل منتج
+          adminCommissionRate: 0.75, // 75 هللة للمشرف لكل منتج
         }
         setSettings(defaultSettings)
         setSettingsForm(defaultSettings)
@@ -299,9 +380,9 @@ export const Developer: React.FC = () => {
 
   // ===== حذف مطعم =====
   const handleDeleteRestaurant = async (id: string) => {
-    const confirmed = await new Promise<boolean>((resolve) => {
-      const result = window.confirm('هل أنت متأكد من حذف هذا المطعم؟ لا يمكن التراجع!')
-      resolve(result)
+    const confirmed = await dialog.confirm('هل أنت متأكد من حذف هذا المطعم؟ لا يمكن التراجع!', { 
+      title: 'حذف المطعم',
+      dangerous: true 
     })
     if (!confirmed) return
     try {
@@ -332,9 +413,9 @@ export const Developer: React.FC = () => {
 
   // ===== حذف مستخدم =====
   const handleDeleteUser = async (uid: string) => {
-    const confirmed = await new Promise<boolean>((resolve) => {
-      const result = window.confirm('هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع!')
-      resolve(result)
+    const confirmed = await dialog.confirm('هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع!', {
+      title: 'حذف المستخدم',
+      dangerous: true
     })
     if (!confirmed) return
     try {
@@ -939,7 +1020,134 @@ export const Developer: React.FC = () => {
         {/* ===== المشرفين ===== */}
         {activeTab === 'admins' && (
           <div className="space-y-4">
-            <h2 className="text-xl font-bold">👑 المشرفين وعمولاتهم ({admins.length})</h2>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <h2 className="text-xl font-bold">👑 المشرفين وعمولاتهم ({admins.length})</h2>
+              <button
+                onClick={() => setShowAddAdmin(!showAddAdmin)}
+                className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl font-semibold transition"
+              >
+                <UserPlus className="w-5 h-5" />
+                {showAddAdmin ? 'إلغاء' : 'إضافة مشرف'}
+              </button>
+            </div>
+            
+            {/* نموذج إضافة مشرف */}
+            {showAddAdmin && (
+              <div className="bg-purple-50 rounded-2xl p-6 border-2 border-purple-200">
+                <h3 className="text-lg font-bold text-purple-800 mb-4">👑 ترقية مستخدم إلى مشرف</h3>
+                <p className="text-sm text-purple-600 mb-4">اختر مستخدم موجود لترقيته إلى دور المشرف، أو أدخل بيانات مستخدم جديد</p>
+                
+                {/* قائمة المستخدمين الموجودين */}
+                <div className="mb-4">
+                  <label className="text-sm font-semibold text-gray-700 block mb-2">ترقية مستخدم موجود:</label>
+                  <div className="grid gap-2 max-h-48 overflow-y-auto">
+                    {users.filter(u => u.role === 'customer').slice(0, 10).map(u => (
+                      <div key={u.uid} className="flex items-center justify-between bg-white p-3 rounded-xl">
+                        <div>
+                          <p className="font-semibold">{u.name || 'بدون اسم'}</p>
+                          <p className="text-sm text-gray-500">{u.email}</p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            const confirmed = await dialog.confirm(`هل تريد ترقية ${u.name || u.email} إلى مشرف؟`, {
+                              title: 'ترقية إلى مشرف'
+                            })
+                            if (!confirmed) return
+                            try {
+                              await updateDoc(doc(db, 'users', u.uid), { role: 'admin' })
+                              toast.success('تم ترقية المستخدم إلى مشرف ✅')
+                              setShowAddAdmin(false)
+                              loadData()
+                            } catch (err) {
+                              toast.error('فشل ترقية المستخدم')
+                            }
+                          }}
+                          className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-sm"
+                        >
+                          ترقية 👑
+                        </button>
+                      </div>
+                    ))}
+                    {users.filter(u => u.role === 'customer').length === 0 && (
+                      <p className="text-gray-500 text-center py-4">لا يوجد عملاء يمكن ترقيتهم</p>
+                    )}
+                  </div>
+                </div>
+                
+                {/* نموذج إنشاء مشرف جديد */}
+                <div className="border-t pt-4 mt-4">
+                  <h4 className="text-md font-bold text-purple-800 mb-3">✨ أو إنشاء حساب مشرف جديد:</h4>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm text-gray-600 block mb-1">البريد الإلكتروني *</label>
+                      <input
+                        type="email"
+                        placeholder="admin@example.com"
+                        value={newAdminEmail}
+                        onChange={e => setNewAdminEmail(e.target.value)}
+                        className="w-full border rounded-xl p-3 text-gray-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-gray-600 block mb-1">كلمة المرور *</label>
+                      <input
+                        type="password"
+                        placeholder="كلمة المرور (6 أحرف على الأقل)"
+                        value={newAdminPassword}
+                        onChange={e => setNewAdminPassword(e.target.value)}
+                        className="w-full border rounded-xl p-3 text-gray-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-gray-600 block mb-1">الاسم</label>
+                      <input
+                        type="text"
+                        placeholder="اسم المشرف"
+                        value={newAdminName}
+                        onChange={e => setNewAdminName(e.target.value)}
+                        className="w-full border rounded-xl p-3 text-gray-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-gray-600 block mb-1">رقم الهاتف</label>
+                      <input
+                        type="tel"
+                        placeholder="05xxxxxxxx"
+                        value={newAdminPhone}
+                        onChange={e => setNewAdminPhone(e.target.value)}
+                        className="w-full border rounded-xl p-3 text-gray-900"
+                      />
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={handleCreateNewAdmin}
+                    disabled={creatingAdmin || !newAdminEmail.trim() || !newAdminPassword.trim()}
+                    className="mt-4 w-full bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white py-3 rounded-xl font-bold transition disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {creatingAdmin ? (
+                      <>
+                        <RefreshCw className="w-5 h-5 animate-spin" />
+                        جاري الإنشاء...
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus className="w-5 h-5" />
+                        إنشاء حساب المشرف
+                      </>
+                    )}
+                  </button>
+                  
+                  <p className="text-xs text-orange-600 mt-2">
+                    ⚠️ تنبيه: بعد إنشاء المشرف الجديد، سيتم تسجيل خروجك تلقائياً. يرجى تسجيل الدخول مرة أخرى.
+                  </p>
+                </div>
+                
+                <div className="border-t pt-4 mt-4">
+                  <p className="text-xs text-gray-500">💡 يمكنك أيضاً تغيير دور أي مستخدم من تبويب "المستخدمين"</p>
+                </div>
+              </div>
+            )}
             
             <div className="space-y-4">
               {admins.map(admin => (
@@ -1092,33 +1300,33 @@ export const Developer: React.FC = () => {
 
                 {/* رسوم التطبيق */}
                 <div>
-                  <label className="text-sm text-gray-600 block mb-1">💵 رسوم التطبيق (ر.س)</label>
+                  <label className="text-sm text-gray-600 block mb-1">💵 رسوم التطبيق / منتج (ر.س)</label>
                   {editingSettings ? (
                     <input
                       type="number"
-                      step="0.5"
-                      value={settingsForm.platformFee || 1.5}
+                      step="0.1"
+                      value={settingsForm.platformFee || 1.0}
                       onChange={e => setSettingsForm({ ...settingsForm, platformFee: Number(e.target.value) })}
                       className="w-full border rounded-xl p-3"
                     />
                   ) : (
-                    <p className="text-2xl font-bold">{settings.platformFee || 1.5} ر.س</p>
+                    <p className="text-2xl font-bold">{settings.platformFee || 1.0} ر.س/منتج</p>
                   )}
                 </div>
 
                 {/* عمولة المشرف */}
                 <div>
-                  <label className="text-sm text-gray-600 block mb-1">👑 عمولة المشرف (ر.س)</label>
+                  <label className="text-sm text-gray-600 block mb-1">👑 عمولة المشرف / منتج (ر.س)</label>
                   {editingSettings ? (
                     <input
                       type="number"
-                      step="0.1"
-                      value={settingsForm.adminCommissionRate || 0.5}
+                      step="0.05"
+                      value={settingsForm.adminCommissionRate || 0.75}
                       onChange={e => setSettingsForm({ ...settingsForm, adminCommissionRate: Number(e.target.value) })}
                       className="w-full border rounded-xl p-3"
                     />
                   ) : (
-                    <p className="text-2xl font-bold">{settings.adminCommissionRate || 0.5} ر.س</p>
+                    <p className="text-2xl font-bold">{settings.adminCommissionRate || 0.75} ر.س/منتج</p>
                   )}
                 </div>
 
@@ -1186,15 +1394,23 @@ export const Developer: React.FC = () => {
 
             {/* شرح نظام العمولات */}
             <div className="bg-sky-50 border-l-4 border-sky-500 rounded-lg p-6">
-              <h3 className="font-bold text-sky-900 mb-3">💰 نظام العمولات:</h3>
+              <h3 className="font-bold text-sky-900 mb-3">💰 نظام العمولات (لكل منتج = 1.75 ر.س):</h3>
               <div className="text-sky-800 space-y-2">
-                <p>• <strong>رسوم التطبيق:</strong> {settings.platformFee || 1.5} ر.س على كل طلب</p>
-                <p>• <strong>إذا المطعم مضاف من مشرف:</strong></p>
-                <ul className="mr-6 list-disc">
-                  <li>المشرف يحصل على {settings.adminCommissionRate || 0.5} ر.س</li>
-                  <li>التطبيق يحصل على {(settings.platformFee || 1.5) - (settings.adminCommissionRate || 0.5)} ر.س</li>
-                </ul>
-                <p>• <strong>إذا المطعم مضاف من المطور:</strong> التطبيق يحصل على {settings.platformFee || 1.5} ر.س كاملة</p>
+                <p>• <strong>رسوم التطبيق:</strong> {settings.platformFee || 1.0} ر.س × عدد المنتجات</p>
+                <p>• <strong>عمولة المشرف:</strong> {settings.adminCommissionRate || 0.75} ر.س × عدد المنتجات</p>
+                <div className="bg-white rounded-xl p-4 mt-3">
+                  <p className="font-bold mb-2">📝 مثال: طلب فيه 5 منتجات</p>
+                  <p>• <strong>إذا المطعم مضاف من مشرف:</strong></p>
+                  <ul className="mr-6 list-disc text-sm">
+                    <li>المشرف يحصل على: 5 × {settings.adminCommissionRate || 0.75} = <strong>{(5 * (settings.adminCommissionRate || 0.75)).toFixed(2)} ر.س</strong></li>
+                    <li>التطبيق يحصل على: 5 × {settings.platformFee || 1.0} = <strong>{(5 * (settings.platformFee || 1.0)).toFixed(2)} ر.س</strong></li>
+                    <li className="text-green-700">المجموع: <strong>{(5 * 1.75).toFixed(2)} ر.س</strong></li>
+                  </ul>
+                  <p className="mt-2">• <strong>إذا المطعم مضاف من المطور:</strong></p>
+                  <ul className="mr-6 list-disc text-sm">
+                    <li>التطبيق يحصل على كل شيء: 5 × 1.75 = <strong>{(5 * 1.75).toFixed(2)} ر.س</strong></li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>

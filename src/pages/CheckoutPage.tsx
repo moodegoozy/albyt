@@ -8,9 +8,10 @@ import { RoleGate } from '@/routes/RoleGate'
 import { useDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
 
-// 💰 رسوم التطبيق الثابتة
-const PLATFORM_FEE = 1.5 // ريال ونصف لكل طلب
-const ADMIN_COMMISSION = 0.5 // 50 هللة للمشرف
+// 💰 رسوم التطبيق والمشرف (لكل منتج)
+const PLATFORM_FEE_PER_ITEM = 1.0 // ريال للتطبيق على كل منتج
+const ADMIN_COMMISSION_PER_ITEM = 0.75 // 75 هللة للمشرف على كل منتج
+// المجموع = 1.75 ريال لكل منتج
 
 export const CheckoutPage: React.FC = () => {
   const { items, subtotal, clear } = useCart()
@@ -100,12 +101,15 @@ export const CheckoutPage: React.FC = () => {
 
     setSaving(true)
     
-    // 💰 حساب العمولات
-    // إذا المطعم مسجل عن طريق مشرف: المشرف يأخذ 0.5 + التطبيق يأخذ 1
-    // إذا المطعم مسجل عن طريق المطور أو بدون إحالة: التطبيق يأخذ 1.5 كاملة
+    // 💰 حساب العمولات (كلها على أساس عدد المنتجات)
+    // رسوم التطبيق = 0.5 ريال × عدد المنتجات
+    // عمولة المشرف = 0.5 ريال × عدد المنتجات (إذا المطعم مضاف من مشرف)
     const referredByAdmin = restaurant?.referrerType === 'admin' && restaurant?.referredBy
-    const adminCommission = referredByAdmin ? ADMIN_COMMISSION : 0
-    const appEarnings = PLATFORM_FEE - adminCommission // 1 ريال إذا فيه مشرف، 1.5 إذا ما فيه
+    const totalItemsCount = items.reduce((sum, item) => sum + item.qty, 0) // إجمالي عدد المنتجات
+    const platformFee = PLATFORM_FEE_PER_ITEM * totalItemsCount // رسوم التطبيق
+    const adminCommission = referredByAdmin ? (ADMIN_COMMISSION_PER_ITEM * totalItemsCount) : 0
+    // التطبيق يأخذ رسومه دائماً + عمولة المنتجات إذا ما فيه مشرف
+    const appEarnings = platformFee + (referredByAdmin ? 0 : (ADMIN_COMMISSION_PER_ITEM * totalItemsCount))
 
     // إنشاء الطلب مع معلومات العمولة
     const orderRef = await addDoc(collection(db, 'orders'), {
@@ -129,13 +133,16 @@ export const CheckoutPage: React.FC = () => {
       updatedAt: serverTimestamp(),
       paymentMethod: 'cod',
       // 💰 معلومات العمولة
-      platformFee: PLATFORM_FEE,
+      platformFee: platformFee,
+      platformFeePerItem: PLATFORM_FEE_PER_ITEM,
       adminCommission: adminCommission,
+      adminCommissionPerItem: ADMIN_COMMISSION_PER_ITEM,
+      totalItemsCount: totalItemsCount,
       referredBy: restaurant?.referredBy || null,
     })
 
     // 💰 تحديث محفظة المشرف إذا كان المطعم مسجل عن طريقه
-    if (referredByAdmin && restaurant?.referredBy) {
+    if (referredByAdmin && restaurant?.referredBy && adminCommission > 0) {
       try {
         const walletRef = doc(db, 'wallets', restaurant.referredBy)
         const walletSnap = await getDoc(walletRef)
@@ -143,16 +150,16 @@ export const CheckoutPage: React.FC = () => {
         if (walletSnap.exists()) {
           // تحديث المحفظة الموجودة
           await updateDoc(walletRef, {
-            balance: increment(ADMIN_COMMISSION),
-            totalEarnings: increment(ADMIN_COMMISSION),
+            balance: increment(adminCommission),
+            totalEarnings: increment(adminCommission),
             updatedAt: serverTimestamp(),
           })
         } else {
           // إنشاء محفظة جديدة للمشرف
           const { setDoc } = await import('firebase/firestore')
           await setDoc(walletRef, {
-            balance: ADMIN_COMMISSION,
-            totalEarnings: ADMIN_COMMISSION,
+            balance: adminCommission,
+            totalEarnings: adminCommission,
             totalWithdrawn: 0,
             transactions: [],
             updatedAt: serverTimestamp(),
@@ -160,7 +167,7 @@ export const CheckoutPage: React.FC = () => {
         }
         
         // إضافة المعاملة للسجل (اختياري - يمكن إضافته لاحقاً)
-        console.log(`✅ تم إضافة ${ADMIN_COMMISSION} ريال لمحفظة المشرف ${restaurant.referredBy}`)
+        console.log(`✅ تم إضافة ${adminCommission} ريال لمحفظة المشرف ${restaurant.referredBy} (${totalItemsCount} منتج × ${ADMIN_COMMISSION_PER_ITEM} ر.س)`)
       } catch (err) {
         console.error('خطأ في تحديث محفظة المشرف:', err)
       }
