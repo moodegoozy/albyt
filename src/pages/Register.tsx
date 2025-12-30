@@ -5,7 +5,6 @@ import { auth, db } from '@/firebase'
 import { doc, setDoc } from 'firebase/firestore'
 import { useNavigate, Link } from 'react-router-dom'
 import { User, Mail, Lock, Store, UserPlus, Truck, ChefHat, Users } from 'lucide-react'
-import { useDialog } from '@/components/ui/ConfirmDialog'
 
 export const Register: React.FC = () => {
   const [email, setEmail] = useState('')
@@ -15,12 +14,11 @@ export const Register: React.FC = () => {
   const [role, setRole] = useState<'customer'|'courier'|'owner'|''>('')
   const [loading, setLoading] = useState(false)
   const nav = useNavigate()
-  const dialog = useDialog()
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!role) { dialog.warning('اختر نوع الحساب'); return }
-    if (role === 'owner' && !restaurantName) { dialog.warning('أدخل اسم المطعم'); return }
+    if (!role) return alert('اختر نوع الحساب')
+    if (role === 'owner' && !restaurantName) return alert('أدخل اسم المطعم')
 
     setLoading(true)
     try {
@@ -45,7 +43,7 @@ export const Register: React.FC = () => {
       }
       nav('/')
     } catch (e: any) {
-      dialog.error(e.message, { title: 'خطأ في إنشاء الحساب' })
+      alert(e.message)
     } finally { setLoading(false) }
   }
 

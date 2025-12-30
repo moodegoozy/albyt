@@ -1,0 +1,30 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // السماح بالقراءة للجميع (الصور عامة)
+    match /{allPaths=**} {
+      allow read: if true;
+    }
+    
+    // صور القائمة - يمكن لأي مستخدم مسجل رفعها
+    match /menuImages/{allImages} {
+      allow write: if request.auth != null
+                   && request.resource.size < 5 * 1024 * 1024  // 5MB max
+                   && request.resource.contentType.matches('image/.*');
+    }
+    
+    // صور المطاعم (الشعارات) - يمكن لأي مستخدم مسجل رفعها
+    match /restaurants/{ownerId}/{allImages} {
+      allow write: if request.auth != null
+                   && request.resource.size < 5 * 1024 * 1024  // 5MB max
+                   && request.resource.contentType.matches('image/.*');
+    }
+    
+    // مجلد عام للصور (للأدمن والمطور)
+    match /uploads/{allImages} {
+      allow write: if request.auth != null
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+  }
+}
