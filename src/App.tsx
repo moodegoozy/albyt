@@ -18,6 +18,7 @@ import AccountDeleted from './pages/AccountDeleted'
 // صفحات العميل
 import { CheckoutPage } from './pages/CheckoutPage'
 import { TrackOrders } from './pages/TrackOrders'
+import { ProfileEdit } from './pages/ProfileEdit'
 
 // صفحات صاحب المطعم
 import { OwnerDashboard } from './pages/OwnerDashboard'
@@ -88,6 +89,16 @@ export default function App() {
               <ProtectedRoute>
                 <RoleGate allow={['customer', 'admin']}>
                   <TrackOrders />
+                </RoleGate>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <RoleGate allow={['customer', 'courier', 'owner', 'admin', 'developer']}>
+                  <ProfileEdit />
                 </RoleGate>
               </ProtectedRoute>
             }
