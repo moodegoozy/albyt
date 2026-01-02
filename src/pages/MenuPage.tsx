@@ -15,7 +15,7 @@ export const MenuPage: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [restaurantName, setRestaurantName] = useState<string | null>(null)
   const { add, subtotal, items: cartItems } = useCart()
-  const { role } = useAuth()
+  const { user, role } = useAuth()
   const toast = useToast()
   const [searchParams] = useSearchParams()
   const restaurantId = searchParams.get('restaurant')
@@ -89,8 +89,8 @@ export const MenuPage: React.FC = () => {
     )
   }
 
-  // هل يمكن للمستخدم الطلب؟
-  const canOrder = role === 'customer' || role === 'admin'
+  // هل يمكن للمستخدم الطلب؟ (أي مستخدم مسجل دخوله ما عدا صاحب المطعم والمندوب)
+  const canOrder = user && (role === 'customer' || role === 'admin' || role === 'developer' || !role)
 
   return (
     <div className="py-10">

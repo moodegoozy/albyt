@@ -115,6 +115,19 @@ export const Login: React.FC = () => {
             سجّل الآن ✨
           </Link>
         </p>
+
+        {/* رابط تسجيل دخول العملاء برقم الجوال */}
+        <div className="mt-6 pt-6 border-t border-sky-100">
+          <p className="text-center text-sm text-gray-500 mb-3">
+            عميل تريد الدخول برقم الجوال؟
+          </p>
+          <Link 
+            to="/customer-login"
+            className="block w-full text-center bg-green-50 hover:bg-green-100 text-green-700 font-semibold py-3 px-4 rounded-2xl transition"
+          >
+            📱 الدخول برقم الجوال
+          </Link>
+        </div>
       </div>
     </div>
   )

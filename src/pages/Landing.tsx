@@ -88,21 +88,30 @@ export const Landing: React.FC = () => {
           </Link>
         ) : (
           <div className="flex flex-col items-center gap-4 sm:gap-5 w-full px-4">
+            {/* زر دخول العميل برقم الجوال - الأساسي */}
+            <Link
+              to="/customer-login"
+              className="group flex items-center justify-center gap-2 sm:gap-3 w-full max-w-xs px-8 sm:px-12 py-4 sm:py-5 rounded-full text-lg sm:text-xl font-bold text-white bg-gradient-to-r from-green-500 via-green-400 to-green-500 shadow-2xl shadow-green-300/50 hover:shadow-green-400/60 hover:scale-105 transition-all duration-300"
+            >
+              📱 دخول برقم الجوال
+              <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 group-hover:-translate-x-1 transition-transform" />
+            </Link>
+
+            {/* رابط للمطاعم والمناديب */}
             <Link
               to="/login"
-              className="group flex items-center justify-center gap-2 sm:gap-3 w-full max-w-xs px-8 sm:px-12 py-4 sm:py-5 rounded-full text-lg sm:text-xl font-bold text-white bg-gradient-to-r from-sky-500 via-sky-400 to-sky-500 shadow-2xl shadow-sky-300/50 hover:shadow-sky-400/60 hover:scale-105 transition-all duration-300"
+              className="text-sky-600 font-semibold hover:text-sky-700 hover:underline transition text-sm sm:text-base"
             >
-              تسجيل الدخول
-              <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 group-hover:-translate-x-1 transition-transform" />
+              صاحب مطعم أو مندوب؟ سجل دخول بالإيميل →
             </Link>
 
             <p className="text-sky-600/80 text-base sm:text-lg">
               ماعندك حساب؟{" "}
               <Link
-                to="/register"
-                className="text-sky-500 font-bold hover:text-sky-600 hover:underline transition"
+                to="/customer-login"
+                className="text-green-600 font-bold hover:text-green-700 hover:underline transition"
               >
-                أنشئ حساب الآن ✨
+                سجل برقم جوالك ✨
               </Link>
             </p>
           </div>

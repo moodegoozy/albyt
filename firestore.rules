@@ -98,6 +98,21 @@ service cloud.firestore {
       allow read: if true;
       allow create, update, delete: if isOwner() || isDeveloper();
     }
+
+    /* ===== tasks (مهام المشرفين) ===== */
+    match /tasks/{taskId} {
+      // القراءة: المطور أو المشرف المسندة إليه المهمة
+      allow read: if isDeveloper() || (isAdmin() && resource.data.assignedTo == request.auth.uid);
+      
+      // الإنشاء: المطور فقط
+      allow create: if isDeveloper();
+      
+      // التحديث: المطور أو المشرف المسندة إليه المهمة (لتحديث الحالة)
+      allow update: if isDeveloper() || (isAdmin() && resource.data.assignedTo == request.auth.uid);
+      
+      // الحذف: المطور فقط
+      allow delete: if isDeveloper();
+    }
   }
 }
 

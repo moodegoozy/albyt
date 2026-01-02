@@ -3,7 +3,7 @@ import { useAuth } from '@/auth'
 import { RoleGate } from '@/routes/RoleGate'
 import { 
   Trash2, Users, Settings, RefreshCw, Database, Shield, Server, 
-  Edit3, Save, X, ChevronDown, ChevronUp, Building2, Wallet, Package, Truck, UserPlus
+  Edit3, Save, X, ChevronDown, ChevronUp, Building2, Wallet, Package, Truck, UserPlus, Plus
 } from 'lucide-react'
 import { useToast } from '@/components/ui/Toast'
 import { useDialog } from '@/components/ui/ConfirmDialog'
@@ -11,7 +11,7 @@ import { db, app, auth } from '@/firebase'
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth'
 import { 
   collection, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, 
-  serverTimestamp 
+  serverTimestamp, addDoc 
 } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL, getStorage } from 'firebase/storage'
 
@@ -100,8 +100,26 @@ type Admin = {
   restaurants: Restaurant[]
 }
 
+// نوع المهمة
+type Task = {
+  id: string
+  title: string
+  description: string
+  assignedTo: string // UID المشرف
+  assignedToName?: string
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
+  priority: 'low' | 'medium' | 'high'
+  dueDate?: any
+  createdBy: string
+  createdAt?: any
+  updatedAt?: any
+  completedAt?: any
+  notes?: string
+}
+
 // تبويبات اللوحة
-type Tab = 'overview' | 'restaurants' | 'orders' | 'users' | 'couriers' | 'admins' | 'settings'
+type Tab = 'overview' | 'restaurants' | 'orders' | 'users' | 'couriers' | 'admins' | 'settings' | 'finance' | 'tools' | 'tasks'
+
 
 export const Developer: React.FC = () => {
   const { user } = useAuth()
@@ -146,6 +164,35 @@ export const Developer: React.FC = () => {
   const [newAdminPassword, setNewAdminPassword] = useState('')
   const [newAdminPhone, setNewAdminPhone] = useState('')
   const [creatingAdmin, setCreatingAdmin] = useState(false)
+
+  // إضافة مندوب جديد
+  const [showAddCourier, setShowAddCourier] = useState(false)
+  const [newCourierEmail, setNewCourierEmail] = useState('')
+  const [newCourierName, setNewCourierName] = useState('')
+  const [newCourierPassword, setNewCourierPassword] = useState('')
+  const [newCourierPhone, setNewCourierPhone] = useState('')
+  const [creatingCourier, setCreatingCourier] = useState(false)
+
+  // إضافة مطعم جديد
+  const [showAddRestaurant, setShowAddRestaurant] = useState(false)
+  const [newRestaurantName, setNewRestaurantName] = useState('')
+  const [newRestaurantCity, setNewRestaurantCity] = useState('')
+  const [newRestaurantPhone, setNewRestaurantPhone] = useState('')
+  const [newRestaurantEmail, setNewRestaurantEmail] = useState('')
+  const [newRestaurantOwnerEmail, setNewRestaurantOwnerEmail] = useState('')
+  const [newRestaurantOwnerPassword, setNewRestaurantOwnerPassword] = useState('')
+  const [creatingRestaurant, setCreatingRestaurant] = useState(false)
+
+  // المهام
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [showAddTask, setShowAddTask] = useState(false)
+  const [newTaskTitle, setNewTaskTitle] = useState('')
+  const [newTaskDescription, setNewTaskDescription] = useState('')
+  const [newTaskAssignedTo, setNewTaskAssignedTo] = useState('')
+  const [newTaskPriority, setNewTaskPriority] = useState<'low' | 'medium' | 'high'>('medium')
+  const [newTaskDueDate, setNewTaskDueDate] = useState('')
+  const [creatingTask, setCreatingTask] = useState(false)
+  const [taskFilter, setTaskFilter] = useState<string>('all')
   
   // حفظ بيانات المطور الحالي لإعادة تسجيل الدخول
   const currentDeveloperEmail = user?.email || ''
@@ -217,6 +264,163 @@ export const Developer: React.FC = () => {
     }
   }
 
+  // ===== إنشاء مندوب جديد =====
+  const handleCreateNewCourier = async () => {
+    if (!newCourierEmail.trim() || !newCourierPassword.trim()) {
+      toast.warning('أدخل البريد الإلكتروني وكلمة المرور')
+      return
+    }
+    if (newCourierPassword.length < 6) {
+      toast.warning('كلمة المرور يجب أن تكون 6 أحرف على الأقل')
+      return
+    }
+
+    const confirmed = await dialog.confirm(
+      `سيتم إنشاء حساب مندوب جديد:\n\n📧 ${newCourierEmail}\n👤 ${newCourierName || 'بدون اسم'}\n📱 ${newCourierPhone || 'بدون رقم'}`,
+      { title: 'إنشاء مندوب جديد' }
+    )
+    if (!confirmed) return
+
+    setCreatingCourier(true)
+    try {
+      const userCred = await createUserWithEmailAndPassword(auth, newCourierEmail.trim(), newCourierPassword)
+      const newUid = userCred.user.uid
+
+      await setDoc(doc(db, 'users', newUid), {
+        email: newCourierEmail.trim(),
+        name: newCourierName.trim() || 'مندوب جديد',
+        phone: newCourierPhone.trim() || '',
+        role: 'courier',
+        createdAt: serverTimestamp(),
+      })
+
+      toast.success('تم إنشاء حساب المندوب بنجاح ✅')
+      toast.info('⚠️ تم تسجيل خروجك، يرجى تسجيل الدخول مرة أخرى')
+      
+      setNewCourierEmail('')
+      setNewCourierName('')
+      setNewCourierPassword('')
+      setNewCourierPhone('')
+      setShowAddCourier(false)
+      
+    } catch (err: any) {
+      console.error('خطأ في إنشاء المندوب:', err)
+      if (err.code === 'auth/email-already-in-use') {
+        toast.error('البريد الإلكتروني مستخدم مسبقاً')
+      } else {
+        toast.error('فشل إنشاء المندوب: ' + (err.message || 'خطأ غير معروف'))
+      }
+    } finally {
+      setCreatingCourier(false)
+    }
+  }
+
+  // ===== إنشاء مطعم جديد =====
+  const handleCreateNewRestaurant = async () => {
+    if (!newRestaurantName.trim()) {
+      toast.warning('أدخل اسم المطعم')
+      return
+    }
+    if (!newRestaurantOwnerEmail.trim() || !newRestaurantOwnerPassword.trim()) {
+      toast.warning('أدخل بيانات صاحب المطعم')
+      return
+    }
+
+    const confirmed = await dialog.confirm(
+      `سيتم إنشاء مطعم جديد:\n\n🏪 ${newRestaurantName}\n📍 ${newRestaurantCity || 'بدون مدينة'}\n👤 صاحب المطعم: ${newRestaurantOwnerEmail}`,
+      { title: 'إنشاء مطعم جديد' }
+    )
+    if (!confirmed) return
+
+    setCreatingRestaurant(true)
+    try {
+      // إنشاء حساب صاحب المطعم
+      const userCred = await createUserWithEmailAndPassword(auth, newRestaurantOwnerEmail.trim(), newRestaurantOwnerPassword)
+      const newOwnerId = userCred.user.uid
+
+      // إنشاء مستند صاحب المطعم
+      await setDoc(doc(db, 'users', newOwnerId), {
+        email: newRestaurantOwnerEmail.trim(),
+        name: newRestaurantName.trim() + ' - مالك',
+        role: 'owner',
+        createdAt: serverTimestamp(),
+      })
+
+      // إنشاء مستند المطعم
+      await setDoc(doc(db, 'restaurants', newOwnerId), {
+        name: newRestaurantName.trim(),
+        ownerId: newOwnerId,
+        email: newRestaurantEmail.trim() || newRestaurantOwnerEmail.trim(),
+        phone: newRestaurantPhone.trim() || '',
+        city: newRestaurantCity.trim() || '',
+        referredBy: user?.uid, // المطور هو من أضاف المطعم
+        referrerType: 'developer',
+        createdAt: serverTimestamp(),
+      })
+
+      toast.success('تم إنشاء المطعم وحساب المالك بنجاح ✅')
+      toast.info('⚠️ تم تسجيل خروجك، يرجى تسجيل الدخول مرة أخرى')
+      
+      setNewRestaurantName('')
+      setNewRestaurantCity('')
+      setNewRestaurantPhone('')
+      setNewRestaurantEmail('')
+      setNewRestaurantOwnerEmail('')
+      setNewRestaurantOwnerPassword('')
+      setShowAddRestaurant(false)
+      
+    } catch (err: any) {
+      console.error('خطأ في إنشاء المطعم:', err)
+      if (err.code === 'auth/email-already-in-use') {
+        toast.error('البريد الإلكتروني مستخدم مسبقاً')
+      } else {
+        toast.error('فشل إنشاء المطعم: ' + (err.message || 'خطأ غير معروف'))
+      }
+    } finally {
+      setCreatingRestaurant(false)
+    }
+  }
+
+  // ===== حساب الإحصائيات المالية =====
+  const getFinanceStats = () => {
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+    const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
+
+    const todayOrders = orders.filter(o => {
+      const orderDate = o.createdAt?.toDate?.() || new Date(0)
+      return orderDate >= today && o.status !== 'cancelled'
+    })
+
+    const weekOrders = orders.filter(o => {
+      const orderDate = o.createdAt?.toDate?.() || new Date(0)
+      return orderDate >= weekAgo && o.status !== 'cancelled'
+    })
+
+    const monthOrders = orders.filter(o => {
+      const orderDate = o.createdAt?.toDate?.() || new Date(0)
+      return orderDate >= monthAgo && o.status !== 'cancelled'
+    })
+
+    const deliveredOrders = orders.filter(o => o.status === 'delivered')
+
+    return {
+      todayRevenue: todayOrders.reduce((sum, o) => sum + (o.total || 0), 0),
+      todayOrders: todayOrders.length,
+      todayPlatformFee: todayOrders.reduce((sum, o) => sum + (o.platformFee || 0), 0),
+      weekRevenue: weekOrders.reduce((sum, o) => sum + (o.total || 0), 0),
+      weekOrders: weekOrders.length,
+      weekPlatformFee: weekOrders.reduce((sum, o) => sum + (o.platformFee || 0), 0),
+      monthRevenue: monthOrders.reduce((sum, o) => sum + (o.total || 0), 0),
+      monthOrders: monthOrders.length,
+      monthPlatformFee: monthOrders.reduce((sum, o) => sum + (o.platformFee || 0), 0),
+      totalRevenue: deliveredOrders.reduce((sum, o) => sum + (o.total || 0), 0),
+      totalPlatformFee: deliveredOrders.reduce((sum, o) => sum + (o.platformFee || 0), 0),
+      totalAdminCommission: deliveredOrders.reduce((sum, o) => sum + (o.adminCommission || 0), 0),
+    }
+  }
+
   // ===== تحميل البيانات =====
   const loadData = async () => {
     try {
@@ -229,6 +433,14 @@ export const Developer: React.FC = () => {
         getDocs(collection(db, 'wallets')),
       ])
 
+      // جلب المهام بشكل منفصل (قد لا تكون موجودة)
+      let tasksSnap: any = { docs: [] }
+      try {
+        tasksSnap = await getDocs(collection(db, 'tasks'))
+      } catch (err) {
+        console.log('لا توجد مهام بعد')
+      }
+
       // المستخدمين
       const usersData = usersSnap.docs.map(d => ({ uid: d.id, ...d.data() } as User))
       setUsers(usersData)
@@ -240,6 +452,10 @@ export const Developer: React.FC = () => {
       // الطلبات
       const ordersData = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() } as Order))
       setOrders(ordersData)
+
+      // المهام
+      const tasksData: Task[] = tasksSnap.docs.map((d: any) => ({ id: d.id, ...d.data() } as Task))
+      setTasks(tasksData.sort((a: Task, b: Task) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)))
       
       // المحافظ
       const walletsData: Record<string, any> = {}
@@ -506,12 +722,15 @@ export const Developer: React.FC = () => {
         <div className="flex flex-wrap gap-2 border-b pb-4">
           {[
             { id: 'overview', label: '📊 نظرة عامة' },
+            { id: 'finance', label: '💰 المالية' },
             { id: 'restaurants', label: '🏪 المطاعم' },
             { id: 'orders', label: '📦 الطلبات' },
             { id: 'users', label: '👤 المستخدمين' },
             { id: 'couriers', label: '🚗 المناديب' },
             { id: 'admins', label: '👑 المشرفين' },
+            { id: 'tasks', label: '📋 المهام' },
             { id: 'settings', label: '⚙️ الإعدادات' },
+            { id: 'tools', label: '🛠️ الأدوات' },
           ].map(tab => (
             <button
               key={tab.id}
@@ -639,12 +858,230 @@ export const Developer: React.FC = () => {
           </div>
         )}
 
+        {/* ===== المالية ===== */}
+        {activeTab === 'finance' && (
+          <div className="space-y-6">
+            {(() => {
+              const financeStats = getFinanceStats()
+              return (
+                <>
+                  {/* ملخص مالي */}
+                  <div className="bg-gradient-to-r from-green-600 to-emerald-700 rounded-2xl shadow-lg p-6 text-white">
+                    <h2 className="text-2xl font-bold mb-4">💰 الملخص المالي</h2>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="bg-white/20 rounded-xl p-4 text-center">
+                        <p className="text-3xl font-bold">{financeStats.totalRevenue.toFixed(0)}</p>
+                        <p className="text-sm opacity-90">إجمالي المبيعات (ر.س)</p>
+                      </div>
+                      <div className="bg-white/20 rounded-xl p-4 text-center">
+                        <p className="text-3xl font-bold">{financeStats.totalPlatformFee.toFixed(2)}</p>
+                        <p className="text-sm opacity-90">رسوم التطبيق (ر.س)</p>
+                      </div>
+                      <div className="bg-white/20 rounded-xl p-4 text-center">
+                        <p className="text-3xl font-bold">{financeStats.totalAdminCommission.toFixed(2)}</p>
+                        <p className="text-sm opacity-90">عمولات المشرفين (ر.س)</p>
+                      </div>
+                      <div className="bg-white/20 rounded-xl p-4 text-center">
+                        <p className="text-3xl font-bold">{(financeStats.totalPlatformFee + financeStats.totalAdminCommission).toFixed(2)}</p>
+                        <p className="text-sm opacity-90">إجمالي الأرباح (ر.س)</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* إحصائيات زمنية */}
+                  <div className="grid md:grid-cols-3 gap-6">
+                    {/* اليوم */}
+                    <div className="bg-white rounded-2xl shadow-lg p-6">
+                      <h3 className="text-lg font-bold text-blue-600 mb-4">📅 اليوم</h3>
+                      <div className="space-y-3">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">الطلبات:</span>
+                          <span className="font-bold">{financeStats.todayOrders}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">المبيعات:</span>
+                          <span className="font-bold">{financeStats.todayRevenue.toFixed(2)} ر.س</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">رسوم التطبيق:</span>
+                          <span className="font-bold text-green-600">{financeStats.todayPlatformFee.toFixed(2)} ر.س</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* الأسبوع */}
+                    <div className="bg-white rounded-2xl shadow-lg p-6">
+                      <h3 className="text-lg font-bold text-purple-600 mb-4">📅 آخر 7 أيام</h3>
+                      <div className="space-y-3">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">الطلبات:</span>
+                          <span className="font-bold">{financeStats.weekOrders}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">المبيعات:</span>
+                          <span className="font-bold">{financeStats.weekRevenue.toFixed(2)} ر.س</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">رسوم التطبيق:</span>
+                          <span className="font-bold text-green-600">{financeStats.weekPlatformFee.toFixed(2)} ر.س</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* الشهر */}
+                    <div className="bg-white rounded-2xl shadow-lg p-6">
+                      <h3 className="text-lg font-bold text-orange-600 mb-4">📅 آخر 30 يوم</h3>
+                      <div className="space-y-3">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">الطلبات:</span>
+                          <span className="font-bold">{financeStats.monthOrders}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">المبيعات:</span>
+                          <span className="font-bold">{financeStats.monthRevenue.toFixed(2)} ر.س</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">رسوم التطبيق:</span>
+                          <span className="font-bold text-green-600">{financeStats.monthPlatformFee.toFixed(2)} ر.س</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* أعلى المطاعم أداءً */}
+                  <div className="bg-white rounded-2xl shadow-lg p-6">
+                    <h3 className="text-lg font-bold mb-4">🏆 أعلى المطاعم أداءً</h3>
+                    <div className="space-y-3">
+                      {restaurants
+                        .map(r => ({
+                          ...r,
+                          ordersCount: orders.filter(o => o.restaurantId === r.id && o.status === 'delivered').length,
+                          revenue: orders.filter(o => o.restaurantId === r.id && o.status === 'delivered').reduce((sum, o) => sum + (o.total || 0), 0),
+                        }))
+                        .sort((a, b) => b.revenue - a.revenue)
+                        .slice(0, 5)
+                        .map((r, i) => (
+                          <div key={r.id} className="flex items-center justify-between bg-gray-50 rounded-xl p-3">
+                            <div className="flex items-center gap-3">
+                              <span className="text-2xl">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</span>
+                              <div>
+                                <p className="font-bold">{r.name}</p>
+                                <p className="text-sm text-gray-500">{r.ordersCount} طلب</p>
+                              </div>
+                            </div>
+                            <p className="font-bold text-green-600">{r.revenue.toFixed(2)} ر.س</p>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </>
+              )
+            })()}
+          </div>
+        )}
+
         {/* ===== المطاعم ===== */}
         {activeTab === 'restaurants' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-4">
               <h2 className="text-xl font-bold">🏪 جميع المطاعم ({restaurants.length})</h2>
+              <button
+                onClick={() => setShowAddRestaurant(!showAddRestaurant)}
+                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl font-semibold"
+              >
+                {showAddRestaurant ? '❌ إلغاء' : '➕ إضافة مطعم'}
+              </button>
             </div>
+
+            {/* نموذج إضافة مطعم */}
+            {showAddRestaurant && (
+              <div className="bg-green-50 rounded-2xl p-6 border-2 border-green-200">
+                <h3 className="text-lg font-bold text-green-800 mb-4">🏪 إضافة مطعم جديد</h3>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm text-gray-600 block mb-1">اسم المطعم *</label>
+                    <input
+                      type="text"
+                      placeholder="مثال: مطعم الشام"
+                      value={newRestaurantName}
+                      onChange={e => setNewRestaurantName(e.target.value)}
+                      className="w-full border rounded-xl p-3"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600 block mb-1">المدينة</label>
+                    <input
+                      type="text"
+                      placeholder="مثال: الرياض"
+                      value={newRestaurantCity}
+                      onChange={e => setNewRestaurantCity(e.target.value)}
+                      className="w-full border rounded-xl p-3"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600 block mb-1">هاتف المطعم</label>
+                    <input
+                      type="tel"
+                      placeholder="05xxxxxxxx"
+                      value={newRestaurantPhone}
+                      onChange={e => setNewRestaurantPhone(e.target.value)}
+                      className="w-full border rounded-xl p-3"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600 block mb-1">إيميل المطعم</label>
+                    <input
+                      type="email"
+                      placeholder="restaurant@example.com"
+                      value={newRestaurantEmail}
+                      onChange={e => setNewRestaurantEmail(e.target.value)}
+                      className="w-full border rounded-xl p-3"
+                    />
+                  </div>
+                </div>
+                
+                <div className="border-t mt-4 pt-4">
+                  <h4 className="font-bold text-green-800 mb-3">👤 بيانات صاحب المطعم (لتسجيل الدخول)</h4>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm text-gray-600 block mb-1">إيميل صاحب المطعم *</label>
+                      <input
+                        type="email"
+                        placeholder="owner@example.com"
+                        value={newRestaurantOwnerEmail}
+                        onChange={e => setNewRestaurantOwnerEmail(e.target.value)}
+                        className="w-full border rounded-xl p-3"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-gray-600 block mb-1">كلمة المرور *</label>
+                      <input
+                        type="password"
+                        placeholder="6 أحرف على الأقل"
+                        value={newRestaurantOwnerPassword}
+                        onChange={e => setNewRestaurantOwnerPassword(e.target.value)}
+                        className="w-full border rounded-xl p-3"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleCreateNewRestaurant}
+                  disabled={creatingRestaurant || !newRestaurantName.trim() || !newRestaurantOwnerEmail.trim() || !newRestaurantOwnerPassword.trim()}
+                  className="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {creatingRestaurant ? (
+                    <>
+                      <RefreshCw className="w-5 h-5 animate-spin" />
+                      جاري الإنشاء...
+                    </>
+                  ) : (
+                    '🏪 إنشاء المطعم'
+                  )}
+                </button>
+              </div>
+            )}
             
             <div className="space-y-4">
               {restaurants.map(restaurant => (
@@ -697,6 +1134,26 @@ export const Developer: React.FC = () => {
                             onChange={e => setRestaurantForm({ ...restaurantForm, location: e.target.value })}
                             className="w-full border rounded-xl p-2 mt-1"
                           />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="text-sm text-gray-600">ربط بمشرف (للعمولة)</label>
+                          <select
+                            value={restaurantForm.referredBy || ''}
+                            onChange={e => setRestaurantForm({ ...restaurantForm, referredBy: e.target.value })}
+                            className="w-full border rounded-xl p-2 mt-1"
+                          >
+                            <option value="">-- بدون مشرف (المطور فقط) --</option>
+                            {users
+                              .filter(u => u.role === 'admin')
+                              .map(admin => (
+                                <option key={admin.uid} value={admin.uid}>
+                                  👑 {admin.name || admin.email}
+                                </option>
+                              ))}
+                          </select>
+                          <p className="text-xs text-gray-500 mt-1">
+                            المشرف المرتبط يحصل على عمولة من طلبات هذا المطعم
+                          </p>
                         </div>
                       </div>
                       
@@ -759,22 +1216,54 @@ export const Developer: React.FC = () => {
                       </div>
                       
                       {/* الأزرار */}
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            setEditingRestaurant(restaurant.id)
-                            setRestaurantForm(restaurant)
+                      <div className="flex flex-col gap-2">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              setEditingRestaurant(restaurant.id)
+                              setRestaurantForm(restaurant)
+                            }}
+                            className="p-2 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded-xl"
+                            title="تحرير"
+                          >
+                            <Edit3 className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteRestaurant(restaurant.id)}
+                            className="p-2 bg-red-100 hover:bg-red-200 text-red-600 rounded-xl"
+                            title="حذف"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        </div>
+                        {/* ربط سريع بمشرف */}
+                        <select
+                          value={restaurant.referredBy || ''}
+                          onChange={async (e) => {
+                            const newAdminId = e.target.value
+                            try {
+                              await updateDoc(doc(db, 'restaurants', restaurant.id), {
+                                referredBy: newAdminId || null,
+                                updatedAt: serverTimestamp()
+                              })
+                              toast.success(newAdminId ? 'تم ربط المطعم بالمشرف' : 'تم إلغاء ربط المشرف')
+                              loadData()
+                            } catch (err) {
+                              toast.error('فشل في تحديث الربط')
+                            }
                           }}
-                          className="p-2 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded-xl"
+                          className="text-xs border rounded-lg p-1"
+                          title="ربط بمشرف"
                         >
-                          <Edit3 className="w-5 h-5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteRestaurant(restaurant.id)}
-                          className="p-2 bg-red-100 hover:bg-red-200 text-red-600 rounded-xl"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
+                          <option value="">👤 بدون مشرف</option>
+                          {users
+                            .filter(u => u.role === 'admin')
+                            .map(admin => (
+                              <option key={admin.uid} value={admin.uid}>
+                                👑 {admin.name || admin.email}
+                              </option>
+                            ))}
+                        </select>
                       </div>
                     </div>
                   )}
@@ -972,7 +1461,78 @@ export const Developer: React.FC = () => {
         {/* ===== المناديب ===== */}
         {activeTab === 'couriers' && (
           <div className="space-y-4">
-            <h2 className="text-xl font-bold">🚗 المناديب ({stats.couriers})</h2>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <h2 className="text-xl font-bold">🚗 المناديب ({stats.couriers})</h2>
+              <button
+                onClick={() => setShowAddCourier(!showAddCourier)}
+                className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-xl font-semibold"
+              >
+                {showAddCourier ? '❌ إلغاء' : '➕ إضافة مندوب'}
+              </button>
+            </div>
+
+            {/* نموذج إضافة مندوب */}
+            {showAddCourier && (
+              <div className="bg-cyan-50 rounded-2xl p-6 border-2 border-cyan-200">
+                <h3 className="text-lg font-bold text-cyan-800 mb-4">🚗 إضافة مندوب جديد</h3>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm text-gray-600 block mb-1">البريد الإلكتروني *</label>
+                    <input
+                      type="email"
+                      placeholder="courier@example.com"
+                      value={newCourierEmail}
+                      onChange={e => setNewCourierEmail(e.target.value)}
+                      className="w-full border rounded-xl p-3"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600 block mb-1">كلمة المرور *</label>
+                    <input
+                      type="password"
+                      placeholder="6 أحرف على الأقل"
+                      value={newCourierPassword}
+                      onChange={e => setNewCourierPassword(e.target.value)}
+                      className="w-full border rounded-xl p-3"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600 block mb-1">الاسم</label>
+                    <input
+                      type="text"
+                      placeholder="اسم المندوب"
+                      value={newCourierName}
+                      onChange={e => setNewCourierName(e.target.value)}
+                      className="w-full border rounded-xl p-3"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600 block mb-1">رقم الهاتف</label>
+                    <input
+                      type="tel"
+                      placeholder="05xxxxxxxx"
+                      value={newCourierPhone}
+                      onChange={e => setNewCourierPhone(e.target.value)}
+                      className="w-full border rounded-xl p-3"
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={handleCreateNewCourier}
+                  disabled={creatingCourier || !newCourierEmail.trim() || !newCourierPassword.trim()}
+                  className="mt-4 w-full bg-cyan-600 hover:bg-cyan-700 text-white py-3 rounded-xl font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {creatingCourier ? (
+                    <>
+                      <RefreshCw className="w-5 h-5 animate-spin" />
+                      جاري الإنشاء...
+                    </>
+                  ) : (
+                    '🚗 إنشاء حساب المندوب'
+                  )}
+                </button>
+              </div>
+            )}
             
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {users.filter(u => u.role === 'courier').map(courier => (
@@ -1410,6 +1970,585 @@ export const Developer: React.FC = () => {
                   <ul className="mr-6 list-disc text-sm">
                     <li>التطبيق يحصل على كل شيء: 5 × 1.75 = <strong>{(5 * 1.75).toFixed(2)} ر.س</strong></li>
                   </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ===== المهام ===== */}
+        {activeTab === 'tasks' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold">📋 إدارة المهام اليومية</h2>
+              <button
+                onClick={() => setShowAddTask(true)}
+                className="flex items-center gap-2 bg-primary hover:bg-sky-600 text-white px-4 py-2 rounded-xl font-semibold transition"
+              >
+                <Plus className="w-5 h-5" />
+                مهمة جديدة
+              </button>
+            </div>
+
+            {/* فلترة المهام */}
+            <div className="flex flex-wrap gap-2">
+              {(['all', 'pending', 'in_progress', 'completed', 'cancelled'] as const).map(filter => (
+                <button
+                  key={filter}
+                  onClick={() => setTaskFilter(filter)}
+                  className={`px-4 py-2 rounded-xl font-semibold transition ${
+                    taskFilter === filter
+                      ? 'bg-primary text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {filter === 'all' && '📋 الكل'}
+                  {filter === 'pending' && '⏳ قيد الانتظار'}
+                  {filter === 'in_progress' && '🔄 جاري التنفيذ'}
+                  {filter === 'completed' && '✅ مكتملة'}
+                  {filter === 'cancelled' && '❌ ملغاة'}
+                </button>
+              ))}
+            </div>
+
+            {/* إحصائيات المهام */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-yellow-50 rounded-xl p-4 text-center">
+                <p className="text-2xl font-bold text-yellow-600">
+                  {tasks.filter(t => t.status === 'pending').length}
+                </p>
+                <p className="text-sm text-yellow-700">قيد الانتظار</p>
+              </div>
+              <div className="bg-blue-50 rounded-xl p-4 text-center">
+                <p className="text-2xl font-bold text-blue-600">
+                  {tasks.filter(t => t.status === 'in_progress').length}
+                </p>
+                <p className="text-sm text-blue-700">جاري التنفيذ</p>
+              </div>
+              <div className="bg-green-50 rounded-xl p-4 text-center">
+                <p className="text-2xl font-bold text-green-600">
+                  {tasks.filter(t => t.status === 'completed').length}
+                </p>
+                <p className="text-sm text-green-700">مكتملة</p>
+              </div>
+              <div className="bg-red-50 rounded-xl p-4 text-center">
+                <p className="text-2xl font-bold text-red-600">
+                  {tasks.filter(t => t.status === 'cancelled').length}
+                </p>
+                <p className="text-sm text-red-700">ملغاة</p>
+              </div>
+            </div>
+
+            {/* قائمة المهام */}
+            <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+              {tasks
+                .filter(t => taskFilter === 'all' || t.status === taskFilter)
+                .length === 0 ? (
+                <div className="p-8 text-center text-gray-500">
+                  <p className="text-4xl mb-2">📋</p>
+                  <p>لا توجد مهام {taskFilter !== 'all' && 'في هذه الفئة'}</p>
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {tasks
+                    .filter(t => taskFilter === 'all' || t.status === taskFilter)
+                    .map(task => {
+                      const admin = users.find(u => u.uid === task.assignedTo)
+                      return (
+                        <div key={task.id} className="p-4 hover:bg-gray-50">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                                  task.priority === 'high' ? 'bg-red-100 text-red-700' :
+                                  task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                                  'bg-gray-100 text-gray-700'
+                                }`}>
+                                  {task.priority === 'high' ? '🔴 عالية' : task.priority === 'medium' ? '🟡 متوسطة' : '⚪ منخفضة'}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                                  task.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                                  task.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                                  task.status === 'completed' ? 'bg-green-100 text-green-700' :
+                                  'bg-red-100 text-red-700'
+                                }`}>
+                                  {task.status === 'pending' && '⏳ قيد الانتظار'}
+                                  {task.status === 'in_progress' && '🔄 جاري التنفيذ'}
+                                  {task.status === 'completed' && '✅ مكتملة'}
+                                  {task.status === 'cancelled' && '❌ ملغاة'}
+                                </span>
+                              </div>
+                              <h3 className="font-bold text-gray-800">{task.title}</h3>
+                              {task.description && (
+                                <p className="text-sm text-gray-600 mt-1">{task.description}</p>
+                              )}
+                              <div className="flex flex-wrap gap-3 mt-2 text-xs text-gray-500">
+                                <span>👤 {admin?.name || task.assignedToName || 'غير محدد'}</span>
+                                {task.dueDate && (
+                                  <span>📅 {new Date(task.dueDate).toLocaleDateString('ar-SA')}</span>
+                                )}
+                                <span>🕐 {task.createdAt?.toDate?.()?.toLocaleDateString('ar-SA') || 'غير محدد'}</span>
+                              </div>
+                              {task.notes && (
+                                <p className="text-sm text-gray-500 mt-2 bg-gray-50 p-2 rounded">💬 {task.notes}</p>
+                              )}
+                            </div>
+                            <div className="flex flex-col gap-2">
+                              {task.status === 'pending' && (
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      await updateDoc(doc(db, 'tasks', task.id), {
+                                        status: 'in_progress',
+                                        updatedAt: serverTimestamp()
+                                      })
+                                      toast.success('تم بدء المهمة')
+                                      loadData()
+                                    } catch (err) {
+                                      toast.error('فشل في تحديث المهمة')
+                                    }
+                                  }}
+                                  className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition"
+                                  title="بدء المهمة"
+                                >
+                                  ▶️
+                                </button>
+                              )}
+                              {(task.status === 'pending' || task.status === 'in_progress') && (
+                                <>
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await updateDoc(doc(db, 'tasks', task.id), {
+                                          status: 'completed',
+                                          completedAt: serverTimestamp(),
+                                          updatedAt: serverTimestamp()
+                                        })
+                                        toast.success('تم إكمال المهمة')
+                                        loadData()
+                                      } catch (err) {
+                                        toast.error('فشل في تحديث المهمة')
+                                      }
+                                    }}
+                                    className="text-green-600 hover:bg-green-50 p-2 rounded-lg transition"
+                                    title="إكمال المهمة"
+                                  >
+                                    ✅
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      const confirmed = await dialog.confirm('هل تريد إلغاء هذه المهمة؟', { dangerous: true })
+                                      if (!confirmed) return
+                                      try {
+                                        await updateDoc(doc(db, 'tasks', task.id), {
+                                          status: 'cancelled',
+                                          updatedAt: serverTimestamp()
+                                        })
+                                        toast.success('تم إلغاء المهمة')
+                                        loadData()
+                                      } catch (err) {
+                                        toast.error('فشل في إلغاء المهمة')
+                                      }
+                                    }}
+                                    className="text-red-600 hover:bg-red-50 p-2 rounded-lg transition"
+                                    title="إلغاء المهمة"
+                                  >
+                                    ❌
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                onClick={async () => {
+                                  const confirmed = await dialog.confirm('هل تريد حذف هذه المهمة نهائياً؟', { dangerous: true })
+                                  if (!confirmed) return
+                                  try {
+                                    await deleteDoc(doc(db, 'tasks', task.id))
+                                    toast.success('تم حذف المهمة')
+                                    loadData()
+                                  } catch (err) {
+                                    toast.error('فشل في حذف المهمة')
+                                  }
+                                }}
+                                className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition"
+                                title="حذف المهمة"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                </div>
+              )}
+            </div>
+
+            {/* نموذج إضافة مهمة */}
+            {showAddTask && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-2xl w-full max-w-lg p-6">
+                  <h3 className="text-xl font-bold mb-4">📋 إضافة مهمة جديدة</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-semibold mb-1">عنوان المهمة *</label>
+                      <input
+                        type="text"
+                        value={newTaskTitle}
+                        onChange={e => setNewTaskTitle(e.target.value)}
+                        className="w-full border rounded-xl px-4 py-2"
+                        placeholder="مثال: متابعة طلبات المطعم الجديد"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold mb-1">الوصف</label>
+                      <textarea
+                        value={newTaskDescription}
+                        onChange={e => setNewTaskDescription(e.target.value)}
+                        className="w-full border rounded-xl px-4 py-2 h-24"
+                        placeholder="تفاصيل المهمة..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold mb-1">تعيين إلى *</label>
+                      <select
+                        value={newTaskAssignedTo}
+                        onChange={e => setNewTaskAssignedTo(e.target.value)}
+                        className="w-full border rounded-xl px-4 py-2"
+                      >
+                        <option value="">-- اختر مشرف --</option>
+                        {users
+                          .filter(u => u.role === 'admin')
+                          .map(admin => (
+                            <option key={admin.uid} value={admin.uid}>
+                              {admin.name || admin.email}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-semibold mb-1">الأولوية</label>
+                        <select
+                          value={newTaskPriority}
+                          onChange={e => setNewTaskPriority(e.target.value as 'low' | 'medium' | 'high')}
+                          className="w-full border rounded-xl px-4 py-2"
+                        >
+                          <option value="low">⚪ منخفضة</option>
+                          <option value="medium">🟡 متوسطة</option>
+                          <option value="high">🔴 عالية</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold mb-1">تاريخ الاستحقاق</label>
+                        <input
+                          type="date"
+                          value={newTaskDueDate}
+                          onChange={e => setNewTaskDueDate(e.target.value)}
+                          className="w-full border rounded-xl px-4 py-2"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-3 mt-6">
+                    <button
+                      onClick={() => {
+                        setShowAddTask(false)
+                        setNewTaskTitle('')
+                        setNewTaskDescription('')
+                        setNewTaskAssignedTo('')
+                        setNewTaskPriority('medium')
+                        setNewTaskDueDate('')
+                      }}
+                      className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-xl font-semibold transition"
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!newTaskTitle.trim() || !newTaskAssignedTo) {
+                          toast.error('يرجى ملء الحقول المطلوبة')
+                          return
+                        }
+                        setCreatingTask(true)
+                        try {
+                          const assignedAdmin = users.find(u => u.uid === newTaskAssignedTo)
+                          await addDoc(collection(db, 'tasks'), {
+                            title: newTaskTitle.trim(),
+                            description: newTaskDescription.trim(),
+                            assignedTo: newTaskAssignedTo,
+                            assignedToName: assignedAdmin?.name || assignedAdmin?.email || '',
+                            status: 'pending',
+                            priority: newTaskPriority,
+                            dueDate: newTaskDueDate || null,
+                            createdBy: user?.uid,
+                            createdAt: serverTimestamp(),
+                            updatedAt: serverTimestamp(),
+                            completedAt: null,
+                            notes: ''
+                          })
+                          toast.success('تم إنشاء المهمة بنجاح')
+                          setShowAddTask(false)
+                          setNewTaskTitle('')
+                          setNewTaskDescription('')
+                          setNewTaskAssignedTo('')
+                          setNewTaskPriority('medium')
+                          setNewTaskDueDate('')
+                          loadData()
+                        } catch (err) {
+                          console.error(err)
+                          toast.error('فشل في إنشاء المهمة')
+                        } finally {
+                          setCreatingTask(false)
+                        }
+                      }}
+                      disabled={creatingTask}
+                      className="flex-1 bg-primary hover:bg-sky-600 text-white py-2 rounded-xl font-semibold transition disabled:opacity-50"
+                    >
+                      {creatingTask ? 'جارِ الإنشاء...' : 'إنشاء المهمة'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ===== الأدوات ===== */}
+        {activeTab === 'tools' && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold">🛠️ أدوات النظام</h2>
+
+            {/* أدوات إدارة البيانات */}
+            <div className="bg-white rounded-2xl shadow-lg p-6">
+              <h3 className="text-lg font-bold mb-4">📊 إدارة البيانات</h3>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* تصدير البيانات */}
+                <button
+                  onClick={() => {
+                    const data = {
+                      exportDate: new Date().toISOString(),
+                      users: users.length,
+                      restaurants: restaurants.length,
+                      orders: orders.length,
+                      admins: admins.length,
+                      stats,
+                      settings,
+                    }
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `app-data-${new Date().toISOString().split('T')[0]}.json`
+                    a.click()
+                    toast.success('تم تصدير البيانات بنجاح')
+                  }}
+                  className="flex items-center gap-3 bg-blue-100 hover:bg-blue-200 text-blue-800 p-4 rounded-xl transition"
+                >
+                  <span className="text-2xl">📥</span>
+                  <div className="text-right">
+                    <p className="font-bold">تصدير البيانات</p>
+                    <p className="text-xs opacity-75">تحميل ملخص JSON</p>
+                  </div>
+                </button>
+
+                {/* تصدير الطلبات */}
+                <button
+                  onClick={() => {
+                    const csv = [
+                      ['رقم الطلب', 'المطعم', 'المبلغ', 'الحالة', 'التاريخ'].join(','),
+                      ...orders.map(o => [
+                        o.id.slice(-8),
+                        o.restaurantName || 'غير محدد',
+                        o.total,
+                        o.status,
+                        o.createdAt?.toDate?.()?.toLocaleDateString('ar-SA') || ''
+                      ].join(','))
+                    ].join('\n')
+                    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `orders-${new Date().toISOString().split('T')[0]}.csv`
+                    a.click()
+                    toast.success('تم تصدير الطلبات بنجاح')
+                  }}
+                  className="flex items-center gap-3 bg-green-100 hover:bg-green-200 text-green-800 p-4 rounded-xl transition"
+                >
+                  <span className="text-2xl">📋</span>
+                  <div className="text-right">
+                    <p className="font-bold">تصدير الطلبات</p>
+                    <p className="text-xs opacity-75">ملف CSV للإكسل</p>
+                  </div>
+                </button>
+
+                {/* تصدير المستخدمين */}
+                <button
+                  onClick={() => {
+                    const csv = [
+                      ['الاسم', 'الإيميل', 'الدور', 'الهاتف'].join(','),
+                      ...users.map(u => [
+                        u.name || 'بدون اسم',
+                        u.email,
+                        u.role,
+                        u.phone || ''
+                      ].join(','))
+                    ].join('\n')
+                    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `users-${new Date().toISOString().split('T')[0]}.csv`
+                    a.click()
+                    toast.success('تم تصدير المستخدمين بنجاح')
+                  }}
+                  className="flex items-center gap-3 bg-purple-100 hover:bg-purple-200 text-purple-800 p-4 rounded-xl transition"
+                >
+                  <span className="text-2xl">👥</span>
+                  <div className="text-right">
+                    <p className="font-bold">تصدير المستخدمين</p>
+                    <p className="text-xs opacity-75">ملف CSV للإكسل</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* أدوات الصيانة */}
+            <div className="bg-white rounded-2xl shadow-lg p-6">
+              <h3 className="text-lg font-bold mb-4">🔧 أدوات الصيانة</h3>
+              <div className="grid md:grid-cols-2 gap-4">
+                {/* إلغاء جميع الطلبات المعلقة */}
+                <button
+                  onClick={async () => {
+                    const pendingOrders = orders.filter(o => o.status === 'pending')
+                    if (pendingOrders.length === 0) {
+                      toast.info('لا توجد طلبات معلقة')
+                      return
+                    }
+                    const confirmed = await dialog.confirm(
+                      `سيتم إلغاء ${pendingOrders.length} طلب معلق. هل أنت متأكد؟`,
+                      { title: 'إلغاء الطلبات المعلقة', dangerous: true }
+                    )
+                    if (!confirmed) return
+                    try {
+                      await Promise.all(pendingOrders.map(o => 
+                        updateDoc(doc(db, 'orders', o.id), { status: 'cancelled', updatedAt: serverTimestamp() })
+                      ))
+                      toast.success(`تم إلغاء ${pendingOrders.length} طلب`)
+                      loadData()
+                    } catch (err) {
+                      toast.error('فشل في إلغاء الطلبات')
+                    }
+                  }}
+                  className="flex items-center gap-3 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 p-4 rounded-xl transition"
+                >
+                  <span className="text-2xl">⏳</span>
+                  <div className="text-right">
+                    <p className="font-bold">إلغاء الطلبات المعلقة</p>
+                    <p className="text-xs opacity-75">{orders.filter(o => o.status === 'pending').length} طلب معلق</p>
+                  </div>
+                </button>
+
+                {/* تنظيف الطلبات القديمة */}
+                <button
+                  onClick={async () => {
+                    const oldDate = new Date()
+                    oldDate.setMonth(oldDate.getMonth() - 3)
+                    const oldOrders = orders.filter(o => {
+                      const orderDate = o.createdAt?.toDate?.() || new Date()
+                      return orderDate < oldDate && (o.status === 'delivered' || o.status === 'cancelled')
+                    })
+                    if (oldOrders.length === 0) {
+                      toast.info('لا توجد طلبات قديمة')
+                      return
+                    }
+                    const confirmed = await dialog.confirm(
+                      `سيتم حذف ${oldOrders.length} طلب قديم (أكثر من 3 أشهر). هل أنت متأكد؟`,
+                      { title: 'حذف الطلبات القديمة', dangerous: true }
+                    )
+                    if (!confirmed) return
+                    try {
+                      await Promise.all(oldOrders.map(o => deleteDoc(doc(db, 'orders', o.id))))
+                      toast.success(`تم حذف ${oldOrders.length} طلب قديم`)
+                      loadData()
+                    } catch (err) {
+                      toast.error('فشل في حذف الطلبات')
+                    }
+                  }}
+                  className="flex items-center gap-3 bg-orange-100 hover:bg-orange-200 text-orange-800 p-4 rounded-xl transition"
+                >
+                  <span className="text-2xl">🗑️</span>
+                  <div className="text-right">
+                    <p className="font-bold">تنظيف الطلبات القديمة</p>
+                    <p className="text-xs opacity-75">حذف أقدم من 3 أشهر</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* روابط سريعة */}
+            <div className="bg-white rounded-2xl shadow-lg p-6">
+              <h3 className="text-lg font-bold mb-4">🔗 روابط سريعة</h3>
+              <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <a
+                  href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 bg-blue-50 hover:bg-blue-100 text-blue-800 p-4 rounded-xl transition"
+                >
+                  <span className="text-2xl">📊</span>
+                  <span className="font-semibold">Firestore</span>
+                </a>
+                <a
+                  href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/users`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 bg-green-50 hover:bg-green-100 text-green-800 p-4 rounded-xl transition"
+                >
+                  <span className="text-2xl">🔐</span>
+                  <span className="font-semibold">Authentication</span>
+                </a>
+                <a
+                  href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/storage`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 bg-purple-50 hover:bg-purple-100 text-purple-800 p-4 rounded-xl transition"
+                >
+                  <span className="text-2xl">📁</span>
+                  <span className="font-semibold">Storage</span>
+                </a>
+                <a
+                  href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/hosting`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 bg-orange-50 hover:bg-orange-100 text-orange-800 p-4 rounded-xl transition"
+                >
+                  <span className="text-2xl">🌐</span>
+                  <span className="font-semibold">Hosting</span>
+                </a>
+              </div>
+            </div>
+
+            {/* معلومات النظام */}
+            <div className="bg-gray-50 rounded-2xl p-6">
+              <h3 className="text-lg font-bold mb-4">ℹ️ معلومات النظام</h3>
+              <div className="grid md:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-gray-500">Project ID</p>
+                  <p className="font-mono">{firebaseConfig.projectId}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Storage Bucket</p>
+                  <p className="font-mono">{firebaseConfig.storageBucket}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">إصدار التطبيق</p>
+                  <p className="font-bold">{settings.appVersion || '1.0.0'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">وضع الصيانة</p>
+                  <p className={`font-bold ${settings.maintenanceMode ? 'text-red-600' : 'text-green-600'}`}>
+                    {settings.maintenanceMode ? '🔴 مفعّل' : '🟢 معطّل'}
+                  </p>
                 </div>
               </div>
             </div>

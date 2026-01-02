@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth";
-import { Menu, X, Home, ShoppingCart, Package, Store, Truck, Shield, Code2, ArrowRight } from "lucide-react";
+import { Menu, X, Home, ShoppingCart, Package, Store, Truck, Shield, Code2, ArrowRight, User } from "lucide-react";
 
 const NavLink: React.FC<{ to: string; label: string; icon?: React.ReactNode; onClick?: () => void }> = ({
   to,
@@ -89,6 +89,7 @@ export const Header: React.FC = () => {
             <>
               <NavLink to="/cart" label="🛒 السلة" />
               <NavLink to="/orders" label="طلباتي" />
+              <NavLink to="/profile" label="بياناتي" icon={<User className="w-4 h-4" />} />
             </>
           )}
 
@@ -192,6 +193,12 @@ export const Header: React.FC = () => {
                 to="/orders"
                 label="طلباتي"
                 icon={<Package className="w-5 h-5" />}
+                onClick={() => setOpen(false)}
+              />
+              <NavLink
+                to="/profile"
+                label="بياناتي"
+                icon={<User className="w-5 h-5" />}
                 onClick={() => setOpen(false)}
               />
             </>

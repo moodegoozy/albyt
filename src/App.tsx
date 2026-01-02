@@ -11,6 +11,7 @@ import { MenuPage } from './pages/MenuPage'
 import { CartPage } from './pages/CartPage'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
+import { CustomerLogin } from './pages/CustomerLogin'
 import PrivacyPolicy from './pages/PrivacyPolicy'
 import AccountDeleted from './pages/AccountDeleted'
 
@@ -65,6 +66,7 @@ export default function App() {
           <Route path="/menu" element={<MenuPage />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/customer-login" element={<CustomerLogin />} />
           <Route path="/register" element={<Register />} />
           <Route path="/privacy-policy" element={<PrivacyPolicy />} />
           <Route path="/account-deleted" element={<AccountDeleted />} />
