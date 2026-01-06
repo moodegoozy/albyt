@@ -28,10 +28,9 @@ export const CheckoutPage: React.FC = () => {
   const [showLocationPicker, setShowLocationPicker] = useState(false)
 
   const deliveryFee = 7
-  // حساب رسوم التطبيق (1 ريال + 0.75 ريال لكل منتج)
+  // رسوم التطبيق مضافة مسبقاً على سعر كل منتج في صفحة القائمة
   const totalItemsCount = items.reduce((sum, item) => sum + item.qty, 0)
-  const serviceFee = (PLATFORM_FEE_PER_ITEM + ADMIN_COMMISSION_PER_ITEM) * totalItemsCount
-  const total = subtotal + deliveryFee + serviceFee
+  const total = subtotal + deliveryFee
 
   // ✅ تحميل بيانات المطعم
   useEffect(() => {
@@ -303,13 +302,6 @@ export const CheckoutPage: React.FC = () => {
                 <span>رسوم التوصيل</span>
               </div>
               <span className="font-semibold">{deliveryFee.toFixed(2)} ر.س</span>
-            </div>
-            <div className="flex items-center justify-between text-gray-600">
-              <div className="flex items-center gap-2">
-                <ShoppingBag className="w-4 h-4" />
-                <span>رسوم الخدمة ({totalItemsCount} × {(PLATFORM_FEE_PER_ITEM + ADMIN_COMMISSION_PER_ITEM).toFixed(2)})</span>
-              </div>
-              <span className="font-semibold">{serviceFee.toFixed(2)} ر.س</span>
             </div>
             <div className="h-px bg-gray-200 my-2" />
             <div className="flex items-center justify-between">

@@ -60,6 +60,9 @@ export const MenuPage: React.FC = () => {
     })()
   }, [restaurantId])
 
+  // 💰 رسوم التطبيق تُضاف تلقائياً على كل منتج
+  const SERVICE_FEE_PER_ITEM = 1.75 // 1 ريال للتطبيق + 0.75 للمشرف
+
   const handleAdd = (it: MenuItem) => {
     if (!it.ownerId) {
       toast.warning('⚠️ الصنف غير مرتبط بمطعم', { title: 'تنبيه' })
@@ -72,10 +75,11 @@ export const MenuPage: React.FC = () => {
       return
     }
 
+    // السعر يشمل رسوم التطبيق
     add({ 
       id: it.id, 
       name: it.name, 
-      price: it.price, 
+      price: it.price + SERVICE_FEE_PER_ITEM, 
       ownerId: it.ownerId 
     })
     toast.success('تم إضافة المنتج للسلة ✅')
@@ -155,7 +159,7 @@ export const MenuPage: React.FC = () => {
 
             {/* السعر + زر الإضافة */}
             <div className="mt-3 flex items-center justify-between">
-              <span className="font-bold text-xl text-yellow-400">{it.price.toFixed(2)} ر.س</span>
+              <span className="font-bold text-xl text-yellow-400">{(it.price + SERVICE_FEE_PER_ITEM).toFixed(2)} ر.س</span>
               
               {/* ✅ زر الإضافة يظهر للعميل والمشرف */}
               {canOrder && (
