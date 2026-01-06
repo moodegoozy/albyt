@@ -10,10 +10,8 @@ import { useToast } from '@/components/ui/Toast'
 import { LocationPicker } from '@/components/LocationPicker'
 import { MapPin, Check, ShoppingBag, Truck, CreditCard, ChevronLeft } from 'lucide-react'
 
-// 💰 رسوم التطبيق والمشرف (لكل منتج)
-const PLATFORM_FEE_PER_ITEM = 1.0 // ريال للتطبيق على كل منتج
-const ADMIN_COMMISSION_PER_ITEM = 0.75 // 75 هللة للمشرف على كل منتج
-// المجموع = 1.75 ريال لكل منتج
+const PLATFORM_FEE_PER_ITEM = 1.0
+const ADMIN_COMMISSION_PER_ITEM = 0.75
 
 export const CheckoutPage: React.FC = () => {
   const { items, subtotal, clear } = useCart()
@@ -28,7 +26,6 @@ export const CheckoutPage: React.FC = () => {
   const [showLocationPicker, setShowLocationPicker] = useState(false)
 
   const deliveryFee = 7
-  // رسوم التطبيق مضافة مسبقاً على سعر كل منتج في صفحة القائمة
   const totalItemsCount = items.reduce((sum, item) => sum + item.qty, 0)
   const total = subtotal + deliveryFee
 

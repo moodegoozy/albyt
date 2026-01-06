@@ -60,8 +60,7 @@ export const MenuPage: React.FC = () => {
     })()
   }, [restaurantId])
 
-  // 💰 رسوم التطبيق تُضاف تلقائياً على كل منتج
-  const SERVICE_FEE_PER_ITEM = 1.75 // 1 ريال للتطبيق + 0.75 للمشرف
+  const SERVICE_FEE_PER_ITEM = 1.75
 
   const handleAdd = (it: MenuItem) => {
     if (!it.ownerId) {
@@ -75,7 +74,6 @@ export const MenuPage: React.FC = () => {
       return
     }
 
-    // السعر يشمل رسوم التطبيق
     add({ 
       id: it.id, 
       name: it.name, 
