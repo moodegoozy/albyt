@@ -149,7 +149,7 @@ export default function App() {
             path="/owner/courier-requests"
             element={
               <ProtectedRoute>
-                <RoleGate allow={['owner']}>
+                <RoleGate allow={['owner', 'developer']}>
                   <CourierRequests />
                 </RoleGate>
               </ProtectedRoute>
@@ -161,7 +161,7 @@ export default function App() {
             path="/courier"
             element={
               <ProtectedRoute>
-                <RoleGate allow={['courier']}>
+                <RoleGate allow={['courier', 'developer']}>
                   <CourierApp />
                 </RoleGate>
               </ProtectedRoute>
@@ -171,7 +171,7 @@ export default function App() {
             path="/courier/hiring"
             element={
               <ProtectedRoute>
-                <RoleGate allow={['courier']}>
+                <RoleGate allow={['courier', 'developer']}>
                   <CourierHiring />
                 </RoleGate>
               </ProtectedRoute>
