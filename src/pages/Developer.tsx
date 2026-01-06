@@ -3,7 +3,8 @@ import { useAuth } from '@/auth'
 import { RoleGate } from '@/routes/RoleGate'
 import { 
   Trash2, Users, Settings, RefreshCw, Database, Shield, Server, 
-  Edit3, Save, X, ChevronDown, ChevronUp, Building2, Wallet, Package, Truck, UserPlus, Plus
+  Edit3, Save, X, ChevronDown, ChevronUp, Building2, Wallet, Package, Truck, UserPlus, Plus,
+  FileCheck, AlertCircle, CheckCircle, Clock, ExternalLink
 } from 'lucide-react'
 import { useToast } from '@/components/ui/Toast'
 import { useDialog } from '@/components/ui/ConfirmDialog'
@@ -118,7 +119,7 @@ type Task = {
 }
 
 // تبويبات اللوحة
-type Tab = 'overview' | 'restaurants' | 'orders' | 'users' | 'couriers' | 'admins' | 'settings' | 'finance' | 'tools' | 'tasks'
+type Tab = 'overview' | 'restaurants' | 'orders' | 'users' | 'couriers' | 'admins' | 'settings' | 'finance' | 'tools' | 'tasks' | 'licenses'
 
 
 export const Developer: React.FC = () => {
@@ -724,6 +725,7 @@ export const Developer: React.FC = () => {
             { id: 'overview', label: '📊 نظرة عامة' },
             { id: 'finance', label: '💰 المالية' },
             { id: 'restaurants', label: '🏪 المطاعم' },
+            { id: 'licenses', label: '📄 التراخيص' },
             { id: 'orders', label: '📦 الطلبات' },
             { id: 'users', label: '👤 المستخدمين' },
             { id: 'couriers', label: '🚗 المناديب' },
@@ -2555,6 +2557,16 @@ export const Developer: React.FC = () => {
           </div>
         )}
 
+        {/* ===== مراجعة التراخيص ===== */}
+        {activeTab === 'licenses' && (
+          <LicensesReviewSection 
+            restaurants={restaurants} 
+            onUpdate={handleRefresh}
+            toast={toast}
+            dialog={dialog}
+          />
+        )}
+
         {/* معلومات النظام */}
         <div className="bg-gray-100 rounded-2xl p-4 text-sm">
           <div className="flex flex-wrap gap-4 text-gray-600">
@@ -2569,4 +2581,222 @@ export const Developer: React.FC = () => {
 }
 
 export default Developer
+
+// ===== مكون مراجعة التراخيص =====
+type LicenseRestaurant = {
+  id: string
+  name: string
+  ownerId: string
+  email?: string
+  phone?: string
+  city?: string
+  commercialLicenseUrl?: string
+  healthCertificateUrl?: string
+  licenseStatus?: 'pending' | 'approved' | 'rejected'
+  licenseNotes?: string
+}
+
+const LicensesReviewSection: React.FC<{
+  restaurants: any[]
+  onUpdate: () => void
+  toast: any
+  dialog: any
+}> = ({ restaurants, onUpdate, toast, dialog }) => {
+  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending')
+  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
+  const [updating, setUpdating] = useState<string | null>(null)
+
+  // المطاعم التي لديها تراخيص
+  const restaurantsWithLicenses = restaurants.filter(
+    (r: LicenseRestaurant) => r.commercialLicenseUrl || r.healthCertificateUrl
+  ) as LicenseRestaurant[]
+
+  // فلترة حسب الحالة
+  const filteredRestaurants = restaurantsWithLicenses.filter((r: LicenseRestaurant) => {
+    if (filter === 'all') return true
+    return r.licenseStatus === filter || (!r.licenseStatus && filter === 'pending')
+  })
+
+  // عدد كل حالة
+  const counts = {
+    all: restaurantsWithLicenses.length,
+    pending: restaurantsWithLicenses.filter(r => !r.licenseStatus || r.licenseStatus === 'pending').length,
+    approved: restaurantsWithLicenses.filter(r => r.licenseStatus === 'approved').length,
+    rejected: restaurantsWithLicenses.filter(r => r.licenseStatus === 'rejected').length,
+  }
+
+  // تحديث حالة الترخيص
+  const updateLicenseStatus = async (restaurantId: string, status: 'approved' | 'rejected') => {
+    const notes = reviewNotes[restaurantId] || ''
+    
+    if (status === 'rejected' && !notes.trim()) {
+      toast.warning('يرجى كتابة سبب الرفض')
+      return
+    }
+
+    const actionText = status === 'approved' ? 'الموافقة على' : 'رفض'
+    const confirmed = await dialog.confirm(
+      `هل أنت متأكد من ${actionText} تراخيص هذا المطعم؟`,
+      { title: `${actionText} التراخيص` }
+    )
+    if (!confirmed) return
+
+    setUpdating(restaurantId)
+    try {
+      await updateDoc(doc(db, 'restaurants', restaurantId), {
+        licenseStatus: status,
+        licenseNotes: status === 'rejected' ? notes : '',
+        updatedAt: serverTimestamp(),
+      })
+      toast.success(status === 'approved' ? 'تمت الموافقة على التراخيص ✓' : 'تم رفض التراخيص')
+      setReviewNotes(prev => ({ ...prev, [restaurantId]: '' }))
+      onUpdate()
+    } catch (err: any) {
+      toast.error('فشل التحديث: ' + (err.message || 'خطأ غير معروف'))
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  const statusBadge = (status?: string) => {
+    switch (status) {
+      case 'approved':
+        return <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 text-green-700 text-xs font-semibold"><CheckCircle className="w-3 h-3" /> موافق</span>
+      case 'rejected':
+        return <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-100 text-red-700 text-xs font-semibold"><AlertCircle className="w-3 h-3" /> مرفوض</span>
+      default:
+        return <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-yellow-100 text-yellow-700 text-xs font-semibold"><Clock className="w-3 h-3" /> قيد المراجعة</span>
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <h2 className="text-xl font-bold flex items-center gap-2">
+          <FileCheck className="w-6 h-6 text-sky-500" />
+          مراجعة التراخيص
+        </h2>
+        <div className="flex gap-2">
+          {(['pending', 'approved', 'rejected', 'all'] as const).map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                filter === f
+                  ? 'bg-sky-500 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {f === 'all' && `الكل (${counts.all})`}
+              {f === 'pending' && `قيد المراجعة (${counts.pending})`}
+              {f === 'approved' && `موافق (${counts.approved})`}
+              {f === 'rejected' && `مرفوض (${counts.rejected})`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {filteredRestaurants.length === 0 ? (
+        <div className="text-center py-12 text-gray-400">
+          <FileCheck className="w-16 h-16 mx-auto mb-4 opacity-50" />
+          <p>لا توجد تراخيص {filter === 'pending' ? 'قيد المراجعة' : filter === 'approved' ? 'موافق عليها' : filter === 'rejected' ? 'مرفوضة' : ''}</p>
+        </div>
+      ) : (
+        <div className="grid gap-4">
+          {filteredRestaurants.map((r: LicenseRestaurant) => (
+            <div key={r.id} className="bg-white border rounded-2xl p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div>
+                  <h3 className="font-bold text-lg">{r.name}</h3>
+                  <p className="text-sm text-gray-500">{r.city || 'بدون مدينة'} • {r.email || 'بدون بريد'}</p>
+                </div>
+                {statusBadge(r.licenseStatus)}
+              </div>
+
+              {/* عرض التراخيص */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                {r.commercialLicenseUrl && (
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">📜 الرخصة التجارية</p>
+                    <a
+                      href={r.commercialLicenseUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-sky-600 hover:text-sky-800 text-sm"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      عرض الملف
+                    </a>
+                  </div>
+                )}
+                {r.healthCertificateUrl && (
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">🏥 الشهادة الصحية</p>
+                    <a
+                      href={r.healthCertificateUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-sky-600 hover:text-sky-800 text-sm"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      عرض الملف
+                    </a>
+                  </div>
+                )}
+              </div>
+
+              {/* ملاحظات الرفض السابقة */}
+              {r.licenseStatus === 'rejected' && r.licenseNotes && (
+                <div className="bg-red-50 text-red-700 rounded-xl p-3 mb-4 text-sm">
+                  <strong>سبب الرفض:</strong> {r.licenseNotes}
+                </div>
+              )}
+
+              {/* أزرار المراجعة */}
+              {r.licenseStatus !== 'approved' && (
+                <div className="space-y-3">
+                  <textarea
+                    placeholder="ملاحظات (مطلوبة للرفض)..."
+                    value={reviewNotes[r.id] || ''}
+                    onChange={(e) => setReviewNotes(prev => ({ ...prev, [r.id]: e.target.value }))}
+                    className="w-full border rounded-xl p-3 text-sm resize-none h-20"
+                  />
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => updateLicenseStatus(r.id, 'approved')}
+                      disabled={updating === r.id}
+                      className="flex-1 flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white py-2.5 rounded-xl font-semibold transition disabled:opacity-50"
+                    >
+                      <CheckCircle className="w-5 h-5" />
+                      موافقة
+                    </button>
+                    <button
+                      onClick={() => updateLicenseStatus(r.id, 'rejected')}
+                      disabled={updating === r.id}
+                      className="flex-1 flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-xl font-semibold transition disabled:opacity-50"
+                    >
+                      <AlertCircle className="w-5 h-5" />
+                      رفض
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* زر إعادة المراجعة للموافق عليه */}
+              {r.licenseStatus === 'approved' && (
+                <button
+                  onClick={() => updateLicenseStatus(r.id, 'rejected')}
+                  disabled={updating === r.id}
+                  className="w-full flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-xl font-semibold transition"
+                >
+                  إلغاء الموافقة
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 

@@ -31,6 +31,11 @@ export interface Restaurant {
   city?: string;
   location?: string; // Address or description
   logoUrl?: string;
+  // التراخيص
+  commercialLicenseUrl?: string; // صورة الرخصة التجارية
+  healthCertificateUrl?: string; // صورة الشهادة الصحية
+  licenseStatus?: 'pending' | 'approved' | 'rejected'; // حالة مراجعة التراخيص
+  licenseNotes?: string; // ملاحظات المراجعة
   referredBy?: string; // UID المشرف الذي أضاف المطعم (admin) - إذا كان فارغ = مسجل من المطور
   referrerType?: 'admin' | 'developer'; // نوع من أضاف المطعم
   createdAt?: Date;

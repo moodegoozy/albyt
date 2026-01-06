@@ -7,6 +7,8 @@ import { useNavigate } from 'react-router-dom'
 import { RoleGate } from '@/routes/RoleGate'
 import { useDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
+import { LocationPicker } from '@/components/LocationPicker'
+import { MapPin, Check, ShoppingBag, Truck, CreditCard, ChevronLeft } from 'lucide-react'
 
 // 💰 رسوم التطبيق والمشرف (لكل منتج)
 const PLATFORM_FEE_PER_ITEM = 1.0 // ريال للتطبيق على كل منتج
@@ -23,6 +25,7 @@ export const CheckoutPage: React.FC = () => {
   const [saving, setSaving] = useState(false)
   const [restaurant, setRestaurant] = useState<{ id: string; name: string; referredBy?: string; referrerType?: string } | null>(null)
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [showLocationPicker, setShowLocationPicker] = useState(false)
 
   const deliveryFee = 7
   const total = subtotal + deliveryFee
@@ -60,24 +63,12 @@ export const CheckoutPage: React.FC = () => {
     loadRestaurant()
   }, [items])
 
-  // ✅ تحديد موقعي عبر GPS
-  const getMyLocation = () => {
-    if (!navigator.geolocation) {
-      dialog.warning('المتصفح لا يدعم تحديد الموقع')
-      return
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        console.log('📍 موقعك الحالي:', pos.coords)
-        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-        toast.success('تم تحديد موقعك بنجاح 📍')
-      },
-      (err) => {
-        console.error('خطأ في تحديد الموقع:', err)
-        dialog.error('تعذر تحديد الموقع. تأكد من منح إذن الوصول للموقع.')
-      },
-      { enableHighAccuracy: true }
-    )
+  // ✅ معالجة تأكيد الموقع من LocationPicker
+  const handleLocationConfirm = (loc: { lat: number; lng: number }, addr: string) => {
+    setLocation(loc)
+    setAddress(addr)
+    setShowLocationPicker(false)
+    toast.success('تم تحديد موقعك بنجاح! 📍')
   }
 
   // ✅ إرسال الطلب
@@ -206,72 +197,151 @@ export const CheckoutPage: React.FC = () => {
 
   return (
     <RoleGate allow={['customer', 'admin']}>
-      <div className="max-w-xl mx-auto bg-white rounded-2xl shadow p-6 text-gray-900">
-        <h1 className="text-xl font-bold mb-4">إتمام الطلب</h1>
-
-        {/* 🧾 تفاصيل الطلب */}
-        <div className="border rounded-xl p-3 text-gray-800">
-          {items.map(i => (
-            <div key={i.id} className="flex items-center justify-between py-2 border-b last:border-b-0">
-              <span className="text-sm">{i.name} × {i.qty}</span>
-              <span className="font-semibold">{(i.price * i.qty).toFixed(2)} ر.س</span>
+      <div className="max-w-xl mx-auto space-y-4">
+        
+        {/* العنوان الرئيسي */}
+        <div className="bg-gradient-to-r from-sky-500 to-sky-600 rounded-2xl p-5 text-white shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+              <ShoppingBag className="w-6 h-6" />
             </div>
-          ))}
+            <div>
+              <h1 className="text-xl font-bold">إتمام الطلب</h1>
+              <p className="text-sm text-white/80">{restaurant?.name || 'جارِ التحميل...'}</p>
+            </div>
+          </div>
         </div>
 
-        {/* 🏠 العنوان */}
-        <input
-          className="w-full border rounded-xl p-3 text-gray-900 placeholder-gray-500 mt-3"
-          placeholder="العنوان التفصيلي"
-          value={address}
-          onChange={e => setAddress(e.target.value)}
-        />
+        {/* 🧾 تفاصيل الطلب */}
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+          <div className="bg-gray-50 px-4 py-3 border-b flex items-center gap-2">
+            <ShoppingBag className="w-5 h-5 text-sky-500" />
+            <span className="font-bold text-gray-800">تفاصيل الطلب</span>
+            <span className="text-xs bg-sky-100 text-sky-600 px-2 py-0.5 rounded-full mr-auto">
+              {items.length} صنف
+            </span>
+          </div>
+          <div className="p-4 space-y-2">
+            {items.map(i => (
+              <div key={i.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                <div className="flex items-center gap-3">
+                  <span className="w-8 h-8 bg-sky-100 rounded-lg flex items-center justify-center text-sm">
+                    {i.qty}×
+                  </span>
+                  <span className="text-gray-800 font-medium">{i.name}</span>
+                </div>
+                <span className="font-bold text-sky-600">{(i.price * i.qty).toFixed(2)} ر.س</span>
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* 📍 تحديد الموقع */}
-        <button
-          onClick={getMyLocation}
-          className="w-full mt-3 rounded-xl p-3 bg-blue-600 text-white font-semibold hover:bg-blue-700"
-        >
-          📍 تحديد موقعي الحالي
-        </button>
-
-        {/* 🗺️ الخريطة */}
-        {location && (
-          <iframe
-            title="خريطة الموقع"
-            width="100%"
-            height="250"
-            style={{ borderRadius: '12px', marginTop: '10px' }}
-            loading="lazy"
-            allowFullScreen
-            src={`https://maps.google.com/maps?hl=ar&q=${location.lat},${location.lng}&z=15&output=embed`}
-          />
-        )}
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+          <div className="bg-gray-50 px-4 py-3 border-b flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-green-500" />
+            <span className="font-bold text-gray-800">موقع التوصيل</span>
+          </div>
+          <div className="p-4">
+            {location ? (
+              <div className="space-y-3">
+                {/* الموقع المحدد */}
+                <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <Check className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-green-700 mb-1">تم تحديد الموقع ✓</p>
+                      <p className="text-sm text-gray-600 break-words">{address}</p>
+                      <p className="text-xs text-gray-400 mt-1 font-mono">
+                        {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* زر تغيير الموقع */}
+                <button
+                  onClick={() => setShowLocationPicker(true)}
+                  className="w-full py-3 px-4 rounded-xl border-2 border-sky-200 text-sky-600 font-semibold hover:bg-sky-50 transition flex items-center justify-center gap-2"
+                >
+                  <MapPin className="w-5 h-5" />
+                  تغيير الموقع
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowLocationPicker(true)}
+                className="w-full py-4 rounded-xl bg-gradient-to-r from-sky-500 to-sky-600 text-white font-bold shadow-lg hover:shadow-xl transition flex items-center justify-center gap-3"
+              >
+                <MapPin className="w-6 h-6" />
+                <span>تحديد موقع التوصيل</span>
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+        </div>
 
         {/* 💰 الملخص */}
-        <div className="bg-gray-50 rounded-xl p-3 text-gray-800 mt-3">
-          <div className="flex items-center justify-between text-sm">
-            <span>المجموع</span>
-            <span>{subtotal.toFixed(2)} ر.س</span>
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+          <div className="bg-gray-50 px-4 py-3 border-b flex items-center gap-2">
+            <CreditCard className="w-5 h-5 text-amber-500" />
+            <span className="font-bold text-gray-800">ملخص الفاتورة</span>
           </div>
-          <div className="flex items-center justify-between text-sm">
-            <span>رسوم التوصيل</span>
-            <span>{deliveryFee.toFixed(2)} ر.س</span>
-          </div>
-          <div className="flex items-center justify-between font-bold text-lg mt-1 text-gray-900">
-            <span>الإجمالي</span>
-            <span>{total.toFixed(2)} ر.س</span>
+          <div className="p-4 space-y-2">
+            <div className="flex items-center justify-between text-gray-600">
+              <span>المجموع الفرعي</span>
+              <span className="font-semibold">{subtotal.toFixed(2)} ر.س</span>
+            </div>
+            <div className="flex items-center justify-between text-gray-600">
+              <div className="flex items-center gap-2">
+                <Truck className="w-4 h-4" />
+                <span>رسوم التوصيل</span>
+              </div>
+              <span className="font-semibold">{deliveryFee.toFixed(2)} ر.س</span>
+            </div>
+            <div className="h-px bg-gray-200 my-2" />
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-lg text-gray-800">الإجمالي</span>
+              <span className="font-black text-xl text-sky-600">{total.toFixed(2)} ر.س</span>
+            </div>
           </div>
         </div>
 
         {/* ✅ زر تأكيد الطلب */}
         <button
-          disabled={saving}
+          disabled={saving || !location}
           onClick={placeOrder}
-          className="w-full rounded-xl p-3 bg-green-600 hover:bg-green-700 text-white font-bold mt-3"
+          className="w-full py-4 rounded-2xl bg-gradient-to-r from-green-500 to-green-600 text-white font-bold text-lg shadow-xl hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-3"
         >
-          {saving ? '...' : 'تأكيد الطلب (دفع عند الاستلام)'}
+          {saving ? (
+            <>
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              جارِ إرسال الطلب...
+            </>
+          ) : (
+            <>
+              <Check className="w-6 h-6" />
+              تأكيد الطلب (دفع عند الاستلام)
+            </>
+          )}
         </button>
+
+        {/* تحذير */}
+        {!location && (
+          <p className="text-center text-sm text-amber-600 bg-amber-50 rounded-xl p-3">
+            ⚠️ يجب تحديد موقع التوصيل قبل إرسال الطلب
+          </p>
+        )}
+
+        {/* LocationPicker Modal */}
+        <LocationPicker
+          isOpen={showLocationPicker}
+          onClose={() => setShowLocationPicker(false)}
+          onConfirm={handleLocationConfirm}
+          initialLocation={location}
+        />
       </div>
     </RoleGate>
   )

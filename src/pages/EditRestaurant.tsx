@@ -5,6 +5,8 @@ import { doc, getDoc, setDoc } from "firebase/firestore"
 import { db, storage } from "@/firebase"
 import { useAuth } from "@/auth"
 import { useToast } from "@/components/ui/Toast"
+import { SAUDI_CITIES } from "@/utils/cities"
+import { MapPin, FileText, ShieldCheck, AlertCircle, CheckCircle, Clock } from "lucide-react"
 
 type RestaurantForm = {
   name: string
@@ -12,6 +14,10 @@ type RestaurantForm = {
   city: string
   location: string
   logoUrl?: string
+  commercialLicenseUrl?: string
+  healthCertificateUrl?: string
+  licenseStatus?: 'pending' | 'approved' | 'rejected'
+  licenseNotes?: string
 }
 
 export const EditRestaurant: React.FC = () => {
@@ -24,10 +30,16 @@ export const EditRestaurant: React.FC = () => {
     city: "",
     location: "",
     logoUrl: "",
+    commercialLicenseUrl: "",
+    healthCertificateUrl: "",
+    licenseStatus: undefined,
+    licenseNotes: "",
   })
 
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string>("")
+  const [commercialFile, setCommercialFile] = useState<File | null>(null)
+  const [healthFile, setHealthFile] = useState<File | null>(null)
   const [loading, setLoading] = useState<boolean>(true)
   const [saving, setSaving] = useState<boolean>(false)
   const canSave = useMemo(() => !saving && !!user, [saving, user])
@@ -46,6 +58,10 @@ export const EditRestaurant: React.FC = () => {
             city: data.city ?? "",
             location: data.location ?? "",
             logoUrl: data.logoUrl ?? "",
+            commercialLicenseUrl: (data as any).commercialLicenseUrl ?? "",
+            healthCertificateUrl: (data as any).healthCertificateUrl ?? "",
+            licenseStatus: (data as any).licenseStatus,
+            licenseNotes: (data as any).licenseNotes ?? "",
           })
         }
       } catch (e: any) {
@@ -114,6 +130,33 @@ export const EditRestaurant: React.FC = () => {
     return busted
   }
 
+  // رفع ملف الترخيص
+  const uploadLicenseFile = async (licenseFile: File, type: 'commercial' | 'health'): Promise<string | undefined> => {
+    if (!user || !licenseFile) return undefined
+
+    const isValidType = /^(image\/|application\/pdf)/.test(licenseFile.type)
+    if (!isValidType) {
+      toast.warning("الملف يجب أن يكون صورة أو PDF")
+      return undefined
+    }
+    const MAX = 5 * 1024 * 1024 // 5MB
+    if (licenseFile.size > MAX) {
+      toast.warning("حجم الملف كبير، يرجى اختيار ملف أقل من 5MB")
+      return undefined
+    }
+
+    const cleanName = licenseFile.name.replace(/\s+/g, "_")
+    const path = `restaurants/${user.uid}/licenses/${type}_${Date.now()}_${cleanName}`
+    const r = ref(storage, path)
+    const metadata = {
+      contentType: licenseFile.type,
+      cacheControl: "public,max-age=31536000,immutable",
+    }
+
+    await uploadBytes(r, licenseFile, metadata)
+    return await getDownloadURL(r)
+  }
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!user) {
@@ -128,22 +171,54 @@ export const EditRestaurant: React.FC = () => {
     setSaving(true)
     try {
       let logoUrl = form.logoUrl
+      let commercialLicenseUrl = form.commercialLicenseUrl
+      let healthCertificateUrl = form.healthCertificateUrl
+      let licenseStatus = form.licenseStatus
+
       if (file) {
         toast.info("⏳ جاري رفع الشعار …")
         const uploaded = await uploadLogoIfNeeded()
         if (uploaded) logoUrl = uploaded
       }
 
+      // رفع الرخصة التجارية
+      if (commercialFile) {
+        toast.info("⏳ جاري رفع الرخصة التجارية …")
+        const uploaded = await uploadLicenseFile(commercialFile, 'commercial')
+        if (uploaded) {
+          commercialLicenseUrl = uploaded
+          licenseStatus = 'pending' // إعادة المراجعة عند تحديث الترخيص
+        }
+      }
+
+      // رفع الشهادة الصحية
+      if (healthFile) {
+        toast.info("⏳ جاري رفع الشهادة الصحية …")
+        const uploaded = await uploadLicenseFile(healthFile, 'health')
+        if (uploaded) {
+          healthCertificateUrl = uploaded
+          licenseStatus = 'pending'
+        }
+      }
+
       await setDoc(
         doc(db, "restaurants", user.uid),
-        { ...form, logoUrl },
+        { 
+          ...form, 
+          logoUrl,
+          commercialLicenseUrl,
+          healthCertificateUrl,
+          licenseStatus,
+        },
         { merge: true }
       )
 
-      // تنظيف معاينة الملف
+      // تنظيف الملفات
       if (preview) URL.revokeObjectURL(preview)
       setPreview("")
       setFile(null)
+      setCommercialFile(null)
+      setHealthFile(null)
 
       toast.success("تم حفظ التعديلات بنجاح 🎉", { title: "تعديل المطعم" })
     } catch (err: any) {
@@ -204,13 +279,20 @@ export const EditRestaurant: React.FC = () => {
           onChange={onChange}
           className="w-full border p-3 rounded-xl"
         />
-        <input
-          name="city"
-          placeholder="المدينة"
-          value={form.city}
-          onChange={onChange}
-          className="w-full border p-3 rounded-xl"
-        />
+        <div className="relative">
+          <MapPin className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-sky-400 pointer-events-none" />
+          <select
+            name="city"
+            value={form.city}
+            onChange={(e) => setForm(p => ({ ...p, city: e.target.value }))}
+            className="w-full border p-3 pr-10 rounded-xl bg-white appearance-none cursor-pointer focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+          >
+            <option value="">اختر المدينة</option>
+            {SAUDI_CITIES.map(city => (
+              <option key={city} value={city}>{city}</option>
+            ))}
+          </select>
+        </div>
         <input
           name="location"
           placeholder="الموقع"
@@ -218,6 +300,99 @@ export const EditRestaurant: React.FC = () => {
           onChange={onChange}
           className="w-full border p-3 rounded-xl"
         />
+
+        {/* قسم التراخيص */}
+        <div className="border-t pt-4 mt-4">
+          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <FileText className="w-5 h-5 text-sky-500" />
+            التراخيص والشهادات
+          </h2>
+
+          {/* حالة التراخيص */}
+          {form.licenseStatus && (
+            <div className={`mb-4 p-3 rounded-xl flex items-center gap-2 ${
+              form.licenseStatus === 'approved' ? 'bg-green-50 text-green-700' :
+              form.licenseStatus === 'rejected' ? 'bg-red-50 text-red-700' :
+              'bg-yellow-50 text-yellow-700'
+            }`}>
+              {form.licenseStatus === 'approved' && <CheckCircle className="w-5 h-5" />}
+              {form.licenseStatus === 'rejected' && <AlertCircle className="w-5 h-5" />}
+              {form.licenseStatus === 'pending' && <Clock className="w-5 h-5" />}
+              <span className="font-semibold">
+                {form.licenseStatus === 'approved' && 'التراخيص موافق عليها ✓'}
+                {form.licenseStatus === 'rejected' && 'التراخيص مرفوضة'}
+                {form.licenseStatus === 'pending' && 'التراخيص قيد المراجعة...'}
+              </span>
+            </div>
+          )}
+          {form.licenseNotes && form.licenseStatus === 'rejected' && (
+            <div className="mb-4 p-3 bg-red-50 rounded-xl text-red-600 text-sm">
+              <strong>ملاحظات:</strong> {form.licenseNotes}
+            </div>
+          )}
+
+          {/* الرخصة التجارية */}
+          <div className="space-y-2 mb-4">
+            <label className="block font-semibold text-gray-700 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-orange-500" />
+              الرخصة التجارية
+            </label>
+            <div className="flex items-center gap-3">
+              {form.commercialLicenseUrl && (
+                <a 
+                  href={form.commercialLicenseUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-sky-500 hover:text-sky-700 text-sm underline"
+                >
+                  عرض الملف الحالي
+                </a>
+              )}
+              <input 
+                type="file" 
+                accept="image/*,.pdf" 
+                onChange={(e) => setCommercialFile(e.target.files?.[0] || null)}
+                className="text-sm"
+              />
+            </div>
+            {commercialFile && (
+              <div className="text-xs text-gray-600">
+                سيتم رفع: <span className="font-semibold">{commercialFile.name}</span>
+              </div>
+            )}
+          </div>
+
+          {/* الشهادة الصحية */}
+          <div className="space-y-2">
+            <label className="block font-semibold text-gray-700 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-green-500" />
+              الشهادة الصحية
+            </label>
+            <div className="flex items-center gap-3">
+              {form.healthCertificateUrl && (
+                <a 
+                  href={form.healthCertificateUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-sky-500 hover:text-sky-700 text-sm underline"
+                >
+                  عرض الملف الحالي
+                </a>
+              )}
+              <input 
+                type="file" 
+                accept="image/*,.pdf" 
+                onChange={(e) => setHealthFile(e.target.files?.[0] || null)}
+                className="text-sm"
+              />
+            </div>
+            {healthFile && (
+              <div className="text-xs text-gray-600">
+                سيتم رفع: <span className="font-semibold">{healthFile.name}</span>
+              </div>
+            )}
+          </div>
+        </div>
 
         <button
           type="submit"

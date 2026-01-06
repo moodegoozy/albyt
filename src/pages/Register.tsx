@@ -4,13 +4,15 @@ import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { auth, db } from '@/firebase'
 import { doc, setDoc } from 'firebase/firestore'
 import { useNavigate, Link } from 'react-router-dom'
-import { User, Mail, Lock, Store, UserPlus, Truck, ChefHat, Users } from 'lucide-react'
+import { User, Mail, Lock, Store, UserPlus, Truck, ChefHat, Users, MapPin } from 'lucide-react'
+import { SAUDI_CITIES } from '@/utils/cities'
 
 export const Register: React.FC = () => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [restaurantName, setRestaurantName] = useState('')
+  const [city, setCity] = useState('')
   const [role, setRole] = useState<'customer'|'courier'|'owner'|''>('')
   const [loading, setLoading] = useState(false)
   const nav = useNavigate()
@@ -36,7 +38,7 @@ export const Register: React.FC = () => {
           ownerId: cred.user.uid,
           email,
           phone: '',
-          city: '',
+          city: city || '',
           location: '',
           logoUrl: '',
         }, { merge: true })
@@ -133,17 +135,32 @@ export const Register: React.FC = () => {
             })}
           </div>
 
-          {/* حقل اسم المطعم */}
+          {/* حقل اسم المطعم والمدينة */}
           {role === 'owner' && (
-            <div className="relative">
-              <Store className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-orange-400" />
-              <input 
-                className="w-full rounded-2xl p-4 pr-12 bg-orange-50 text-orange-900 border-2 border-orange-200 focus:outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-100 transition-all" 
-                placeholder="اسم المطعم" 
-                value={restaurantName} 
-                onChange={e=>setRestaurantName(e.target.value)} 
-              />
-            </div>
+            <>
+              <div className="relative">
+                <Store className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-orange-400" />
+                <input 
+                  className="w-full rounded-2xl p-4 pr-12 bg-orange-50 text-orange-900 border-2 border-orange-200 focus:outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-100 transition-all" 
+                  placeholder="اسم المطعم" 
+                  value={restaurantName} 
+                  onChange={e=>setRestaurantName(e.target.value)} 
+                />
+              </div>
+              <div className="relative">
+                <MapPin className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-orange-400 pointer-events-none" />
+                <select
+                  value={city}
+                  onChange={e => setCity(e.target.value)}
+                  className="w-full rounded-2xl p-4 pr-12 bg-orange-50 text-orange-900 border-2 border-orange-200 focus:outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-100 transition-all appearance-none cursor-pointer"
+                >
+                  <option value="">اختر المدينة</option>
+                  {SAUDI_CITIES.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            </>
           )}
 
           <button 
