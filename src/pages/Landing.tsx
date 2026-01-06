@@ -4,303 +4,321 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/auth";
 import { 
   Store, ShoppingCart, Package, User, Truck, Shield, Code2, 
-  ChefHat, ClipboardList, Users, MapPin, FileText, Settings,
-  LogIn, UserPlus, Phone
+  ChefHat, ClipboardList, Settings, LogIn, UserPlus, Phone, Loader2
 } from "lucide-react";
 
-// مربع القسم
+// مربع القسم - محسن للجوال
 const SectionCard: React.FC<{
   to: string;
   icon: React.ReactNode;
   label: string;
   color: string;
-  description?: string;
-}> = ({ to, icon, label, color, description }) => (
+  emoji?: string;
+}> = ({ to, icon, label, color, emoji }) => (
   <Link
     to={to}
-    className={`flex flex-col items-center justify-center gap-3 p-6 rounded-3xl bg-gradient-to-br ${color} text-white shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300 min-h-[140px]`}
+    className={`flex flex-col items-center justify-center gap-2 p-4 sm:p-5 rounded-2xl bg-gradient-to-br ${color} text-white shadow-lg active:scale-95 transition-all duration-200`}
   >
-    <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
-      {icon}
+    <div className="w-12 h-12 sm:w-14 sm:h-14 bg-white/20 rounded-xl flex items-center justify-center">
+      {emoji ? <span className="text-2xl sm:text-3xl">{emoji}</span> : icon}
     </div>
-    <span className="font-bold text-lg text-center">{label}</span>
-    {description && <span className="text-xs text-white/80 text-center">{description}</span>}
+    <span className="font-bold text-sm sm:text-base text-center leading-tight">{label}</span>
   </Link>
 );
 
 export const Landing: React.FC = () => {
-  const { user, role, logout } = useAuth();
+  const { user, role, loading, logout } = useAuth();
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-100 px-4 py-6">
-      
-      {/* الشعار والترحيب */}
-      <div className="text-center mb-8">
-        <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-sky-500 to-sky-600 rounded-3xl flex items-center justify-center shadow-2xl shadow-sky-300/50">
+  // حالة التحميل - منع ظهور صفحة الزائر أثناء التحقق من الجلسة
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-sky-50 via-white to-sky-100">
+        <div className="w-20 h-20 mb-6 bg-gradient-to-br from-sky-500 to-sky-600 rounded-3xl flex items-center justify-center shadow-2xl animate-pulse">
           <span className="text-5xl">🍗</span>
         </div>
-        <h1 className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-sky-600 to-sky-500 mb-2">
+        <Loader2 className="w-8 h-8 text-sky-500 animate-spin mb-3" />
+        <p className="text-sky-600 font-semibold">جارِ التحميل...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-100 px-3 py-4 sm:px-4 sm:py-6">
+      
+      {/* الشعار والترحيب - أصغر للجوال */}
+      <div className="text-center mb-6">
+        <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-3 bg-gradient-to-br from-sky-500 to-sky-600 rounded-2xl sm:rounded-3xl flex items-center justify-center shadow-xl">
+          <span className="text-4xl sm:text-5xl">🍗</span>
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-sky-600 to-sky-500 mb-1">
           سفرة البيت
         </h1>
-        <p className="text-sky-600/80 text-sm sm:text-base">
-          {user ? `أهلاً ${user.email?.split('@')[0]} 👋` : 'أشهى الأكلات البيتية توصلك لين بابك 🚗'}
-        </p>
+        {user && (
+          <p className="text-sky-600/80 text-sm">
+            أهلاً {user.displayName || user.email?.split('@')[0]} 👋
+          </p>
+        )}
       </div>
 
       {/* ===== أقسام الزائر (غير مسجل) ===== */}
       {!user && (
-        <div className="max-w-lg mx-auto space-y-6">
-          {/* الأقسام الرئيسية */}
-          <div className="grid grid-cols-2 gap-4">
+        <div className="max-w-sm mx-auto space-y-4">
+          <div className="grid grid-cols-2 gap-3">
             <SectionCard
               to="/restaurants"
-              icon={<Store className="w-7 h-7" />}
-              label="المطاعم"
+              emoji="🍴"
+              icon={<Store className="w-6 h-6" />}
+              label="تصفح المطاعم"
               color="from-sky-500 to-sky-600"
-              description="تصفح القائمة"
             />
             <SectionCard
               to="/customer-login"
-              icon={<Phone className="w-7 h-7" />}
+              emoji="📱"
+              icon={<Phone className="w-6 h-6" />}
               label="دخول بالجوال"
               color="from-green-500 to-green-600"
-              description="للعملاء"
             />
             <SectionCard
               to="/login"
-              icon={<LogIn className="w-7 h-7" />}
-              label="تسجيل دخول"
+              emoji="🔑"
+              icon={<LogIn className="w-6 h-6" />}
+              label="دخول بالإيميل"
               color="from-amber-500 to-orange-500"
-              description="بالإيميل"
             />
             <SectionCard
               to="/register"
-              icon={<UserPlus className="w-7 h-7" />}
+              emoji="✨"
+              icon={<UserPlus className="w-6 h-6" />}
               label="حساب جديد"
               color="from-purple-500 to-purple-600"
-              description="انضم الآن"
             />
           </div>
+          <p className="text-center text-sky-600/70 text-xs">
+            أشهى الأكلات البيتية توصلك لين بابك 🚗
+          </p>
         </div>
       )}
 
       {/* ===== أقسام العميل ===== */}
       {role === "customer" && (
-        <div className="max-w-lg mx-auto space-y-6">
-          <h2 className="text-xl font-bold text-sky-700 text-center">🛍️ خدماتك</h2>
-          <div className="grid grid-cols-2 gap-4">
+        <div className="max-w-sm mx-auto space-y-4">
+          <div className="grid grid-cols-2 gap-3">
             <SectionCard
               to="/restaurants"
-              icon={<Store className="w-7 h-7" />}
-              label="المطاعم"
+              emoji="🍴"
+              icon={<Store className="w-6 h-6" />}
+              label="اطلب الآن"
               color="from-sky-500 to-sky-600"
-              description="اطلب الآن"
             />
             <SectionCard
               to="/cart"
-              icon={<ShoppingCart className="w-7 h-7" />}
+              emoji="🛒"
+              icon={<ShoppingCart className="w-6 h-6" />}
               label="السلة"
               color="from-green-500 to-green-600"
             />
             <SectionCard
               to="/orders"
-              icon={<Package className="w-7 h-7" />}
+              emoji="📦"
+              icon={<Package className="w-6 h-6" />}
               label="طلباتي"
               color="from-amber-500 to-orange-500"
-              description="تتبع طلباتك"
             />
             <SectionCard
               to="/profile"
-              icon={<User className="w-7 h-7" />}
+              emoji="👤"
+              icon={<User className="w-6 h-6" />}
               label="بياناتي"
               color="from-purple-500 to-purple-600"
             />
           </div>
-          
-          {/* زر الخروج */}
           <button
             onClick={logout}
-            className="w-full py-4 rounded-2xl bg-gray-100 text-gray-600 font-bold hover:bg-gray-200 transition"
+            className="w-full py-3 rounded-xl bg-white border border-gray-200 text-gray-500 font-semibold text-sm active:bg-gray-100 transition"
           >
-            🚪 تسجيل الخروج
+            🚪 خروج
           </button>
         </div>
       )}
 
       {/* ===== أقسام صاحب المطعم ===== */}
       {role === "owner" && (
-        <div className="max-w-lg mx-auto space-y-6">
-          <h2 className="text-xl font-bold text-sky-700 text-center">🍳 لوحة المطعم</h2>
-          <div className="grid grid-cols-2 gap-4">
+        <div className="max-w-sm mx-auto space-y-4">
+          <div className="grid grid-cols-2 gap-3">
             <SectionCard
               to="/owner"
-              icon={<ChefHat className="w-7 h-7" />}
+              emoji="📊"
+              icon={<ChefHat className="w-6 h-6" />}
               label="لوحة التحكم"
               color="from-sky-500 to-sky-600"
             />
             <SectionCard
               to="/owner/orders"
-              icon={<ClipboardList className="w-7 h-7" />}
+              emoji="📋"
+              icon={<ClipboardList className="w-6 h-6" />}
               label="الطلبات"
               color="from-green-500 to-green-600"
-              description="إدارة الطلبات"
             />
             <SectionCard
               to="/owner/menu"
-              icon={<Store className="w-7 h-7" />}
+              emoji="🍽️"
+              icon={<Store className="w-6 h-6" />}
               label="القائمة"
               color="from-amber-500 to-orange-500"
-              description="إدارة الأصناف"
             />
             <SectionCard
               to="/owner/edit"
-              icon={<Settings className="w-7 h-7" />}
+              emoji="⚙️"
+              icon={<Settings className="w-6 h-6" />}
               label="بيانات المطعم"
               color="from-purple-500 to-purple-600"
             />
             <SectionCard
               to="/owner/courier-requests"
-              icon={<Truck className="w-7 h-7" />}
+              emoji="🚗"
+              icon={<Truck className="w-6 h-6" />}
               label="المندوبين"
               color="from-cyan-500 to-cyan-600"
             />
             <SectionCard
               to="/profile"
-              icon={<User className="w-7 h-7" />}
+              emoji="👤"
+              icon={<User className="w-6 h-6" />}
               label="حسابي"
               color="from-gray-500 to-gray-600"
             />
           </div>
-          
           <button
             onClick={logout}
-            className="w-full py-4 rounded-2xl bg-gray-100 text-gray-600 font-bold hover:bg-gray-200 transition"
+            className="w-full py-3 rounded-xl bg-white border border-gray-200 text-gray-500 font-semibold text-sm active:bg-gray-100 transition"
           >
-            🚪 تسجيل الخروج
+            🚪 خروج
           </button>
         </div>
       )}
 
       {/* ===== أقسام المندوب ===== */}
       {role === "courier" && (
-        <div className="max-w-lg mx-auto space-y-6">
-          <h2 className="text-xl font-bold text-sky-700 text-center">🚗 واجهة المندوب</h2>
-          <div className="grid grid-cols-2 gap-4">
+        <div className="max-w-sm mx-auto space-y-4">
+          <div className="grid grid-cols-2 gap-3">
             <SectionCard
               to="/courier"
-              icon={<Truck className="w-7 h-7" />}
-              label="الطلبات المتاحة"
+              emoji="📦"
+              icon={<Truck className="w-6 h-6" />}
+              label="طلبات جاهزة"
               color="from-sky-500 to-sky-600"
-              description="اقبل توصيلات"
             />
             <SectionCard
               to="/courier/hiring"
-              icon={<MapPin className="w-7 h-7" />}
-              label="التوظيف"
+              emoji="🏪"
+              icon={<Store className="w-6 h-6" />}
+              label="انضم لمطعم"
               color="from-green-500 to-green-600"
-              description="انضم للمطاعم"
             />
             <SectionCard
               to="/profile"
-              icon={<User className="w-7 h-7" />}
+              emoji="👤"
+              icon={<User className="w-6 h-6" />}
               label="حسابي"
               color="from-purple-500 to-purple-600"
             />
           </div>
-          
           <button
             onClick={logout}
-            className="w-full py-4 rounded-2xl bg-gray-100 text-gray-600 font-bold hover:bg-gray-200 transition"
+            className="w-full py-3 rounded-xl bg-white border border-gray-200 text-gray-500 font-semibold text-sm active:bg-gray-100 transition"
           >
-            🚪 تسجيل الخروج
+            🚪 خروج
           </button>
         </div>
       )}
 
       {/* ===== أقسام المشرف ===== */}
       {role === "admin" && (
-        <div className="max-w-lg mx-auto space-y-6">
-          <h2 className="text-xl font-bold text-sky-700 text-center">👑 لوحة المشرف</h2>
-          <div className="grid grid-cols-2 gap-4">
+        <div className="max-w-sm mx-auto space-y-4">
+          <div className="grid grid-cols-2 gap-3">
             <SectionCard
               to="/admin"
-              icon={<Shield className="w-7 h-7" />}
+              emoji="👑"
+              icon={<Shield className="w-6 h-6" />}
               label="لوحة التحكم"
               color="from-sky-500 to-sky-600"
             />
             <SectionCard
               to="/admin/restaurants"
-              icon={<Store className="w-7 h-7" />}
+              emoji="🏪"
+              icon={<Store className="w-6 h-6" />}
               label="المطاعم"
               color="from-green-500 to-green-600"
-              description="إدارة المطاعم"
             />
             <SectionCard
               to="/admin/orders"
-              icon={<Package className="w-7 h-7" />}
+              emoji="📦"
+              icon={<Package className="w-6 h-6" />}
               label="الطلبات"
               color="from-amber-500 to-orange-500"
             />
             <SectionCard
               to="/restaurants"
-              icon={<ShoppingCart className="w-7 h-7" />}
+              emoji="🛒"
+              icon={<ShoppingCart className="w-6 h-6" />}
               label="اطلب كعميل"
               color="from-purple-500 to-purple-600"
             />
             <SectionCard
               to="/profile"
-              icon={<User className="w-7 h-7" />}
+              emoji="👤"
+              icon={<User className="w-6 h-6" />}
               label="حسابي"
               color="from-gray-500 to-gray-600"
             />
           </div>
-          
           <button
             onClick={logout}
-            className="w-full py-4 rounded-2xl bg-gray-100 text-gray-600 font-bold hover:bg-gray-200 transition"
+            className="w-full py-3 rounded-xl bg-white border border-gray-200 text-gray-500 font-semibold text-sm active:bg-gray-100 transition"
           >
-            🚪 تسجيل الخروج
+            🚪 خروج
           </button>
         </div>
       )}
 
       {/* ===== أقسام المطور ===== */}
       {role === "developer" && (
-        <div className="max-w-lg mx-auto space-y-6">
-          <h2 className="text-xl font-bold text-sky-700 text-center">👨‍💻 لوحة المطور</h2>
-          <div className="grid grid-cols-2 gap-4">
+        <div className="max-w-sm mx-auto space-y-4">
+          <div className="grid grid-cols-2 gap-3">
             <SectionCard
               to="/developer"
-              icon={<Code2 className="w-7 h-7" />}
+              emoji="💻"
+              icon={<Code2 className="w-6 h-6" />}
               label="لوحة التحكم"
               color="from-sky-500 to-sky-600"
-              description="إدارة شاملة"
             />
             <SectionCard
               to="/restaurants"
-              icon={<Store className="w-7 h-7" />}
+              emoji="🍴"
+              icon={<Store className="w-6 h-6" />}
               label="المطاعم"
               color="from-green-500 to-green-600"
             />
             <SectionCard
               to="/admin/orders"
-              icon={<Package className="w-7 h-7" />}
+              emoji="📦"
+              icon={<Package className="w-6 h-6" />}
               label="الطلبات"
               color="from-amber-500 to-orange-500"
             />
             <SectionCard
               to="/profile"
-              icon={<User className="w-7 h-7" />}
+              emoji="👤"
+              icon={<User className="w-6 h-6" />}
               label="حسابي"
               color="from-purple-500 to-purple-600"
             />
           </div>
-          
           <button
             onClick={logout}
-            className="w-full py-4 rounded-2xl bg-gray-100 text-gray-600 font-bold hover:bg-gray-200 transition"
+            className="w-full py-3 rounded-xl bg-white border border-gray-200 text-gray-500 font-semibold text-sm active:bg-gray-100 transition"
           >
-            🚪 تسجيل الخروج
+            🚪 خروج
           </button>
         </div>
       )}
