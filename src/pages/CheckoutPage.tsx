@@ -10,8 +10,10 @@ import { useToast } from '@/components/ui/Toast'
 import { LocationPicker } from '@/components/LocationPicker'
 import { MapPin, Check, ShoppingBag, Truck, CreditCard, ChevronLeft } from 'lucide-react'
 
-const PLATFORM_FEE_PER_ITEM = 1.0
-const ADMIN_COMMISSION_PER_ITEM = 0.75
+// 💰 رسوم التطبيق والمشرف (لكل منتج)
+const PLATFORM_FEE_PER_ITEM = 1.0 // ريال للتطبيق على كل منتج
+const ADMIN_COMMISSION_PER_ITEM = 0.75 // 75 هللة للمشرف على كل منتج
+// المجموع = 1.75 ريال لكل منتج
 
 export const CheckoutPage: React.FC = () => {
   const { items, subtotal, clear } = useCart()
@@ -26,7 +28,6 @@ export const CheckoutPage: React.FC = () => {
   const [showLocationPicker, setShowLocationPicker] = useState(false)
 
   const deliveryFee = 7
-  const totalItemsCount = items.reduce((sum, item) => sum + item.qty, 0)
   const total = subtotal + deliveryFee
 
   // ✅ تحميل بيانات المطعم
@@ -91,19 +92,15 @@ export const CheckoutPage: React.FC = () => {
 
     setSaving(true)
     
-    // 💰 حساب تقسيم الدخل
+    // 💰 حساب العمولات (كلها على أساس عدد المنتجات)
+    // رسوم التطبيق = 0.5 ريال × عدد المنتجات
+    // عمولة المشرف = 0.5 ريال × عدد المنتجات (إذا المطعم مضاف من مشرف)
     const referredByAdmin = restaurant?.referrerType === 'admin' && restaurant?.referredBy
-    const totalItemsCount = items.reduce((sum, item) => sum + item.qty, 0)
-    
-    // حساب سعر المنتجات الأصلي (بدون رسوم التطبيق)
-    const SERVICE_FEE_PER_ITEM = PLATFORM_FEE_PER_ITEM + ADMIN_COMMISSION_PER_ITEM // 1.75
-    const originalSubtotal = subtotal - (SERVICE_FEE_PER_ITEM * totalItemsCount) // سعر المنتجات الأصلي للمطعم
-    
-    // تقسيم الدخل:
-    const restaurantEarnings = originalSubtotal // المطعم يحصل على السعر الأصلي
-    const platformFee = PLATFORM_FEE_PER_ITEM * totalItemsCount // رسوم التطبيق (1 ر.س × عدد المنتجات)
-    const adminCommission = referredByAdmin ? (ADMIN_COMMISSION_PER_ITEM * totalItemsCount) : 0 // عمولة المشرف
-    const appEarnings = platformFee + (referredByAdmin ? 0 : (ADMIN_COMMISSION_PER_ITEM * totalItemsCount)) // التطبيق يأخذ عمولة المشرف إذا ما فيه مشرف
+    const totalItemsCount = items.reduce((sum, item) => sum + item.qty, 0) // إجمالي عدد المنتجات
+    const platformFee = PLATFORM_FEE_PER_ITEM * totalItemsCount // رسوم التطبيق
+    const adminCommission = referredByAdmin ? (ADMIN_COMMISSION_PER_ITEM * totalItemsCount) : 0
+    // التطبيق يأخذ رسومه دائماً + عمولة المنتجات إذا ما فيه مشرف
+    const appEarnings = platformFee + (referredByAdmin ? 0 : (ADMIN_COMMISSION_PER_ITEM * totalItemsCount))
 
     // إنشاء الطلب مع معلومات العمولة
     const orderRef = await addDoc(collection(db, 'orders'), {
@@ -126,42 +123,14 @@ export const CheckoutPage: React.FC = () => {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       paymentMethod: 'cod',
-      // 💰 معلومات تقسيم الدخل
-      restaurantEarnings: restaurantEarnings,
+      // 💰 معلومات العمولة
       platformFee: platformFee,
       platformFeePerItem: PLATFORM_FEE_PER_ITEM,
       adminCommission: adminCommission,
       adminCommissionPerItem: ADMIN_COMMISSION_PER_ITEM,
-      appEarnings: appEarnings,
       totalItemsCount: totalItemsCount,
       referredBy: restaurant?.referredBy || null,
     })
-
-    // 💰 تحديث محفظة المطعم
-    try {
-      const restaurantWalletRef = doc(db, 'wallets', restId)
-      const restaurantWalletSnap = await getDoc(restaurantWalletRef)
-      
-      if (restaurantWalletSnap.exists()) {
-        await updateDoc(restaurantWalletRef, {
-          balance: increment(restaurantEarnings),
-          totalEarnings: increment(restaurantEarnings),
-          updatedAt: serverTimestamp(),
-        })
-      } else {
-        const { setDoc } = await import('firebase/firestore')
-        await setDoc(restaurantWalletRef, {
-          balance: restaurantEarnings,
-          totalEarnings: restaurantEarnings,
-          totalWithdrawn: 0,
-          transactions: [],
-          updatedAt: serverTimestamp(),
-        })
-      }
-      console.log(`✅ تم إضافة ${restaurantEarnings} ريال لمحفظة المطعم ${restId}`)
-    } catch (err) {
-      console.error('خطأ في تحديث محفظة المطعم:', err)
-    }
 
     // 💰 تحديث محفظة المشرف إذا كان المطعم مسجل عن طريقه
     if (referredByAdmin && restaurant?.referredBy && adminCommission > 0) {

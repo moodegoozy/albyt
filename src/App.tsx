@@ -3,6 +3,8 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { Header } from './components/Header'
 import { Footer } from './components/Footer'
 import { TopBar } from './components/TopBar'
+import { LocationRequired } from './components/LocationRequired'
+import { useAuth } from './auth'
 
 // صفحات المستخدم
 import { Landing } from './pages/Landing'
@@ -45,6 +47,13 @@ import { RoleGate } from './routes/RoleGate'
 import { DebugOrders } from './pages/DebugOrders'
 
 export default function App() {
+  const { locationRequired, refreshUserData, loading } = useAuth()
+
+  // إذا كان الموقع مطلوب، نعرض صفحة تحديد الموقع
+  if (!loading && locationRequired) {
+    return <LocationRequired onLocationSaved={refreshUserData} />
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-sky-50 via-white to-sky-50 text-sky-900">
       {/* الشريط العلوي + رأس الصفحة - ثابتين في أعلى الشاشة تماماً */}
