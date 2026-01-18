@@ -113,6 +113,24 @@ service cloud.firestore {
       // الحذف: المطور فقط
       allow delete: if isDeveloper();
     }
+
+    /* ===== hiringRequests (طلبات توظيف المندوبين) ===== */
+    match /hiringRequests/{requestId} {
+      // القراءة: المندوب صاحب الطلب أو صاحب المطعم المستهدف أو المطور
+      allow read: if isDeveloper() 
+                  || (isCourier() && resource.data.courierId == request.auth.uid)
+                  || (isOwner() && resource.data.restaurantId == request.auth.uid);
+      
+      // الإنشاء: المندوب فقط (لإرسال طلب توظيف)
+      allow create: if isCourier() && request.resource.data.courierId == request.auth.uid;
+      
+      // التحديث: صاحب المطعم (للقبول/الرفض) أو المطور
+      allow update: if isDeveloper() 
+                    || (isOwner() && resource.data.restaurantId == request.auth.uid);
+      
+      // الحذف: المطور فقط
+      allow delete: if isDeveloper();
+    }
   }
 }
 

@@ -8,15 +8,10 @@ import { RoleGate } from '@/routes/RoleGate'
 import { useDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
 import { LocationPicker } from '@/components/LocationPicker'
-import { MapPin, Check, ShoppingBag, Truck, CreditCard, ChevronLeft, Store, Navigation, ExternalLink } from 'lucide-react'
+import { MapPin, Check, ShoppingBag, Truck, CreditCard, ChevronLeft } from 'lucide-react'
 
-// 💰 رسوم التطبيق والمشرف (لكل منتج)
-const PLATFORM_FEE_PER_ITEM = 1.0 // ريال للتطبيق على كل منتج
-const ADMIN_COMMISSION_PER_ITEM = 0.75 // 75 هللة للمشرف على كل منتج
-// المجموع = 1.75 ريال لكل منتج
-
-type GeoLocation = { lat: number; lng: number }
-type DeliveryType = 'delivery' | 'pickup'
+const PLATFORM_FEE_PER_ITEM = 1.0
+const ADMIN_COMMISSION_PER_ITEM = 0.75
 
 export const CheckoutPage: React.FC = () => {
   const { items, subtotal, clear } = useCart()
@@ -26,21 +21,12 @@ export const CheckoutPage: React.FC = () => {
   const toast = useToast()
   const [address, setAddress] = useState('')
   const [saving, setSaving] = useState(false)
-  const [restaurant, setRestaurant] = useState<{ 
-    id: string; 
-    name: string; 
-    referredBy?: string; 
-    referrerType?: string;
-    geoLocation?: GeoLocation;
-    city?: string;
-    location?: string; // العنوان النصي
-  } | null>(null)
-  const [location, setLocation] = useState<GeoLocation | null>(null)
+  const [restaurant, setRestaurant] = useState<{ id: string; name: string; referredBy?: string; referrerType?: string } | null>(null)
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [showLocationPicker, setShowLocationPicker] = useState(false)
-  const [deliveryType, setDeliveryType] = useState<DeliveryType>('delivery')
 
-  // حساب الرسوم بناءً على نوع الاستلام
-  const deliveryFee = deliveryType === 'pickup' ? 0 : 7
+  const deliveryFee = 7
+  const totalItemsCount = items.reduce((sum, item) => sum + item.qty, 0)
   const total = subtotal + deliveryFee
 
   // ✅ تحميل بيانات المطعم
@@ -70,10 +56,7 @@ export const CheckoutPage: React.FC = () => {
         id: ownerId, 
         name: rData?.name || 'مطعم',
         referredBy: rData?.referredBy,
-        referrerType: rData?.referrerType,
-        geoLocation: rData?.geoLocation || null,
-        city: rData?.city || '',
-        location: rData?.location || ''
+        referrerType: rData?.referrerType
       })
     }
     loadRestaurant()
@@ -91,12 +74,8 @@ export const CheckoutPage: React.FC = () => {
   const placeOrder = async () => {
     if (!user) return
     if (items.length === 0) { dialog.warning('السلة فارغة'); return }
-    
-    // التحقق حسب نوع الاستلام
-    if (deliveryType === 'delivery') {
-      if (!address) { dialog.warning('أدخل العنوان'); return }
-      if (!location) { dialog.warning('حدّد موقعك على الخريطة'); return }
-    }
+    if (!address) { dialog.warning('أدخل العنوان'); return }
+    if (!location) { dialog.warning('حدّد موقعك على الخريطة'); return }
 
     let restId = restaurant?.id
     if (!restId && items[0]?.id) {
@@ -112,15 +91,19 @@ export const CheckoutPage: React.FC = () => {
 
     setSaving(true)
     
-    // 💰 حساب العمولات (كلها على أساس عدد المنتجات)
-    // رسوم التطبيق = 0.5 ريال × عدد المنتجات
-    // عمولة المشرف = 0.5 ريال × عدد المنتجات (إذا المطعم مضاف من مشرف)
+    // 💰 حساب تقسيم الدخل
     const referredByAdmin = restaurant?.referrerType === 'admin' && restaurant?.referredBy
-    const totalItemsCount = items.reduce((sum, item) => sum + item.qty, 0) // إجمالي عدد المنتجات
-    const platformFee = PLATFORM_FEE_PER_ITEM * totalItemsCount // رسوم التطبيق
-    const adminCommission = referredByAdmin ? (ADMIN_COMMISSION_PER_ITEM * totalItemsCount) : 0
-    // التطبيق يأخذ رسومه دائماً + عمولة المنتجات إذا ما فيه مشرف
-    const appEarnings = platformFee + (referredByAdmin ? 0 : (ADMIN_COMMISSION_PER_ITEM * totalItemsCount))
+    const totalItemsCount = items.reduce((sum, item) => sum + item.qty, 0)
+    
+    // حساب سعر المنتجات الأصلي (بدون رسوم التطبيق)
+    const SERVICE_FEE_PER_ITEM = PLATFORM_FEE_PER_ITEM + ADMIN_COMMISSION_PER_ITEM // 1.75
+    const originalSubtotal = subtotal - (SERVICE_FEE_PER_ITEM * totalItemsCount) // سعر المنتجات الأصلي للمطعم
+    
+    // تقسيم الدخل:
+    const restaurantEarnings = originalSubtotal // المطعم يحصل على السعر الأصلي
+    const platformFee = PLATFORM_FEE_PER_ITEM * totalItemsCount // رسوم التطبيق (1 ر.س × عدد المنتجات)
+    const adminCommission = referredByAdmin ? (ADMIN_COMMISSION_PER_ITEM * totalItemsCount) : 0 // عمولة المشرف
+    const appEarnings = platformFee + (referredByAdmin ? 0 : (ADMIN_COMMISSION_PER_ITEM * totalItemsCount)) // التطبيق يأخذ عمولة المشرف إذا ما فيه مشرف
 
     // إنشاء الطلب مع معلومات العمولة
     const orderRef = await addDoc(collection(db, 'orders'), {
@@ -138,20 +121,47 @@ export const CheckoutPage: React.FC = () => {
       deliveryFee,
       total,
       status: 'pending',
-      address: deliveryType === 'pickup' ? 'استلام من المطعم' : address,
-      location: deliveryType === 'pickup' ? restaurant?.geoLocation : location,
-      deliveryType, // 'delivery' أو 'pickup'
+      address,
+      location,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       paymentMethod: 'cod',
-      // 💰 معلومات العمولة
+      // 💰 معلومات تقسيم الدخل
+      restaurantEarnings: restaurantEarnings,
       platformFee: platformFee,
       platformFeePerItem: PLATFORM_FEE_PER_ITEM,
       adminCommission: adminCommission,
       adminCommissionPerItem: ADMIN_COMMISSION_PER_ITEM,
+      appEarnings: appEarnings,
       totalItemsCount: totalItemsCount,
       referredBy: restaurant?.referredBy || null,
     })
+
+    // 💰 تحديث محفظة المطعم
+    try {
+      const restaurantWalletRef = doc(db, 'wallets', restId)
+      const restaurantWalletSnap = await getDoc(restaurantWalletRef)
+      
+      if (restaurantWalletSnap.exists()) {
+        await updateDoc(restaurantWalletRef, {
+          balance: increment(restaurantEarnings),
+          totalEarnings: increment(restaurantEarnings),
+          updatedAt: serverTimestamp(),
+        })
+      } else {
+        const { setDoc } = await import('firebase/firestore')
+        await setDoc(restaurantWalletRef, {
+          balance: restaurantEarnings,
+          totalEarnings: restaurantEarnings,
+          totalWithdrawn: 0,
+          transactions: [],
+          updatedAt: serverTimestamp(),
+        })
+      }
+      console.log(`✅ تم إضافة ${restaurantEarnings} ريال لمحفظة المطعم ${restId}`)
+    } catch (err) {
+      console.error('خطأ في تحديث محفظة المطعم:', err)
+    }
 
     // 💰 تحديث محفظة المشرف إذا كان المطعم مسجل عن طريقه
     if (referredByAdmin && restaurant?.referredBy && adminCommission > 0) {
@@ -257,145 +267,52 @@ export const CheckoutPage: React.FC = () => {
           </div>
         </div>
 
-        {/* � اختيار طريقة الاستلام */}
+        {/* 📍 تحديد الموقع */}
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div className="bg-gray-50 px-4 py-3 border-b flex items-center gap-2">
-            <Truck className="w-5 h-5 text-purple-500" />
-            <span className="font-bold text-gray-800">طريقة الاستلام</span>
+            <MapPin className="w-5 h-5 text-green-500" />
+            <span className="font-bold text-gray-800">موقع التوصيل</span>
           </div>
-          <div className="p-4 grid grid-cols-2 gap-3">
-            {/* خيار التوصيل */}
-            <button
-              onClick={() => setDeliveryType('delivery')}
-              className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${
-                deliveryType === 'delivery'
-                  ? 'border-sky-500 bg-sky-50 text-sky-700'
-                  : 'border-gray-200 hover:border-gray-300 text-gray-600'
-              }`}
-            >
-              <Truck className={`w-8 h-8 ${deliveryType === 'delivery' ? 'text-sky-500' : 'text-gray-400'}`} />
-              <span className="font-bold">توصيل</span>
-              <span className="text-xs text-gray-500">7 ر.س رسوم التوصيل</span>
-            </button>
-
-            {/* خيار الاستلام من المطعم */}
-            <button
-              onClick={() => setDeliveryType('pickup')}
-              className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${
-                deliveryType === 'pickup'
-                  ? 'border-green-500 bg-green-50 text-green-700'
-                  : 'border-gray-200 hover:border-gray-300 text-gray-600'
-              }`}
-            >
-              <Store className={`w-8 h-8 ${deliveryType === 'pickup' ? 'text-green-500' : 'text-gray-400'}`} />
-              <span className="font-bold">استلام من المطعم</span>
-              <span className="text-xs text-green-600 font-semibold">مجاناً ✓</span>
-            </button>
-          </div>
-        </div>
-
-        {/* 📍 تحديد الموقع - يظهر فقط للتوصيل */}
-        {deliveryType === 'delivery' && (
-          <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-            <div className="bg-gray-50 px-4 py-3 border-b flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-green-500" />
-              <span className="font-bold text-gray-800">موقع التوصيل</span>
-            </div>
-            <div className="p-4">
-              {location ? (
-                <div className="space-y-3">
-                  {/* الموقع المحدد */}
-                  <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <Check className="w-5 h-5 text-white" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-green-700 mb-1">تم تحديد الموقع ✓</p>
-                        <p className="text-sm text-gray-600 break-words">{address}</p>
-                        <p className="text-xs text-gray-400 mt-1 font-mono">
-                          {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
-                        </p>
-                      </div>
+          <div className="p-4">
+            {location ? (
+              <div className="space-y-3">
+                {/* الموقع المحدد */}
+                <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <Check className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-green-700 mb-1">تم تحديد الموقع ✓</p>
+                      <p className="text-sm text-gray-600 break-words">{address}</p>
+                      <p className="text-xs text-gray-400 mt-1 font-mono">
+                        {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
+                      </p>
                     </div>
                   </div>
-                  
-                  {/* زر تغيير الموقع */}
-                  <button
-                    onClick={() => setShowLocationPicker(true)}
-                    className="w-full py-3 px-4 rounded-xl border-2 border-sky-200 text-sky-600 font-semibold hover:bg-sky-50 transition flex items-center justify-center gap-2"
-                  >
-                    <MapPin className="w-5 h-5" />
-                    تغيير الموقع
-                  </button>
                 </div>
-              ) : (
+                
+                {/* زر تغيير الموقع */}
                 <button
                   onClick={() => setShowLocationPicker(true)}
-                  className="w-full py-4 rounded-xl bg-gradient-to-r from-sky-500 to-sky-600 text-white font-bold shadow-lg hover:shadow-xl transition flex items-center justify-center gap-3"
+                  className="w-full py-3 px-4 rounded-xl border-2 border-sky-200 text-sky-600 font-semibold hover:bg-sky-50 transition flex items-center justify-center gap-2"
                 >
-                  <MapPin className="w-6 h-6" />
-                  <span>تحديد موقع التوصيل</span>
-                  <ChevronLeft className="w-5 h-5" />
+                  <MapPin className="w-5 h-5" />
+                  تغيير الموقع
                 </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* 🏪 موقع المطعم - يظهر فقط للاستلام */}
-        {deliveryType === 'pickup' && (
-          <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-            <div className="bg-gray-50 px-4 py-3 border-b flex items-center gap-2">
-              <Store className="w-5 h-5 text-green-500" />
-              <span className="font-bold text-gray-800">موقع المطعم</span>
-            </div>
-            <div className="p-4 space-y-4">
-              {/* معلومات المطعم */}
-              <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center">
-                    <Store className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-green-800">{restaurant?.name}</h3>
-                    {restaurant?.city && (
-                      <p className="text-sm text-green-600">{restaurant.city}</p>
-                    )}
-                  </div>
-                </div>
-                {restaurant?.location && (
-                  <p className="text-sm text-gray-600 bg-white rounded-lg p-2">
-                    📍 {restaurant.location}
-                  </p>
-                )}
               </div>
-
-              {/* زر فتح الموقع في Google Maps */}
-              {restaurant?.geoLocation ? (
-                <a
-                  href={`https://www.google.com/maps/dir/?api=1&destination=${restaurant.geoLocation.lat},${restaurant.geoLocation.lng}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full py-4 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold shadow-lg hover:shadow-xl transition flex items-center justify-center gap-3"
-                >
-                  <Navigation className="w-5 h-5" />
-                  <span>فتح الموقع في Google Maps</span>
-                  <ExternalLink className="w-4 h-4" />
-                </a>
-              ) : (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
-                  <p className="text-amber-700 text-sm">
-                    ⚠️ المطعم لم يحدد موقعه على الخريطة بعد
-                  </p>
-                  <p className="text-amber-600 text-xs mt-1">
-                    تواصل مع المطعم للحصول على العنوان
-                  </p>
-                </div>
-              )}
-            </div>
+            ) : (
+              <button
+                onClick={() => setShowLocationPicker(true)}
+                className="w-full py-4 rounded-xl bg-gradient-to-r from-sky-500 to-sky-600 text-white font-bold shadow-lg hover:shadow-xl transition flex items-center justify-center gap-3"
+              >
+                <MapPin className="w-6 h-6" />
+                <span>تحديد موقع التوصيل</span>
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+            )}
           </div>
-        )}
+        </div>
 
         {/* 💰 الملخص */}
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
@@ -410,18 +327,10 @@ export const CheckoutPage: React.FC = () => {
             </div>
             <div className="flex items-center justify-between text-gray-600">
               <div className="flex items-center gap-2">
-                {deliveryType === 'pickup' ? (
-                  <Store className="w-4 h-4" />
-                ) : (
-                  <Truck className="w-4 h-4" />
-                )}
-                <span>{deliveryType === 'pickup' ? 'استلام من المطعم' : 'رسوم التوصيل'}</span>
+                <Truck className="w-4 h-4" />
+                <span>رسوم التوصيل</span>
               </div>
-              {deliveryType === 'pickup' ? (
-                <span className="font-semibold text-green-600">مجاناً ✓</span>
-              ) : (
-                <span className="font-semibold">{deliveryFee.toFixed(2)} ر.س</span>
-              )}
+              <span className="font-semibold">{deliveryFee.toFixed(2)} ر.س</span>
             </div>
             <div className="h-px bg-gray-200 my-2" />
             <div className="flex items-center justify-between">
@@ -433,7 +342,7 @@ export const CheckoutPage: React.FC = () => {
 
         {/* ✅ زر تأكيد الطلب */}
         <button
-          disabled={saving || (deliveryType === 'delivery' && !location)}
+          disabled={saving || !location}
           onClick={placeOrder}
           className="w-full py-4 rounded-2xl bg-gradient-to-r from-green-500 to-green-600 text-white font-bold text-lg shadow-xl hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-3"
         >
@@ -445,15 +354,13 @@ export const CheckoutPage: React.FC = () => {
           ) : (
             <>
               <Check className="w-6 h-6" />
-              {deliveryType === 'pickup' 
-                ? 'تأكيد الطلب (استلام من المطعم)' 
-                : 'تأكيد الطلب (دفع عند الاستلام)'}
+              تأكيد الطلب (دفع عند الاستلام)
             </>
           )}
         </button>
 
         {/* تحذير */}
-        {deliveryType === 'delivery' && !location && (
+        {!location && (
           <p className="text-center text-sm text-amber-600 bg-amber-50 rounded-xl p-3">
             ⚠️ يجب تحديد موقع التوصيل قبل إرسال الطلب
           </p>

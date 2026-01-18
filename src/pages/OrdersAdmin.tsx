@@ -38,6 +38,7 @@ export const OrdersAdmin: React.FC = () => {
   const { user } = useAuth()
   const [orders, setOrders] = useState<Order[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [deliveryFees, setDeliveryFees] = useState<Record<string, number>>({})
 
   const restaurantUid = useMemo(() => user?.uid ?? null, [user])
 
@@ -73,11 +74,20 @@ export const OrdersAdmin: React.FC = () => {
     return () => unsub()
   }, [restaurantUid])
 
-  const updateStatus = async (id: string, status: string) => {
-    await updateDoc(doc(db, 'orders', id), { 
+  const updateStatus = async (id: string, status: string, order?: any) => {
+    const updates: any = { 
       status, 
       updatedAt: serverTimestamp()
-    })
+    }
+    
+    // عند القبول، نضيف رسوم التوصيل ونحدث الإجمالي
+    if (status === 'accepted' && order?.deliveryType === 'delivery') {
+      const fee = deliveryFees[id] || 0
+      updates.deliveryFee = fee
+      updates.total = (order.subtotal || 0) + fee
+    }
+    
+    await updateDoc(doc(db, 'orders', id), updates)
   }
 
   return (
@@ -131,14 +141,50 @@ export const OrdersAdmin: React.FC = () => {
             </div>
           )}
 
+          {/* � إدخال رسوم التوصيل للطلبات الجديدة */}
+          {o.status === 'pending' && o.deliveryType === 'delivery' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <label className="block text-sm font-bold text-amber-800 mb-2">
+                💵 حدد رسوم التوصيل قبل القبول:
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  placeholder="مثال: 10"
+                  value={deliveryFees[o.id] || ''}
+                  onChange={(e) => setDeliveryFees(prev => ({ ...prev, [o.id]: parseFloat(e.target.value) || 0 }))}
+                  className="flex-1 px-4 py-3 border-2 border-amber-300 rounded-xl focus:border-amber-500 focus:ring-2 focus:ring-amber-200 text-lg font-bold text-center"
+                />
+                <span className="text-amber-700 font-bold">ر.س</span>
+              </div>
+              <p className="text-xs text-amber-600 mt-2">سيتم إضافتها للإجمالي عند قبول الطلب</p>
+            </div>
+          )}
+
+          {/* عرض رسوم التوصيل المحددة */}
+          {o.deliveryFee !== undefined && o.deliveryFee > 0 && (
+            <div className="text-sm text-gray-700">
+              <span className="font-semibold">رسوم التوصيل:</span> {o.deliveryFee?.toFixed?.(2)} ر.س
+            </div>
+          )}
+
           {/* 🔘 أزرار تغيير الحالة */}
           <div className="mt-3 grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
             {['accepted','preparing','ready','out_for_delivery','delivered','cancelled'].map(s => {
+              // منع القبول بدون تحديد رسوم التوصيل
+              const needsFee = s === 'accepted' && o.status === 'pending' && o.deliveryType === 'delivery'
+              const hasFee = deliveryFees[o.id] !== undefined && deliveryFees[o.id] >= 0
+              const disabled = needsFee && !hasFee
+              
               return (
                 <button 
                   key={s} 
-                  onClick={()=>updateStatus(o.id, s)} 
-                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-gray-100 hover:bg-gray-200 transition"
+                  onClick={()=>updateStatus(o.id, s, o)} 
+                  disabled={disabled}
+                  className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${disabled ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-100 hover:bg-gray-200'}`}
+                  title={disabled ? 'حدد رسوم التوصيل أولاً' : ''}
                 >
                   {badge(s)}
                 </button>

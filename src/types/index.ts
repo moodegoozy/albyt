@@ -54,6 +54,7 @@ export interface Order {
   total: number;
   status: OrderStatus;
   address: string;
+  deliveryType?: 'delivery' | 'pickup'; // نوع التسليم: توصيل أو استلام من المطعم
   courierId?: string; // Links to users/{courierId} if assigned
   notes?: string;
   restaurantName?: string; // Denormalized for display convenience

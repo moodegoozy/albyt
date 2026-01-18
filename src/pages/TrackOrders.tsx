@@ -127,8 +127,31 @@ export const TrackOrders: React.FC = () => {
           <div className="mt-2 text-sm text-gray-700">
             {o.items?.map((i) => `${i.name}×${i.qty}`).join(' • ')}
           </div>
-          <div className="mt-2 font-bold">
-            المجموع: {o.total?.toFixed?.(2)} ر.س
+
+          {/* تفاصيل التوصيل */}
+          <div className="mt-2 text-sm text-gray-600 space-y-1">
+            {o.deliveryType === 'pickup' ? (
+              <div className="text-green-600 font-medium">📍 استلام من المطعم</div>
+            ) : (
+              <>
+                <div className="flex justify-between">
+                  <span>المبلغ الأساسي:</span>
+                  <span>{o.subtotal?.toFixed?.(2) || '—'} ر.س</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>رسوم التوصيل:</span>
+                  {o.deliveryFee !== undefined && o.deliveryFee > 0 ? (
+                    <span className="font-medium">{o.deliveryFee?.toFixed?.(2)} ر.س</span>
+                  ) : (
+                    <span className="text-amber-600">بانتظار تحديد المطعم</span>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="mt-2 font-bold border-t pt-2">
+            الإجمالي: {o.total?.toFixed?.(2)} ر.س
           </div>
         </div>
       ))}

@@ -574,10 +574,24 @@ export const Developer: React.FC = () => {
   // ===== رفع شعار المطعم =====
   const handleUploadLogo = async (id: string, file: File) => {
     try {
+      // التحقق من نوع الملف
+      if (!file.type.startsWith('image/')) {
+        toast.warning('يرجى اختيار صورة فقط')
+        return
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast.warning('حجم الصورة كبير، يرجى اختيار صورة أقل من 5MB')
+        return
+      }
       setUploadingLogo(true)
-      const path = `restaurants/${id}/logo_${Date.now()}_${file.name}`
+      const cleanName = file.name.replace(/\s+/g, '_')
+      const path = `restaurants/${id}/logo_${Date.now()}_${cleanName}`
       const storageRef = ref(storage, path)
-      await uploadBytes(storageRef, file)
+      const metadata = {
+        contentType: file.type || 'image/jpeg',
+        cacheControl: 'public,max-age=31536000,immutable',
+      }
+      await uploadBytes(storageRef, file, metadata)
       const url = await getDownloadURL(storageRef)
       
       await updateDoc(doc(db, 'restaurants', id), {
