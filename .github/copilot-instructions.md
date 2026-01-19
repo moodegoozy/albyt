@@ -1,29 +1,34 @@
-# Copilot Instructions for Sofra Al-Bayt (سفرة البيت)
+# Copilot Instructions for سُفرة البيت (Sofra Al-Bayt)
 
-## Quick Reference
+## Stack & Commands
 - **Stack**: React 18 + Vite + TypeScript + Firebase (Auth/Firestore/Storage) + TailwindCSS
 - **Commands**: `npm run dev` | `npm run build` | `npm run preview`
 - **Language**: All UI in Arabic RTL. Loading text: `"جارِ التحميل..."`
-- **Imports**: Always use `@/` path alias (maps to `src/`)
+- **Imports**: Always use `@/` alias (maps to `src/` via vite.config.ts)
 
 ## Architecture
+```
+src/
+├── auth.tsx          # AuthContext: user, role, location, refreshUserData()
+├── firebase.ts       # Firebase init: exports { app, auth, db, storage }
+├── App.tsx           # Routes with ProtectedRoute + RoleGate wrappers
+├── pages/            # One component per route
+├── components/ui/    # Toast, ConfirmDialog (context-based providers)
+├── hooks/useCart.ts  # localStorage cart (⚠️ context/CartContext.tsx is DEPRECATED)
+├── routes/           # ProtectedRoute, RoleGate components
+└── types/index.ts    # Centralized TypeScript interfaces
+```
 
-### Role-Based Access (5 Roles)
-Defined in `src/types/index.ts`: `customer | courier | owner | admin | developer`
+## Role-Based Access
+Roles: `customer | courier | owner | admin | developer`
+- `developer`: Full access, delete ops, user management
+- `admin`: Add restaurants (earns commission), can order like customer
+- `owner`: Manage menu, process orders, hire couriers
+- `courier`: Claim ready orders, update delivery status
+- `customer`: Browse, order, track
 
-| Role | Capabilities |
-|------|-------------|
-| `developer` | Full system access - users, restaurants, orders, settings |
-| `admin` | Add restaurants (earns commission), monitor referred restaurants |
-| `owner` | Manage own menu, process orders for their restaurant |
-| `courier` | Claim ready orders, update delivery status |
-| `customer` | Browse, order, track deliveries |
-
+## Route Protection Pattern
 ```tsx
-// Auth hook - ALWAYS use for auth state
-const { user, role, loading, logout } = useAuth()  // from @/auth
-
-// Route protection pattern
 <ProtectedRoute>                          {/* → /login if !auth */}
   <RoleGate allow={['owner', 'admin']}>   {/* → / if role mismatch */}
     <YourPage />
@@ -31,31 +36,25 @@ const { user, role, loading, logout } = useAuth()  // from @/auth
 </ProtectedRoute>
 ```
 
-### Firestore Data Model
-| Collection | Doc ID | Key Fields |
-|------------|--------|------------|
-| `users` | `{uid}` | `role`, `name`, `email` |
-| `restaurants` | `{ownerId}` | Doc ID = owner's UID, `referredBy` for commission |
+## Firestore Collections
+| Collection | Doc ID | Notes |
+|------------|--------|-------|
+| `users` | `{uid}` | Role, location, profile |
+| `restaurants` | `{ownerId}` | **⚠️ Doc ID = owner's UID** → use `doc()` NOT `where()` |
 | `menuItems` | auto | `ownerId` links to restaurant |
-| `orders` | auto | Status flow: `pending→accepted→preparing→ready→out_for_delivery→delivered` |
-| `wallets` | `{adminId}` | `balance`, `totalEarnings`, `transactions[]` |
+| `orders` | auto | Status: `pending→accepted→preparing→ready→out_for_delivery→delivered` |
+| `orders/{id}/messages` | auto | Chat subcollection |
+| `wallets` | `{adminId}` | Commission tracking |
+| `settings` | `{doc}` | Global config |
 
-⚠️ **Security First**: Update `firestore.rules` BEFORE adding collections. Use helper functions: `isOwner()`, `isAdmin()`, `isDeveloper()`, `isCourier()`, `isCustomer()`
+**⚠️ Update firestore.rules FIRST when adding collections.** Use helpers: `isOwner()`, `isAdmin()`, `isDeveloper()`, `isCourier()`, `isCustomer()`
 
-### Commission System
-```tsx
-// In CheckoutPage.tsx
-const PLATFORM_FEE_PER_ITEM = 1.0      // 1 ر.س → platform
-const ADMIN_COMMISSION_PER_ITEM = 0.75 // 0.75 ر.س → admin (if referredBy exists)
-```
+## Key Patterns
 
-## Critical Patterns
-
-### Cart (localStorage-based)
+### Cart (localStorage)
 ```tsx
 import { useCart } from '@/hooks/useCart'
 const { items, add, remove, changeQty, clear, subtotal } = useCart()
-// ❌ src/context/CartContext.tsx is DEPRECATED
 ```
 
 ### UI Feedback
@@ -63,36 +62,32 @@ const { items, add, remove, changeQty, clear, subtotal } = useCart()
 import { useToast } from '@/components/ui/Toast'
 import { useDialog } from '@/components/ui/ConfirmDialog'
 
-toast.success('تم!')  // success | error | info | warning (auto-dismiss 3s)
-const ok = await dialog.confirm('متأكد؟')  // returns Promise<boolean>
-await dialog.error('خطأ')  // confirm | alert | success | error | warning | info
+toast.success('تم!')  // .success | .error | .info | .warning
+const confirmed = await dialog.confirm('متأكد؟')  // Promise<boolean>
 ```
 
-### Real-time Data
+### Realtime Subscriptions
 ```tsx
 useEffect(() => {
-  const unsub = onSnapshot(collection(db, 'orders'), snap => { /* ... */ })
-  return () => unsub()
-}, [])
+  const unsub = onSnapshot(query(collection(db, 'orders'), where(...)), snap => {...})
+  return () => unsub()  // ← ALWAYS cleanup
+}, [deps])
 ```
 
-## Styling
-- **Theme**: `primary` (#0EA5E9), `sky-*` palette, Arabic fonts (Cairo, Tajawal)
-- **Custom shadows**: `shadow-luxury`, `shadow-glow`, `shadow-card`
-- **Order badges**: `{ pending: '⏳ قيد المراجعة', accepted: '✅ تم القبول', ... }`
+### Firebase Imports
+```tsx
+import { db, auth, storage } from '@/firebase'
+import { collection, doc, getDoc, setDoc, updateDoc, onSnapshot, query, where, orderBy, serverTimestamp } from 'firebase/firestore'
+```
 
 ## Adding Features
-1. **New Page**: Create in `src/pages/`, add route in `src/App.tsx` with guards
-2. **New Collection**: Update `firestore.rules` first with role-based rules  
-3. **New Type**: Add to `src/types/index.ts`
+1. **New Page**: Create in `src/pages/`, add route in App.tsx with protection wrappers
+2. **New Collection**: Update firestore.rules FIRST, add types to types/index.ts
+3. **Icons**: Use `lucide-react` exclusively
 
-## Key Files
-| Purpose | Location |
-|---------|----------|
-| Types | `src/types/index.ts` - MenuItem, Order, Restaurant, User, Wallet, UserRole |
-| Auth | `src/auth.tsx` - AuthProvider, useAuth hook |
-| Routes | `src/App.tsx`, `src/routes/` - ProtectedRoute, RoleGate |
-| Firebase | `src/firebase.ts` - `app`, `auth`, `db`, `storage` exports |
-| Security | `firestore.rules` - role helper functions |
-| Cart | `src/hooks/useCart.ts` - localStorage cart with `ownerId` |
-| UI Feedback | `src/components/ui/` - Toast, ConfirmDialog providers |
+## Critical Gotchas
+- `restaurants/{uid}` uses owner UID → `doc(db, 'restaurants', ownerId)` NOT `where()`
+- `admin` role can order like `customer` → both allowed in checkout routes
+- Owner restaurant doc auto-created on first login (auth.tsx lines 89-100)
+- Customer location required each session: `sessionStorage.getItem('broast_session_location')`
+- Use `serverTimestamp()` for `updatedAt` fields
