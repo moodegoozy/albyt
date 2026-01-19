@@ -7,12 +7,17 @@
 /* ===== إعادات عامة ===== */
 *, *::before, *::after {
   box-sizing: border-box;
+  /* منع التحديد غير المرغوب على Android */
+  -webkit-touch-callout: none;
 }
 
 html {
   scroll-behavior: smooth;
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
+  /* تحسينات Android */
+  text-size-adjust: 100%;
+  touch-action: manipulation;
 }
 
 html, body, #root {
@@ -36,18 +41,47 @@ body {
   button, a {
     -webkit-touch-callout: none;
     user-select: none;
+    /* حل مشكلة التأخير في Android */
+    touch-action: manipulation;
   }
   
   /* تحسين أداء التمرير */
   .overflow-y-auto,
   .overflow-x-auto {
     -webkit-overflow-scrolling: touch;
+    /* لمنع مشاكل التمرير في Android */
+    overscroll-behavior: contain;
   }
   
   /* إخفاء شريط التمرير على الجوال */
   ::-webkit-scrollbar {
     width: 0;
     height: 0;
+  }
+  
+  /* تحسين الأداء للأزرار */
+  button, .btn, [role="button"] {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+}
+
+/* تحسينات خاصة بـ Android */
+@supports (-webkit-touch-callout: none) {
+  /* iOS فقط */
+}
+
+/* Android Chrome */
+@media screen and (-webkit-min-device-pixel-ratio: 0) {
+  input, select, textarea {
+    font-size: 16px !important; /* منع الزوم التلقائي */
+  }
+  
+  /* إصلاح مشاكل RTL في Android */
+  input[type="tel"],
+  input[type="number"] {
+    direction: ltr;
+    text-align: right;
   }
 }
 

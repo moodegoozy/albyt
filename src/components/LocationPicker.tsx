@@ -1,6 +1,6 @@
 // src/components/LocationPicker.tsx
 import React, { useState, useEffect, useCallback } from 'react'
-import { MapPin, Navigation, Check, X, Loader2, Target, Smartphone, Search } from 'lucide-react'
+import { MapPin, Navigation, Check, X, Loader2, Target, Smartphone, Search, PenLine, Map } from 'lucide-react'
 
 type Location = { lat: number; lng: number }
 
@@ -28,6 +28,8 @@ export const LocationPicker: React.FC<Props> = ({ isOpen, onClose, onConfirm, in
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [showResults, setShowResults] = useState(false)
+  // وضع الإدخال: الخريطة أو يدوي
+  const [inputMode, setInputMode] = useState<'map' | 'manual'>('map')
 
   // 🎯 موقع افتراضي (الرياض)
   const defaultLocation: Location = { lat: 24.7136, lng: 46.6753 }
@@ -250,6 +252,18 @@ export const LocationPicker: React.FC<Props> = ({ isOpen, onClose, onConfirm, in
 
   // ✅ تأكيد الموقع
   const handleConfirm = () => {
+    // في الوضع اليدوي، لا نحتاج إحداثيات
+    if (inputMode === 'manual') {
+      if (!address.trim()) {
+        setError('أدخل العنوان التفصيلي')
+        return
+      }
+      // استخدام إحداثيات افتراضية (الرياض) للعنوان اليدوي
+      onConfirm({ lat: 24.7136, lng: 46.6753 }, address)
+      return
+    }
+    
+    // في وضع الخريطة
     if (!location) {
       setError('حدد موقعك أولاً')
       return
@@ -283,7 +297,9 @@ export const LocationPicker: React.FC<Props> = ({ isOpen, onClose, onConfirm, in
               </div>
               <div>
                 <h2 className="font-bold text-lg">تحديد موقع التوصيل</h2>
-                <p className="text-sm text-white/80">ابحث أو اسحب الدبوس</p>
+                <p className="text-sm text-white/80">
+                  {inputMode === 'map' ? 'ابحث أو اسحب الدبوس' : 'اكتب عنوانك يدوياً'}
+                </p>
               </div>
             </div>
             <button 
@@ -294,97 +310,227 @@ export const LocationPicker: React.FC<Props> = ({ isOpen, onClose, onConfirm, in
             </button>
           </div>
           
-          {/* 🔍 حقل البحث */}
-          <div className="relative">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value)
-                searchPlaces(e.target.value)
-              }}
-              onFocus={() => searchResults.length > 0 && setShowResults(true)}
-              placeholder="ابحث عن حي، شارع، أو مكان..."
-              className="w-full bg-white/95 text-gray-800 rounded-xl p-3 pr-10 pl-10 focus:outline-none focus:ring-2 focus:ring-white/50 transition placeholder:text-gray-400"
-            />
-            {searchLoading && (
-              <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-sky-500 animate-spin" />
-            )}
-            
-            {/* نتائج البحث */}
-            {showResults && searchResults.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl overflow-hidden z-[1001] max-h-60 overflow-y-auto">
-                {searchResults.map((result, index) => (
-                  <button
-                    key={index}
-                    onClick={() => selectSearchResult(result)}
-                    className="w-full p-3 text-right hover:bg-sky-50 border-b border-gray-100 last:border-0 transition flex items-start gap-3"
-                  >
-                    <MapPin className="w-5 h-5 text-sky-500 flex-shrink-0 mt-0.5" />
-                    <span className="text-gray-700 text-sm leading-relaxed">
-                      {result.display_name}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* الخريطة */}
-        <div className="flex-1 relative">
-          {!mapReady && (
-            <div className="absolute inset-0 flex items-center justify-center bg-sky-50">
-              <div className="text-center">
-                <Loader2 className="w-12 h-12 text-sky-500 animate-spin mx-auto mb-3" />
-                <p className="text-sky-600 font-medium">جارِ تحميل الخريطة...</p>
-              </div>
-            </div>
-          )}
-          <div id="location-map" className="w-full h-full" />
-
-          {/* أزرار التحكم */}
-          <div className="absolute left-4 top-4 flex flex-col gap-2 z-[1000]">
-            {/* زر GPS */}
+          {/* 🔄 تبديل الوضع: خريطة / يدوي */}
+          <div className="flex gap-2 mb-3">
             <button
-              onClick={getGPSLocation}
-              disabled={gpsLoading}
-              className="w-12 h-12 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-sky-50 transition disabled:opacity-50"
-              title="موقعي الحالي"
+              onClick={() => setInputMode('map')}
+              className={`flex-1 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition ${
+                inputMode === 'map' 
+                  ? 'bg-white text-sky-600' 
+                  : 'bg-white/20 text-white hover:bg-white/30'
+              }`}
             >
-              {gpsLoading ? (
-                <Loader2 className="w-5 h-5 text-sky-500 animate-spin" />
-              ) : (
-                <Navigation className="w-5 h-5 text-sky-500" />
-              )}
+              <Map className="w-4 h-4" />
+              الخريطة
             </button>
-
-            {/* زر التمركز */}
-            {location && (
-              <button
-                onClick={centerOnLocation}
-                className="w-12 h-12 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-sky-50 transition"
-                title="تمركز"
-              >
-                <Target className="w-5 h-5 text-gray-600" />
-              </button>
-            )}
+            <button
+              onClick={() => setInputMode('manual')}
+              className={`flex-1 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition ${
+                inputMode === 'manual' 
+                  ? 'bg-white text-sky-600' 
+                  : 'bg-white/20 text-white hover:bg-white/30'
+              }`}
+            >
+              <PenLine className="w-4 h-4" />
+              إدخال يدوي
+            </button>
           </div>
-
-          {/* مؤشر الموقع */}
-          {location && (
-            <div className="absolute right-4 top-4 bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-3 z-[1000] max-w-[200px]">
-              <div className="flex items-center gap-2 text-green-600 mb-1">
-                <Check className="w-4 h-4" />
-                <span className="text-sm font-medium">تم تحديد الموقع</span>
-              </div>
-              <p className="text-xs text-gray-500 font-mono">
-                {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
-              </p>
+          
+          {/* 🔍 حقل البحث - فقط في وضع الخريطة */}
+          {inputMode === 'map' && (
+            <div className="relative">
+              <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                  searchPlaces(e.target.value)
+                }}
+                onFocus={() => searchResults.length > 0 && setShowResults(true)}
+                placeholder="ابحث عن حي، شارع، أو مكان..."
+                className="w-full bg-white/95 text-gray-800 rounded-xl p-3 pr-10 pl-10 focus:outline-none focus:ring-2 focus:ring-white/50 transition placeholder:text-gray-400"
+              />
+              {searchLoading && (
+                <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-sky-500 animate-spin" />
+              )}
+              
+              {/* نتائج البحث */}
+              {showResults && searchResults.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl overflow-hidden z-[1001] max-h-60 overflow-y-auto">
+                  {searchResults.map((result, index) => (
+                    <button
+                      key={index}
+                      onClick={() => selectSearchResult(result)}
+                      className="w-full p-3 text-right hover:bg-sky-50 border-b border-gray-100 last:border-0 transition flex items-start gap-3"
+                    >
+                      <MapPin className="w-5 h-5 text-sky-500 flex-shrink-0 mt-0.5" />
+                      <span className="text-gray-700 text-sm leading-relaxed">
+                        {result.display_name}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
+
+        {/* الخريطة - فقط في وضع الخريطة */}
+        {inputMode === 'map' && (
+          <div className="flex-1 relative">
+            {!mapReady && (
+              <div className="absolute inset-0 flex items-center justify-center bg-sky-50">
+                <div className="text-center">
+                  <Loader2 className="w-12 h-12 text-sky-500 animate-spin mx-auto mb-3" />
+                  <p className="text-sky-600 font-medium">جارِ تحميل الخريطة...</p>
+                </div>
+              </div>
+            )}
+            <div id="location-map" className="w-full h-full" />
+
+            {/* أزرار التحكم */}
+            <div className="absolute left-4 top-4 flex flex-col gap-2 z-[1000]">
+              {/* زر GPS */}
+              <button
+                onClick={getGPSLocation}
+                disabled={gpsLoading}
+                className="w-12 h-12 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-sky-50 transition disabled:opacity-50"
+                title="موقعي الحالي"
+              >
+                {gpsLoading ? (
+                  <Loader2 className="w-5 h-5 text-sky-500 animate-spin" />
+                ) : (
+                  <Navigation className="w-5 h-5 text-sky-500" />
+                )}
+              </button>
+
+              {/* زر التمركز */}
+              {location && (
+                <button
+                  onClick={centerOnLocation}
+                  className="w-12 h-12 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-sky-50 transition"
+                  title="تمركز"
+                >
+                  <Target className="w-5 h-5 text-gray-600" />
+                </button>
+              )}
+            </div>
+
+            {/* مؤشر الموقع */}
+            {location && (
+              <div className="absolute right-4 top-4 bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-3 z-[1000] max-w-[200px]">
+                <div className="flex items-center gap-2 text-green-600 mb-1">
+                  <Check className="w-4 h-4" />
+                  <span className="text-sm font-medium">تم تحديد الموقع</span>
+                </div>
+                <p className="text-xs text-gray-500 font-mono">
+                  {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* محتوى الإدخال اليدوي */}
+        {inputMode === 'manual' && (
+          <div className="flex-1 p-6 overflow-y-auto bg-gray-50">
+            <div className="max-w-md mx-auto space-y-4">
+              {/* أيقونة */}
+              <div className="text-center py-4">
+                <div className="w-20 h-20 bg-sky-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <PenLine className="w-10 h-10 text-sky-500" />
+                </div>
+                <h3 className="text-lg font-bold text-gray-800">أدخل عنوانك يدوياً</h3>
+                <p className="text-sm text-gray-500 mt-1">اكتب تفاصيل العنوان بدقة ليصلك الطلب</p>
+              </div>
+
+              {/* المدينة */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">المدينة</label>
+                <select
+                  className="w-full border-2 border-gray-200 rounded-xl p-3 bg-white focus:border-sky-400 focus:outline-none"
+                  onChange={(e) => setAddress(prev => {
+                    const parts = prev.split('،').slice(1)
+                    return e.target.value + (parts.length ? '،' + parts.join('،') : '')
+                  })}
+                >
+                  <option value="">اختر المدينة</option>
+                  <option value="الرياض">الرياض</option>
+                  <option value="جدة">جدة</option>
+                  <option value="مكة المكرمة">مكة المكرمة</option>
+                  <option value="المدينة المنورة">المدينة المنورة</option>
+                  <option value="الدمام">الدمام</option>
+                  <option value="الخبر">الخبر</option>
+                  <option value="الأحساء">الأحساء</option>
+                  <option value="الطائف">الطائف</option>
+                  <option value="تبوك">تبوك</option>
+                  <option value="بريدة">بريدة</option>
+                  <option value="خميس مشيط">خميس مشيط</option>
+                  <option value="أبها">أبها</option>
+                  <option value="القطيف">القطيف</option>
+                  <option value="نجران">نجران</option>
+                  <option value="جازان">جازان</option>
+                  <option value="ينبع">ينبع</option>
+                  <option value="حائل">حائل</option>
+                </select>
+              </div>
+
+              {/* الحي */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">الحي</label>
+                <input
+                  type="text"
+                  placeholder="مثال: حي النرجس"
+                  className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-sky-400 focus:outline-none"
+                  onChange={(e) => setAddress(prev => {
+                    const city = prev.split('،')[0] || ''
+                    return city + (e.target.value ? '، ' + e.target.value : '')
+                  })}
+                />
+              </div>
+
+              {/* الشارع */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">الشارع</label>
+                <input
+                  type="text"
+                  placeholder="مثال: شارع الملك عبدالعزيز"
+                  className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-sky-400 focus:outline-none"
+                  onChange={(e) => setAddress(prev => {
+                    const parts = prev.split('،').slice(0, 2)
+                    return parts.join('،') + (e.target.value ? '، ' + e.target.value : '')
+                  })}
+                />
+              </div>
+
+              {/* تفاصيل إضافية */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">تفاصيل إضافية</label>
+                <textarea
+                  placeholder="رقم المبنى، الدور، علامة مميزة..."
+                  rows={3}
+                  className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-sky-400 focus:outline-none resize-none"
+                  onChange={(e) => setAddress(prev => {
+                    const parts = prev.split('،').slice(0, 3)
+                    return parts.join('،') + (e.target.value ? '، ' + e.target.value : '')
+                  })}
+                />
+              </div>
+
+              {/* العنوان النهائي */}
+              {address && (
+                <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
+                  <div className="flex items-center gap-2 text-green-600 mb-2">
+                    <Check className="w-5 h-5" />
+                    <span className="font-semibold">العنوان:</span>
+                  </div>
+                  <p className="text-gray-700">{address}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* قسم العنوان والتأكيد */}
         <div className="bg-white border-t p-4 space-y-3">
@@ -396,22 +542,26 @@ export const LocationPicker: React.FC<Props> = ({ isOpen, onClose, onConfirm, in
             </div>
           )}
 
-          {/* حقل العنوان */}
-          <div className="relative">
-            <Smartphone className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="وصف العنوان (مثال: حي النرجس، شارع الملك عبدالعزيز، بجانب مسجد...)"
-              className="w-full border-2 border-gray-200 rounded-xl p-3 pr-10 focus:border-sky-400 focus:outline-none transition text-gray-800"
-            />
-          </div>
+          {/* حقل العنوان - فقط في وضع الخريطة */}
+          {inputMode === 'map' && (
+            <>
+              <div className="relative">
+                <Smartphone className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="وصف العنوان (مثال: حي النرجس، شارع الملك عبدالعزيز، بجانب مسجد...)"
+                  className="w-full border-2 border-gray-200 rounded-xl p-3 pr-10 focus:border-sky-400 focus:outline-none transition text-gray-800"
+                />
+              </div>
 
-          {/* نصيحة */}
-          <p className="text-xs text-gray-500 text-center">
-            💡 أضف تفاصيل واضحة ليصلك الطلب بسرعة
-          </p>
+              {/* نصيحة */}
+              <p className="text-xs text-gray-500 text-center">
+                💡 أضف تفاصيل واضحة ليصلك الطلب بسرعة
+              </p>
+            </>
+          )}
 
           {/* أزرار */}
           <div className="flex gap-3">
@@ -423,7 +573,7 @@ export const LocationPicker: React.FC<Props> = ({ isOpen, onClose, onConfirm, in
             </button>
             <button
               onClick={handleConfirm}
-              disabled={!location}
+              disabled={inputMode === 'map' && !location}
               className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-green-500 to-green-600 text-white font-bold shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
             >
               <Check className="w-5 h-5" />
