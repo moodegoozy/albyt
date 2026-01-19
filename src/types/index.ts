@@ -31,16 +31,41 @@ export interface Restaurant {
   city?: string;
   location?: string; // Address or description
   logoUrl?: string;
+  // خيارات التوصيل والاستلام
+  allowPickup?: boolean; // السماح بالاستلام من موقع المطعم
   // التراخيص
-  commercialLicenseUrl?: string; // صورة الرخصة التجارية
-  healthCertificateUrl?: string; // صورة الشهادة الصحية
+  commercialLicenseUrl?: string; // صورة الرخصة التجارية / السجل التجاري
   licenseStatus?: 'pending' | 'approved' | 'rejected'; // حالة مراجعة التراخيص
   licenseNotes?: string; // ملاحظات المراجعة
   referredBy?: string; // UID المشرف الذي أضاف المطعم (admin) - إذا كان فارغ = مسجل من المطور
   referrerType?: 'admin' | 'developer'; // نوع من أضاف المطعم
+  // باقات سفرة البيت
+  packageType?: 'free' | 'premium'; // نوع الباقة الحالية
+  packageRequest?: 'premium'; // طلب ترقية للباقة
+  packageRequestedAt?: Date; // تاريخ طلب الترقية
+  packageSubscribedAt?: Date; // تاريخ الاشتراك في الباقة المدفوعة
+  packageExpiresAt?: Date; // تاريخ انتهاء الباقة المدفوعة
+  // نظام التوثيق والتصنيف
+  isVerified?: boolean; // هل الأسرة موثقة؟
+  verifiedAt?: Date; // تاريخ التوثيق
+  sellerTier?: 'bronze' | 'silver' | 'gold'; // تصنيف البائع
+  tierUpdatedAt?: Date; // تاريخ آخر تحديث للتصنيف
+  // إحصائيات للتصنيف
+  totalOrders?: number; // إجمالي الطلبات
+  averageRating?: number; // متوسط التقييم
+  onTimeDeliveryRate?: number; // نسبة الالتزام بالوقت
+  complaintsCount?: number; // عدد الشكاوى
   createdAt?: Date;
   updatedAt?: Date;
 }
+
+/**
+ * Seller Tier Levels
+ * Bronze: المستوى الأساسي (افتراضي)
+ * Silver: أداء جيد (تقييم 4+، التزام 85%+، شكاوى أقل من 5)
+ * Gold: أداء ممتاز (تقييم 4.5+، التزام 95%+، شكاوى أقل من 2)
+ */
+export type SellerTier = 'bronze' | 'silver' | 'gold';
 
 /**
  * Order - Customer purchase record
@@ -97,7 +122,16 @@ export interface User {
   uid: string;
   email: string;
   name?: string;
+  phone?: string;
+  city?: string;
+  address?: string;
   role: UserRole;
+  // الموقع المحفوظ للتوصيل
+  savedLocation?: {
+    lat: number;
+    lng: number;
+    address: string;
+  };
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -162,4 +196,25 @@ export interface WalletTransaction {
   orderId?: string; // رقم الطلب المرتبط
   restaurantId?: string;
   createdAt: Date;
+}
+
+/**
+ * Promotion - الإعلان الممول للأسرة المنتجة (حالة/ستوري)
+ */
+export interface Promotion {
+  id: string;
+  ownerId: string; // صاحب الأسرة
+  restaurantId: string; // المطعم/الأسرة
+  type: 'text' | 'image' | 'video'; // نوع الإعلان
+  title?: string; // عنوان الإعلان
+  description?: string; // الوصف أو الشرح
+  mediaUrl?: string; // رابط الصورة أو الفيديو
+  isActive: boolean; // هل الإعلان نشط؟
+  isPaid: boolean; // هل تم الدفع؟
+  price: number; // سعر الإعلان
+  duration: number; // مدة الإعلان بالساعات (24 ساعة افتراضي)
+  viewsCount: number; // عدد المشاهدات
+  expiresAt?: Date; // تاريخ انتهاء الإعلان
+  createdAt?: Date;
+  updatedAt?: Date;
 }

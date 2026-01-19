@@ -4,9 +4,12 @@ import { collection, getDocs, onSnapshot, orderBy, query, where, limit } from 'f
 import { db } from '@/firebase'
 import { useAuth } from '@/auth'
 import { Order } from '@/types'
+import { useNavigate } from 'react-router-dom'
+import { MessageCircle, Package, MapPin, Truck, CheckCircle, Clock, ChefHat, XCircle, Store } from 'lucide-react'
 
 export const TrackOrders: React.FC = () => {
   const { user } = useAuth()
+  const nav = useNavigate()
   const [err, setErr] = useState<string | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [diag, setDiag] = useState<{ uid: string; fallbackCount: number; sample: any[] } | null>(null)
@@ -71,16 +74,32 @@ export const TrackOrders: React.FC = () => {
   }, [user])
 
   const badge = (s: string) => {
-    const map: Record<string, string> = {
-      pending: 'قيد المراجعة',
-      accepted: 'تم القبول',
-      preparing: 'قيد التحضير',
-      ready: 'جاهز للتسليم',
-      out_for_delivery: 'في الطريق',
-      delivered: 'تم التسليم',
-      cancelled: 'ملغي',
+    const map: Record<string, { text: string; emoji: string; color: string; icon: any }> = {
+      pending: { text: 'قيد المراجعة', emoji: '⏳', color: 'bg-yellow-500', icon: Clock },
+      accepted: { text: 'تم القبول', emoji: '✅', color: 'bg-blue-500', icon: CheckCircle },
+      preparing: { text: 'قيد التحضير', emoji: '👨‍🍳', color: 'bg-orange-500', icon: ChefHat },
+      ready: { text: 'جاهز للتسليم', emoji: '📦', color: 'bg-purple-500', icon: Package },
+      out_for_delivery: { text: 'في الطريق', emoji: '🚗', color: 'bg-sky-500', icon: Truck },
+      delivered: { text: 'تم التسليم', emoji: '🎉', color: 'bg-green-500', icon: CheckCircle },
+      cancelled: { text: 'ملغي', emoji: '❌', color: 'bg-red-500', icon: XCircle },
     }
-    return map[s] || s
+    return map[s] || { text: s, emoji: '📦', color: 'bg-gray-500', icon: Package }
+  }
+
+  // التحقق إذا كان الطلب يسمح بالمحادثة
+  // 1. مع المندوب: إذا كان الطلب في الطريق ويوجد مندوب
+  // 2. مع المطعم: إذا كان الطلب قيد التحضير أو جاهز ولا يوجد مندوب
+  const canChatWithCourier = (order: Order) => {
+    return order.courierId && order.status === 'out_for_delivery'
+  }
+  
+  const canChatWithRestaurant = (order: Order) => {
+    const activeStatuses = ['pending', 'accepted', 'preparing', 'ready']
+    return !order.courierId && order.restaurantId && activeStatuses.includes(order.status)
+  }
+  
+  const canChat = (order: Order) => {
+    return canChatWithCourier(order) || canChatWithRestaurant(order)
   }
 
   return (
@@ -110,48 +129,86 @@ export const TrackOrders: React.FC = () => {
       )}
 
       {orders.map((o) => (
-        <div key={o.id} className="bg-white rounded-2xl shadow p-4">
-          <div className="flex items-center justify-between">
-            <div className="font-bold">طلب #{o.id.slice(-6)}</div>
-            <div className="text-sm px-3 py-1 rounded-full bg-gray-900 text-white">
-              {badge(o.status)}
+        <div key={o.id} className="bg-white rounded-2xl shadow-card overflow-hidden hover:shadow-lg transition-shadow">
+          {/* رأس الطلب مع الحالة */}
+          <div className={`${badge(o.status).color} px-4 py-3 flex items-center justify-between`}>
+            <div className="flex items-center gap-2 text-white">
+              <span className="text-xl">{badge(o.status).emoji}</span>
+              <span className="font-bold">{badge(o.status).text}</span>
+            </div>
+            <div className="text-white/80 text-sm font-medium">
+              #{o.id.slice(-6)}
             </div>
           </div>
 
-          {o.restaurantName && (
-            <div className="mt-1 text-yellow-600 font-semibold">
-              المطعم: {String(o.restaurantName)}
-            </div>
-          )}
-
-          <div className="mt-2 text-sm text-gray-700">
-            {o.items?.map((i) => `${i.name}×${i.qty}`).join(' • ')}
-          </div>
-
-          {/* تفاصيل التوصيل */}
-          <div className="mt-2 text-sm text-gray-600 space-y-1">
-            {o.deliveryType === 'pickup' ? (
-              <div className="text-green-600 font-medium">📍 استلام من المطعم</div>
-            ) : (
-              <>
-                <div className="flex justify-between">
-                  <span>المبلغ الأساسي:</span>
-                  <span>{o.subtotal?.toFixed?.(2) || '—'} ر.س</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>رسوم التوصيل:</span>
-                  {o.deliveryFee !== undefined && o.deliveryFee > 0 ? (
-                    <span className="font-medium">{o.deliveryFee?.toFixed?.(2)} ر.س</span>
-                  ) : (
-                    <span className="text-amber-600">بانتظار تحديد المطعم</span>
-                  )}
-                </div>
-              </>
+          <div className="p-4">
+            {o.restaurantName && (
+              <div className="flex items-center gap-2 text-primary font-semibold mb-2">
+                <span>🍽️</span>
+                <span>{String(o.restaurantName)}</span>
+              </div>
             )}
-          </div>
 
-          <div className="mt-2 font-bold border-t pt-2">
-            الإجمالي: {o.total?.toFixed?.(2)} ر.س
+            <div className="text-sm text-gray-700 bg-gray-50 rounded-xl p-3 mb-3">
+              {o.items?.map((i) => `${i.name}×${i.qty}`).join(' • ')}
+            </div>
+
+            {/* تفاصيل التوصيل */}
+            <div className="text-sm text-gray-600 space-y-2">
+              {o.deliveryType === 'pickup' ? (
+                <div className="flex items-center gap-2 text-green-600 font-medium bg-green-50 rounded-xl p-3">
+                  <MapPin className="w-4 h-4" />
+                  <span>استلام من المطعم</span>
+                </div>
+              ) : (
+                <div className="space-y-1 bg-gray-50 rounded-xl p-3">
+                  <div className="flex justify-between">
+                    <span>المبلغ الأساسي:</span>
+                    <span>{o.subtotal?.toFixed?.(2) || '—'} ر.س</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>رسوم التوصيل:</span>
+                    {o.deliveryFee !== undefined && o.deliveryFee > 0 ? (
+                      <span className="font-medium">{o.deliveryFee?.toFixed?.(2)} ر.س</span>
+                    ) : (
+                      <span className="text-amber-600">بانتظار تحديد المطعم</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-3 pt-3 border-t flex items-center justify-between">
+              <div className="font-bold text-lg text-primary">
+                الإجمالي: {o.total?.toFixed?.(2)} ر.س
+              </div>
+              
+              {/* زر المحادثة مع المندوب */}
+              {canChatWithCourier(o) && (
+                <button
+                  onClick={() => nav(`/chat?orderId=${o.id}`)}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary to-accent 
+                             text-white rounded-full font-medium shadow-lg hover:shadow-xl 
+                             hover:scale-105 transition-all duration-200 animate-pulse"
+                >
+                  <MessageCircle className="w-5 h-5" />
+                  <span>تواصل مع المندوب 🚗</span>
+                </button>
+              )}
+              
+              {/* زر المحادثة مع المطعم (إذا لم يكن هناك مندوب) */}
+              {canChatWithRestaurant(o) && (
+                <button
+                  onClick={() => nav(`/chat?orderId=${o.id}`)}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 
+                             text-white rounded-full font-medium shadow-lg hover:shadow-xl 
+                             hover:scale-105 transition-all duration-200"
+                >
+                  <Store className="w-5 h-5" />
+                  <span>تواصل مع المطعم 🍽️</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       ))}

@@ -8,10 +8,13 @@ import { RoleGate } from '@/routes/RoleGate'
 import { useDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
 import { LocationPicker } from '@/components/LocationPicker'
-import { MapPin, Check, ShoppingBag, Truck, CreditCard, ChevronLeft } from 'lucide-react'
+import { MapPin, Check, ShoppingBag, Truck, CreditCard, ChevronLeft, Store, XCircle } from 'lucide-react'
 
 const PLATFORM_FEE_PER_ITEM = 1.0
 const ADMIN_COMMISSION_PER_ITEM = 0.75
+
+// ❌ التوصيل غير متوفر حالياً - الاستلام من المطعم فقط
+const DELIVERY_AVAILABLE = false
 
 export const CheckoutPage: React.FC = () => {
   const { items, subtotal, clear } = useCart()
@@ -24,8 +27,9 @@ export const CheckoutPage: React.FC = () => {
   const [restaurant, setRestaurant] = useState<{ id: string; name: string; referredBy?: string; referrerType?: string } | null>(null)
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [showLocationPicker, setShowLocationPicker] = useState(false)
+  const [deliveryType, setDeliveryType] = useState<'pickup' | 'delivery'>('pickup') // الاستلام افتراضي
 
-  const deliveryFee = 7
+  const deliveryFee = deliveryType === 'delivery' ? 7 : 0
   const totalItemsCount = items.reduce((sum, item) => sum + item.qty, 0)
   const total = subtotal + deliveryFee
 
@@ -74,8 +78,12 @@ export const CheckoutPage: React.FC = () => {
   const placeOrder = async () => {
     if (!user) return
     if (items.length === 0) { dialog.warning('السلة فارغة'); return }
-    if (!address) { dialog.warning('أدخل العنوان'); return }
-    if (!location) { dialog.warning('حدّد موقعك على الخريطة'); return }
+    
+    // التحقق من الموقع والعنوان فقط إذا كان التوصيل مفعل ومختار
+    if (deliveryType === 'delivery' && DELIVERY_AVAILABLE) {
+      if (!address) { dialog.warning('أدخل العنوان'); return }
+      if (!location) { dialog.warning('حدّد موقعك على الخريطة'); return }
+    }
 
     let restId = restaurant?.id
     if (!restId && items[0]?.id) {
@@ -121,8 +129,9 @@ export const CheckoutPage: React.FC = () => {
       deliveryFee,
       total,
       status: 'pending',
-      address,
-      location,
+      deliveryType, // نوع التسليم: pickup أو delivery
+      address: deliveryType === 'pickup' ? 'استلام من المطعم' : address,
+      location: deliveryType === 'pickup' ? null : location,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       paymentMethod: 'cod',
@@ -267,7 +276,61 @@ export const CheckoutPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 📍 تحديد الموقع */}
+        {/* � اختيار طريقة الاستلام */}
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+          <div className="bg-gray-50 px-4 py-3 border-b flex items-center gap-2">
+            <Truck className="w-5 h-5 text-sky-500" />
+            <span className="font-bold text-gray-800">طريقة الاستلام</span>
+          </div>
+          <div className="p-4 space-y-3">
+            {/* خيار الاستلام من المطعم */}
+            <button
+              onClick={() => setDeliveryType('pickup')}
+              className={`w-full p-4 rounded-xl border-2 transition flex items-center gap-4 ${
+                deliveryType === 'pickup'
+                  ? 'border-green-500 bg-green-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                deliveryType === 'pickup' ? 'bg-green-500' : 'bg-gray-100'
+              }`}>
+                <Store className={`w-6 h-6 ${deliveryType === 'pickup' ? 'text-white' : 'text-gray-500'}`} />
+              </div>
+              <div className="flex-1 text-right">
+                <p className={`font-bold ${deliveryType === 'pickup' ? 'text-green-700' : 'text-gray-800'}`}>
+                  استلام من المطعم
+                </p>
+                <p className="text-sm text-gray-500">مجاناً - بدون رسوم توصيل</p>
+              </div>
+              {deliveryType === 'pickup' && (
+                <Check className="w-6 h-6 text-green-500" />
+              )}
+            </button>
+
+            {/* خيار التوصيل - غير متوفر */}
+            <div
+              className="w-full p-4 rounded-xl border-2 border-gray-200 bg-gray-50 flex items-center gap-4 opacity-60 cursor-not-allowed"
+            >
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-gray-200">
+                <Truck className="w-6 h-6 text-gray-400" />
+              </div>
+              <div className="flex-1 text-right">
+                <p className="font-bold text-gray-500">
+                  توصيل للمنزل
+                </p>
+                <p className="text-sm text-gray-400">رسوم التوصيل: 7 ر.س</p>
+              </div>
+              <div className="flex items-center gap-2 bg-red-100 text-red-600 px-3 py-1.5 rounded-lg">
+                <XCircle className="w-4 h-4" />
+                <span className="text-sm font-semibold">غير متوفر</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 📍 تحديد الموقع - يظهر فقط إذا كان التوصيل متوفر ومختار */}
+        {DELIVERY_AVAILABLE && deliveryType === 'delivery' && (
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div className="bg-gray-50 px-4 py-3 border-b flex items-center gap-2">
             <MapPin className="w-5 h-5 text-green-500" />
@@ -313,6 +376,7 @@ export const CheckoutPage: React.FC = () => {
             )}
           </div>
         </div>
+        )}
 
         {/* 💰 الملخص */}
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
@@ -325,6 +389,7 @@ export const CheckoutPage: React.FC = () => {
               <span>المجموع الفرعي</span>
               <span className="font-semibold">{subtotal.toFixed(2)} ر.س</span>
             </div>
+            {deliveryType === 'delivery' && (
             <div className="flex items-center justify-between text-gray-600">
               <div className="flex items-center gap-2">
                 <Truck className="w-4 h-4" />
@@ -332,6 +397,16 @@ export const CheckoutPage: React.FC = () => {
               </div>
               <span className="font-semibold">{deliveryFee.toFixed(2)} ر.س</span>
             </div>
+            )}
+            {deliveryType === 'pickup' && (
+            <div className="flex items-center justify-between text-green-600">
+              <div className="flex items-center gap-2">
+                <Store className="w-4 h-4" />
+                <span>استلام من المطعم</span>
+              </div>
+              <span className="font-semibold">مجاناً</span>
+            </div>
+            )}
             <div className="h-px bg-gray-200 my-2" />
             <div className="flex items-center justify-between">
               <span className="font-bold text-lg text-gray-800">الإجمالي</span>
@@ -342,7 +417,7 @@ export const CheckoutPage: React.FC = () => {
 
         {/* ✅ زر تأكيد الطلب */}
         <button
-          disabled={saving || !location}
+          disabled={saving || (deliveryType === 'delivery' && DELIVERY_AVAILABLE && !location)}
           onClick={placeOrder}
           className="w-full py-4 rounded-2xl bg-gradient-to-r from-green-500 to-green-600 text-white font-bold text-lg shadow-xl hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-3"
         >
@@ -354,13 +429,13 @@ export const CheckoutPage: React.FC = () => {
           ) : (
             <>
               <Check className="w-6 h-6" />
-              تأكيد الطلب (دفع عند الاستلام)
+              {deliveryType === 'pickup' ? 'تأكيد الطلب (استلام من المطعم)' : 'تأكيد الطلب (دفع عند الاستلام)'}
             </>
           )}
         </button>
 
-        {/* تحذير */}
-        {!location && (
+        {/* تحذير للتوصيل */}
+        {deliveryType === 'delivery' && DELIVERY_AVAILABLE && !location && (
           <p className="text-center text-sm text-amber-600 bg-amber-50 rounded-xl p-3">
             ⚠️ يجب تحديد موقع التوصيل قبل إرسال الطلب
           </p>

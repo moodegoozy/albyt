@@ -2605,7 +2605,6 @@ type LicenseRestaurant = {
   phone?: string
   city?: string
   commercialLicenseUrl?: string
-  healthCertificateUrl?: string
   licenseStatus?: 'pending' | 'approved' | 'rejected'
   licenseNotes?: string
 }
@@ -2616,18 +2615,29 @@ const LicensesReviewSection: React.FC<{
   toast: any
   dialog: any
 }> = ({ restaurants, onUpdate, toast, dialog }) => {
-  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending')
+  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'missing'>('pending')
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
   const [updating, setUpdating] = useState<string | null>(null)
+  const [messageText, setMessageText] = useState('')
+  const [sendingTo, setSendingTo] = useState<string | null>(null)
+  const [selectedMissing, setSelectedMissing] = useState<Set<string>>(new Set())
+  const [bulkMessage, setBulkMessage] = useState('')
+  const [sendingBulk, setSendingBulk] = useState(false)
 
   // المطاعم التي لديها تراخيص
   const restaurantsWithLicenses = restaurants.filter(
-    (r: LicenseRestaurant) => r.commercialLicenseUrl || r.healthCertificateUrl
+    (r: LicenseRestaurant) => r.commercialLicenseUrl
+  ) as LicenseRestaurant[]
+
+  // المطاعم التي لم ترفع التراخيص
+  const restaurantsWithoutLicenses = restaurants.filter(
+    (r: LicenseRestaurant) => !r.commercialLicenseUrl
   ) as LicenseRestaurant[]
 
   // فلترة حسب الحالة
   const filteredRestaurants = restaurantsWithLicenses.filter((r: LicenseRestaurant) => {
     if (filter === 'all') return true
+    if (filter === 'missing') return false // يتم عرضها في قسم منفصل
     return r.licenseStatus === filter || (!r.licenseStatus && filter === 'pending')
   })
 
@@ -2637,6 +2647,104 @@ const LicensesReviewSection: React.FC<{
     pending: restaurantsWithLicenses.filter(r => !r.licenseStatus || r.licenseStatus === 'pending').length,
     approved: restaurantsWithLicenses.filter(r => r.licenseStatus === 'approved').length,
     rejected: restaurantsWithLicenses.filter(r => r.licenseStatus === 'rejected').length,
+    missing: restaurantsWithoutLicenses.length,
+  }
+
+  // إرسال رسالة لمطعم واحد
+  const sendMessageToRestaurant = async (restaurant: LicenseRestaurant, message: string) => {
+    if (!message.trim()) {
+      toast.warning('يرجى كتابة الرسالة')
+      return
+    }
+
+    setSendingTo(restaurant.id)
+    try {
+      await addDoc(collection(db, 'notifications'), {
+        type: 'license_reminder',
+        recipientId: restaurant.ownerId,
+        recipientType: 'owner',
+        restaurantId: restaurant.id,
+        restaurantName: restaurant.name,
+        title: '⚠️ تذكير: رفع الترخيص التجاري',
+        message: message,
+        read: false,
+        createdAt: serverTimestamp(),
+      })
+      toast.success(`تم إرسال الرسالة لـ ${restaurant.name}`)
+      setMessageText('')
+    } catch (err: any) {
+      toast.error('فشل إرسال الرسالة: ' + (err.message || 'خطأ غير معروف'))
+    } finally {
+      setSendingTo(null)
+    }
+  }
+
+  // إرسال رسالة جماعية
+  const sendBulkMessage = async () => {
+    if (!bulkMessage.trim()) {
+      toast.warning('يرجى كتابة الرسالة')
+      return
+    }
+    
+    const targets = selectedMissing.size > 0 
+      ? restaurantsWithoutLicenses.filter(r => selectedMissing.has(r.id))
+      : restaurantsWithoutLicenses
+
+    if (targets.length === 0) {
+      toast.warning('لا توجد مطاعم لإرسال الرسالة')
+      return
+    }
+
+    const confirmed = await dialog.confirm(
+      `هل أنت متأكد من إرسال الرسالة لـ ${targets.length} مطعم؟`,
+      { title: 'إرسال رسالة جماعية' }
+    )
+    if (!confirmed) return
+
+    setSendingBulk(true)
+    try {
+      const promises = targets.map(restaurant => 
+        addDoc(collection(db, 'notifications'), {
+          type: 'license_reminder',
+          recipientId: restaurant.ownerId,
+          recipientType: 'owner',
+          restaurantId: restaurant.id,
+          restaurantName: restaurant.name,
+          title: '⚠️ تذكير: رفع الترخيص التجاري',
+          message: bulkMessage,
+          read: false,
+          createdAt: serverTimestamp(),
+        })
+      )
+      await Promise.all(promises)
+      toast.success(`تم إرسال الرسالة لـ ${targets.length} مطعم بنجاح ✓`)
+      setBulkMessage('')
+      setSelectedMissing(new Set())
+    } catch (err: any) {
+      toast.error('فشل إرسال بعض الرسائل: ' + (err.message || 'خطأ غير معروف'))
+    } finally {
+      setSendingBulk(false)
+    }
+  }
+
+  // تحديد/إلغاء تحديد الكل
+  const toggleSelectAll = () => {
+    if (selectedMissing.size === restaurantsWithoutLicenses.length) {
+      setSelectedMissing(new Set())
+    } else {
+      setSelectedMissing(new Set(restaurantsWithoutLicenses.map(r => r.id)))
+    }
+  }
+
+  // تبديل تحديد مطعم
+  const toggleSelectRestaurant = (id: string) => {
+    const newSet = new Set(selectedMissing)
+    if (newSet.has(id)) {
+      newSet.delete(id)
+    } else {
+      newSet.add(id)
+    }
+    setSelectedMissing(newSet)
   }
 
   // تحديث حالة الترخيص
@@ -2672,6 +2780,51 @@ const LicensesReviewSection: React.FC<{
     }
   }
 
+  // حذف الترخيص بالكامل وإرسال رسالة لإعادة الرفع
+  const deleteLicenseAndNotify = async (restaurant: LicenseRestaurant, licenseType: 'commercial') => {
+    const licenseText = 'السجل التجاري'
+    
+    const confirmed = await dialog.confirm(
+      `هل أنت متأكد من حذف ${licenseText} لـ "${restaurant.name}"؟\nسيتم إرسال إشعار للمطعم لإعادة رفع الترخيص.`,
+      { title: `🗑️ حذف ${licenseText}` }
+    )
+    if (!confirmed) return
+
+    setUpdating(restaurant.id)
+    try {
+      // تحديد الحقول المراد حذفها
+      const updateData: any = {
+        licenseStatus: null,
+        licenseNotes: '',
+        updatedAt: serverTimestamp(),
+        commercialLicenseUrl: null
+      }
+
+      // حذف الترخيص من قاعدة البيانات
+      await updateDoc(doc(db, 'restaurants', restaurant.id), updateData)
+
+      // إرسال إشعار للمطعم
+      await addDoc(collection(db, 'notifications'), {
+        type: 'license_deleted',
+        recipientId: restaurant.ownerId,
+        recipientType: 'owner',
+        restaurantId: restaurant.id,
+        restaurantName: restaurant.name,
+        title: `⚠️ تم حذف ${licenseText}`,
+        message: `تم حذف ${licenseText} الخاصة بمطعمك. يرجى إعادة رفع الترخيص الصحيح من صفحة إعدادات المطعم.`,
+        read: false,
+        createdAt: serverTimestamp(),
+      })
+
+      toast.success(`تم حذف ${licenseText} وإرسال إشعار للمطعم ✓`)
+      onUpdate()
+    } catch (err: any) {
+      toast.error('فشل حذف الترخيص: ' + (err.message || 'خطأ غير معروف'))
+    } finally {
+      setUpdating(null)
+    }
+  }
+
   const statusBadge = (status?: string) => {
     switch (status) {
       case 'approved':
@@ -2690,14 +2843,14 @@ const LicensesReviewSection: React.FC<{
           <FileCheck className="w-6 h-6 text-sky-500" />
           مراجعة التراخيص
         </h2>
-        <div className="flex gap-2">
-          {(['pending', 'approved', 'rejected', 'all'] as const).map(f => (
+        <div className="flex gap-2 flex-wrap">
+          {(['pending', 'approved', 'rejected', 'all', 'missing'] as const).map(f => (
             <button
               key={f}
               onClick={() => setFilter(f)}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
                 filter === f
-                  ? 'bg-sky-500 text-white'
+                  ? f === 'missing' ? 'bg-orange-500 text-white' : 'bg-sky-500 text-white'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
@@ -2705,17 +2858,135 @@ const LicensesReviewSection: React.FC<{
               {f === 'pending' && `قيد المراجعة (${counts.pending})`}
               {f === 'approved' && `موافق (${counts.approved})`}
               {f === 'rejected' && `مرفوض (${counts.rejected})`}
+              {f === 'missing' && `⚠️ لم يرفع (${counts.missing})`}
             </button>
           ))}
         </div>
       </div>
 
-      {filteredRestaurants.length === 0 ? (
+      {/* قسم المطاعم التي لم ترفع التراخيص */}
+      {filter === 'missing' && (
+        <div className="space-y-4">
+          {restaurantsWithoutLicenses.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">
+              <CheckCircle className="w-16 h-16 mx-auto mb-4 text-green-400" />
+              <p className="text-green-600 font-semibold">جميع المطاعم رفعت تراخيصها ✓</p>
+            </div>
+          ) : (
+            <>
+              {/* رسالة جماعية */}
+              <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-5">
+                <h3 className="font-bold text-orange-800 mb-3 flex items-center gap-2">
+                  📢 إرسال رسالة جماعية
+                </h3>
+                <div className="flex items-center gap-3 mb-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedMissing.size === restaurantsWithoutLicenses.length}
+                      onChange={toggleSelectAll}
+                      className="w-5 h-5 rounded border-orange-300 text-orange-500 focus:ring-orange-500"
+                    />
+                    <span className="text-sm text-orange-700">
+                      تحديد الكل ({restaurantsWithoutLicenses.length})
+                    </span>
+                  </label>
+                  {selectedMissing.size > 0 && (
+                    <span className="text-sm bg-orange-200 text-orange-800 px-2 py-1 rounded-full">
+                      محدد: {selectedMissing.size}
+                    </span>
+                  )}
+                </div>
+                <textarea
+                  placeholder="اكتب الرسالة التي سترسل للمطاعم المحددة (أو جميعها إذا لم تحدد)..."
+                  value={bulkMessage}
+                  onChange={(e) => setBulkMessage(e.target.value)}
+                  className="w-full border border-orange-200 rounded-xl p-3 text-sm resize-none h-24 focus:ring-2 focus:ring-orange-400 focus:border-transparent"
+                />
+                <button
+                  onClick={sendBulkMessage}
+                  disabled={sendingBulk || !bulkMessage.trim()}
+                  className="mt-3 w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white py-2.5 rounded-xl font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {sendingBulk ? (
+                    <>
+                      <RefreshCw className="w-5 h-5 animate-spin" />
+                      جارِ الإرسال...
+                    </>
+                  ) : (
+                    <>
+                      📤 إرسال لـ {selectedMissing.size > 0 ? selectedMissing.size : restaurantsWithoutLicenses.length} مطعم
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* قائمة المطاعم */}
+              <div className="grid gap-3">
+                {restaurantsWithoutLicenses.map((r: LicenseRestaurant) => (
+                  <div key={r.id} className="bg-white border rounded-2xl p-4 shadow-sm hover:shadow-md transition">
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedMissing.has(r.id)}
+                        onChange={() => toggleSelectRestaurant(r.id)}
+                        className="w-5 h-5 mt-1 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <div>
+                            <h3 className="font-bold text-gray-800">{r.name}</h3>
+                            <p className="text-sm text-gray-500">{r.city || 'بدون مدينة'}</p>
+                          </div>
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-orange-100 text-orange-700 text-xs font-semibold">
+                            <AlertCircle className="w-3 h-3" />
+                            لم يرفع الترخيص
+                          </span>
+                        </div>
+                        
+                        {/* معلومات الاتصال */}
+                        <div className="flex flex-wrap gap-3 text-sm text-gray-600 mb-3">
+                          {r.email && <span>📧 {r.email}</span>}
+                          {r.phone && <span>📱 {r.phone}</span>}
+                        </div>
+
+                        {/* إرسال رسالة فردية */}
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="رسالة سريعة..."
+                            value={sendingTo === r.id ? messageText : ''}
+                            onChange={(e) => {
+                              setSendingTo(r.id)
+                              setMessageText(e.target.value)
+                            }}
+                            onFocus={() => setSendingTo(r.id)}
+                            className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                          />
+                          <button
+                            onClick={() => sendMessageToRestaurant(r, messageText)}
+                            disabled={sendingTo === r.id && !messageText.trim()}
+                            className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-sm font-medium transition disabled:opacity-50"
+                          >
+                            إرسال
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {filter !== 'missing' && filteredRestaurants.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
           <FileCheck className="w-16 h-16 mx-auto mb-4 opacity-50" />
           <p>لا توجد تراخيص {filter === 'pending' ? 'قيد المراجعة' : filter === 'approved' ? 'موافق عليها' : filter === 'rejected' ? 'مرفوضة' : ''}</p>
         </div>
-      ) : (
+      ) : filter !== 'missing' && (
         <div className="grid gap-4">
           {filteredRestaurants.map((r: LicenseRestaurant) => (
             <div key={r.id} className="bg-white border rounded-2xl p-5 shadow-sm">
@@ -2731,7 +3002,17 @@ const LicensesReviewSection: React.FC<{
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 {r.commercialLicenseUrl && (
                   <div className="bg-gray-50 rounded-xl p-3">
-                    <p className="text-sm font-semibold text-gray-700 mb-2">📜 الرخصة التجارية</p>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-semibold text-gray-700">📜 الرخصة التجارية</p>
+                      <button
+                        onClick={() => deleteLicenseAndNotify(r, 'commercial')}
+                        disabled={updating === r.id}
+                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                        title="حذف الرخصة التجارية"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                     <a
                       href={r.commercialLicenseUrl}
                       target="_blank"
@@ -2743,21 +3024,19 @@ const LicensesReviewSection: React.FC<{
                     </a>
                   </div>
                 )}
-                {r.healthCertificateUrl && (
-                  <div className="bg-gray-50 rounded-xl p-3">
-                    <p className="text-sm font-semibold text-gray-700 mb-2">🏥 الشهادة الصحية</p>
-                    <a
-                      href={r.healthCertificateUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-sky-600 hover:text-sky-800 text-sm"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      عرض الملف
-                    </a>
-                  </div>
-                )}
               </div>
+
+              {/* زر حذف السجل التجاري */}
+              {r.commercialLicenseUrl && (
+                <button
+                  onClick={() => deleteLicenseAndNotify(r, 'commercial')}
+                  disabled={updating === r.id}
+                  className="w-full flex items-center justify-center gap-2 mb-4 py-2 px-4 border-2 border-dashed border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300 rounded-xl text-sm font-medium transition"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  حذف السجل التجاري وإعادة الطلب
+                </button>
+              )}
 
               {/* ملاحظات الرفض السابقة */}
               {r.licenseStatus === 'rejected' && r.licenseNotes && (
@@ -2796,15 +3075,34 @@ const LicensesReviewSection: React.FC<{
                 </div>
               )}
 
-              {/* زر إعادة المراجعة للموافق عليه */}
+{/* أزرار التحكم للتراخيص الموافق عليها */}
               {r.licenseStatus === 'approved' && (
-                <button
-                  onClick={() => updateLicenseStatus(r.id, 'rejected')}
-                  disabled={updating === r.id}
-                  className="w-full flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-xl font-semibold transition"
-                >
-                  إلغاء الموافقة
-                </button>
+                <div className="space-y-3">
+                  <textarea
+                    placeholder="سبب إلغاء الموافقة..."
+                    value={reviewNotes[r.id] || ''}
+                    onChange={(e) => setReviewNotes(prev => ({ ...prev, [r.id]: e.target.value }))}
+                    className="w-full border border-yellow-200 rounded-xl p-3 text-sm resize-none h-20 focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
+                  />
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => updateLicenseStatus(r.id, 'rejected')}
+                      disabled={updating === r.id}
+                      className="flex-1 flex items-center justify-center gap-2 bg-yellow-500 hover:bg-yellow-600 text-white py-2.5 rounded-xl font-semibold transition disabled:opacity-50"
+                    >
+                      <AlertCircle className="w-5 h-5" />
+                      إلغاء الموافقة
+                    </button>
+                    <button
+                      onClick={() => deleteLicenseAndNotify(r, 'commercial')}
+                      disabled={updating === r.id}
+                      className="flex-1 flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-xl font-semibold transition disabled:opacity-50"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                      حذف وإعادة الطلب
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           ))}

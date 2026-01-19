@@ -6,7 +6,7 @@ import { db, storage } from "@/firebase"
 import { useAuth } from "@/auth"
 import { useToast } from "@/components/ui/Toast"
 import { SAUDI_CITIES } from "@/utils/cities"
-import { MapPin, FileText, ShieldCheck, AlertCircle, CheckCircle, Clock } from "lucide-react"
+import { MapPin, FileText, ShieldCheck, AlertCircle, CheckCircle, Clock, Store } from "lucide-react"
 
 type RestaurantForm = {
   name: string
@@ -14,8 +14,8 @@ type RestaurantForm = {
   city: string
   location: string
   logoUrl?: string
+  allowPickup?: boolean // السماح بالاستلام من المطعم
   commercialLicenseUrl?: string
-  healthCertificateUrl?: string
   licenseStatus?: 'pending' | 'approved' | 'rejected'
   licenseNotes?: string
 }
@@ -30,8 +30,8 @@ export const EditRestaurant: React.FC = () => {
     city: "",
     location: "",
     logoUrl: "",
+    allowPickup: false,
     commercialLicenseUrl: "",
-    healthCertificateUrl: "",
     licenseStatus: undefined,
     licenseNotes: "",
   })
@@ -39,7 +39,6 @@ export const EditRestaurant: React.FC = () => {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string>("")
   const [commercialFile, setCommercialFile] = useState<File | null>(null)
-  const [healthFile, setHealthFile] = useState<File | null>(null)
   const [loading, setLoading] = useState<boolean>(true)
   const [saving, setSaving] = useState<boolean>(false)
   const canSave = useMemo(() => !saving && !!user, [saving, user])
@@ -58,8 +57,8 @@ export const EditRestaurant: React.FC = () => {
             city: data.city ?? "",
             location: data.location ?? "",
             logoUrl: data.logoUrl ?? "",
+            allowPickup: (data as any).allowPickup ?? false,
             commercialLicenseUrl: (data as any).commercialLicenseUrl ?? "",
-            healthCertificateUrl: (data as any).healthCertificateUrl ?? "",
             licenseStatus: (data as any).licenseStatus,
             licenseNotes: (data as any).licenseNotes ?? "",
           })
@@ -172,7 +171,6 @@ export const EditRestaurant: React.FC = () => {
     try {
       let logoUrl = form.logoUrl
       let commercialLicenseUrl = form.commercialLicenseUrl
-      let healthCertificateUrl = form.healthCertificateUrl
       let licenseStatus = form.licenseStatus
 
       if (file) {
@@ -191,23 +189,12 @@ export const EditRestaurant: React.FC = () => {
         }
       }
 
-      // رفع الشهادة الصحية
-      if (healthFile) {
-        toast.info("⏳ جاري رفع الشهادة الصحية …")
-        const uploaded = await uploadLicenseFile(healthFile, 'health')
-        if (uploaded) {
-          healthCertificateUrl = uploaded
-          licenseStatus = 'pending'
-        }
-      }
-
       await setDoc(
         doc(db, "restaurants", user.uid),
         { 
           ...form, 
           logoUrl,
           commercialLicenseUrl,
-          healthCertificateUrl,
           licenseStatus,
         },
         { merge: true }
@@ -218,7 +205,6 @@ export const EditRestaurant: React.FC = () => {
       setPreview("")
       setFile(null)
       setCommercialFile(null)
-      setHealthFile(null)
 
       toast.success("تم حفظ التعديلات بنجاح 🎉", { title: "تعديل المطعم" })
     } catch (err: any) {
@@ -301,6 +287,39 @@ export const EditRestaurant: React.FC = () => {
           className="w-full border p-3 rounded-xl"
         />
 
+        {/* قسم خيارات التوصيل والاستلام */}
+        <div className="border-t pt-4 mt-4">
+          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <Store className="w-5 h-5 text-green-500" />
+            خيارات الطلب
+          </h2>
+          
+          {/* زر تفعيل الاستلام من المطعم */}
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${form.allowPickup ? 'bg-green-500' : 'bg-gray-300'}`}>
+                <Store className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-800">الاستلام من المطعم</p>
+                <p className="text-sm text-gray-500">السماح للعملاء باستلام طلباتهم من موقع المطعم</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setForm(p => ({ ...p, allowPickup: !p.allowPickup }))}
+              className={`relative w-14 h-8 rounded-full transition-colors ${form.allowPickup ? 'bg-green-500' : 'bg-gray-300'}`}
+            >
+              <span className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow transition-transform ${form.allowPickup ? 'right-1' : 'left-1'}`} />
+            </button>
+          </div>
+          {form.allowPickup && (
+            <p className="mt-2 text-sm text-green-600 bg-green-50 p-2 rounded-lg">
+              ✓ العملاء يمكنهم اختيار استلام طلباتهم من موقع المطعم (بدون رسوم توصيل)
+            </p>
+          )}
+        </div>
+
         {/* قسم التراخيص */}
         <div className="border-t pt-4 mt-4">
           <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
@@ -362,36 +381,6 @@ export const EditRestaurant: React.FC = () => {
             )}
           </div>
 
-          {/* الشهادة الصحية */}
-          <div className="space-y-2">
-            <label className="block font-semibold text-gray-700 flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-green-500" />
-              الشهادة الصحية
-            </label>
-            <div className="flex items-center gap-3">
-              {form.healthCertificateUrl && (
-                <a 
-                  href={form.healthCertificateUrl} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-sky-500 hover:text-sky-700 text-sm underline"
-                >
-                  عرض الملف الحالي
-                </a>
-              )}
-              <input 
-                type="file" 
-                accept="image/*,.pdf" 
-                onChange={(e) => setHealthFile(e.target.files?.[0] || null)}
-                className="text-sm"
-              />
-            </div>
-            {healthFile && (
-              <div className="text-xs text-gray-600">
-                سيتم رفع: <span className="font-semibold">{healthFile.name}</span>
-              </div>
-            )}
-          </div>
         </div>
 
         <button

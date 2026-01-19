@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react'
-import { collection, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore'
+import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { ref, uploadBytesResumable, getDownloadURL, getStorage } from 'firebase/storage'
 import { db, app } from '@/firebase'
 import { useAuth } from '@/auth'
@@ -7,7 +7,7 @@ import { RoleGate } from '@/routes/RoleGate'
 import { useToast } from '@/components/ui/Toast'
 import { useDialog } from '@/components/ui/ConfirmDialog'
 import { Restaurant } from '@/types'
-import { Trash2, Plus, UserCheck, Upload, Image } from 'lucide-react'
+import { Trash2, Plus, UserCheck, Upload, Image, Shield, Award, Medal, Crown, CheckCircle, XCircle, ChevronDown } from 'lucide-react'
 
 export const AdminRestaurants: React.FC = () => {
   const { user, role } = useAuth()
@@ -134,6 +134,75 @@ export const AdminRestaurants: React.FC = () => {
     } catch (err) {
       toast.error('خطأ في حذف المطعم')
       console.error(err)
+    }
+  }
+
+  // تحديث حالة التوثيق
+  const handleToggleVerified = async (restaurant: Restaurant) => {
+    const newStatus = !restaurant.isVerified
+    const confirmed = await dialog.confirm(
+      newStatus 
+        ? `هل تريد توثيق أسرة "${restaurant.name}"؟` 
+        : `هل تريد إلغاء توثيق أسرة "${restaurant.name}"؟`,
+      { 
+        title: newStatus ? '✅ توثيق الأسرة' : '❌ إلغاء التوثيق',
+        confirmText: newStatus ? 'نعم، وثّق' : 'نعم، ألغِ التوثيق',
+      }
+    )
+    if (!confirmed) return
+
+    try {
+      await updateDoc(doc(db, 'restaurants', restaurant.id), {
+        isVerified: newStatus,
+        verifiedAt: newStatus ? serverTimestamp() : null,
+        updatedAt: serverTimestamp(),
+      })
+      toast.success(newStatus ? 'تم توثيق الأسرة ✅' : 'تم إلغاء التوثيق')
+      loadRestaurants()
+    } catch (err) {
+      toast.error('حدث خطأ')
+      console.error(err)
+    }
+  }
+
+  // تحديث تصنيف البائع
+  const handleUpdateTier = async (restaurant: Restaurant, tier: 'bronze' | 'silver' | 'gold') => {
+    try {
+      await updateDoc(doc(db, 'restaurants', restaurant.id), {
+        sellerTier: tier,
+        tierUpdatedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+      const tierNames = { bronze: 'برونزي', silver: 'فضي', gold: 'ذهبي' }
+      toast.success(`تم تحديث التصنيف إلى ${tierNames[tier]} 🏆`)
+      loadRestaurants()
+    } catch (err) {
+      toast.error('حدث خطأ')
+      console.error(err)
+    }
+  }
+
+  // مكون شارة التصنيف
+  const TierBadge: React.FC<{ tier?: string }> = ({ tier }) => {
+    switch (tier) {
+      case 'gold':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-amber-400 to-yellow-400 text-white text-xs font-bold rounded-full shadow">
+            <Crown className="w-3 h-3" /> Gold
+          </span>
+        )
+      case 'silver':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-gray-300 to-gray-400 text-gray-800 text-xs font-bold rounded-full shadow">
+            <Medal className="w-3 h-3" /> Silver
+          </span>
+        )
+      default:
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-amber-600 to-orange-600 text-white text-xs font-bold rounded-full shadow">
+            <Award className="w-3 h-3" /> Bronze
+          </span>
+        )
     }
   }
 
@@ -293,7 +362,17 @@ export const AdminRestaurants: React.FC = () => {
                     )}
                     
                     <div className="flex-1">
-                      <h3 className="text-xl font-bold text-primary">{restaurant.name}</h3>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-xl font-bold text-primary">{restaurant.name}</h3>
+                        {/* شارة التوثيق */}
+                        {restaurant.isVerified && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded-full">
+                            <CheckCircle className="w-3 h-3" /> موثقة
+                          </span>
+                        )}
+                        {/* شارة التصنيف */}
+                        <TierBadge tier={restaurant.sellerTier} />
+                      </div>
                       {restaurant.city && (
                         <p className="text-gray-600 text-sm">📍 {restaurant.city}</p>
                       )}
@@ -305,13 +384,66 @@ export const AdminRestaurants: React.FC = () => {
                       )}
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleDelete(restaurant.id)}
-                    className="p-3 bg-red-100 hover:bg-red-200 text-red-600 rounded-xl transition"
-                    title="حذف المطعم"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
+                  
+                  {/* أزرار الإجراءات */}
+                  <div className="flex items-center gap-2">
+                    {/* زر التوثيق */}
+                    <button
+                      onClick={() => handleToggleVerified(restaurant)}
+                      className={`p-2.5 rounded-xl transition flex items-center gap-1 text-sm font-semibold ${
+                        restaurant.isVerified 
+                          ? 'bg-green-100 hover:bg-green-200 text-green-700' 
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                      }`}
+                      title={restaurant.isVerified ? 'إلغاء التوثيق' : 'توثيق الأسرة'}
+                    >
+                      <Shield className="w-4 h-4" />
+                      {restaurant.isVerified ? 'موثقة' : 'توثيق'}
+                    </button>
+                    
+                    {/* قائمة التصنيف */}
+                    <div className="relative group">
+                      <button
+                        className="p-2.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-700 transition flex items-center gap-1 text-sm font-semibold"
+                      >
+                        <Award className="w-4 h-4" />
+                        التصنيف
+                        <ChevronDown className="w-3 h-3" />
+                      </button>
+                      <div className="absolute left-0 top-full mt-1 bg-white rounded-xl shadow-xl border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-20 min-w-[140px]">
+                        <button
+                          onClick={() => handleUpdateTier(restaurant, 'bronze')}
+                          className={`w-full px-4 py-2.5 text-right hover:bg-amber-50 transition flex items-center gap-2 first:rounded-t-xl ${restaurant.sellerTier === 'bronze' || !restaurant.sellerTier ? 'bg-amber-50' : ''}`}
+                        >
+                          <Award className="w-4 h-4 text-amber-600" />
+                          <span className="font-semibold">Bronze</span>
+                        </button>
+                        <button
+                          onClick={() => handleUpdateTier(restaurant, 'silver')}
+                          className={`w-full px-4 py-2.5 text-right hover:bg-gray-50 transition flex items-center gap-2 ${restaurant.sellerTier === 'silver' ? 'bg-gray-100' : ''}`}
+                        >
+                          <Medal className="w-4 h-4 text-gray-500" />
+                          <span className="font-semibold">Silver</span>
+                        </button>
+                        <button
+                          onClick={() => handleUpdateTier(restaurant, 'gold')}
+                          className={`w-full px-4 py-2.5 text-right hover:bg-yellow-50 transition flex items-center gap-2 last:rounded-b-xl ${restaurant.sellerTier === 'gold' ? 'bg-yellow-50' : ''}`}
+                        >
+                          <Crown className="w-4 h-4 text-amber-500" />
+                          <span className="font-semibold">Gold</span>
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* زر الحذف */}
+                    <button
+                      onClick={() => handleDelete(restaurant.id)}
+                      className="p-2.5 bg-red-100 hover:bg-red-200 text-red-600 rounded-xl transition"
+                      title="حذف المطعم"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))

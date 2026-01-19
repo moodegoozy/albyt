@@ -1,8 +1,14 @@
 // src/components/LocationPicker.tsx
 import React, { useState, useEffect, useCallback } from 'react'
-import { MapPin, Navigation, Check, X, Loader2, Target, Smartphone } from 'lucide-react'
+import { MapPin, Navigation, Check, X, Loader2, Target, Smartphone, Search } from 'lucide-react'
 
 type Location = { lat: number; lng: number }
+
+type SearchResult = {
+  display_name: string
+  lat: string
+  lon: string
+}
 
 type Props = {
   isOpen: boolean
@@ -18,11 +24,70 @@ export const LocationPicker: React.FC<Props> = ({ isOpen, onClose, onConfirm, in
   const [gpsLoading, setGpsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mapReady, setMapReady] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [showResults, setShowResults] = useState(false)
 
   // 🎯 موقع افتراضي (الرياض)
   const defaultLocation: Location = { lat: 24.7136, lng: 46.6753 }
 
-  // 📍 تحديد الموقع عبر GPS
+  // � البحث عن المناطق
+  const searchPlaces = useCallback(async (query: string) => {
+    if (!query.trim() || query.length < 2) {
+      setSearchResults([])
+      setShowResults(false)
+      return
+    }
+
+    setSearchLoading(true)
+    try {
+      // إضافة "السعودية" للبحث لتحسين النتائج
+      const searchTerm = query.includes('السعودية') ? query : `${query}, السعودية`
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchTerm)}&limit=5&accept-language=ar`,
+        {
+          headers: {
+            'Accept': 'application/json',
+          }
+        }
+      )
+      const data = await response.json()
+      setSearchResults(data)
+      setShowResults(data.length > 0)
+    } catch (err) {
+      console.error('خطأ في البحث:', err)
+      setSearchResults([])
+    } finally {
+      setSearchLoading(false)
+    }
+  }, [])
+
+  // 📍 اختيار نتيجة بحث
+  const selectSearchResult = useCallback((result: SearchResult) => {
+    const newLoc = { lat: parseFloat(result.lat), lng: parseFloat(result.lon) }
+    setLocation(newLoc)
+    setSearchQuery('')
+    setSearchResults([])
+    setShowResults(false)
+    
+    // تحريك الخريطة للموقع المختار
+    if ((window as any).leafletMap) {
+      (window as any).leafletMap.setView([newLoc.lat, newLoc.lng], 16, {
+        animate: true,
+        duration: 0.5
+      })
+      if ((window as any).leafletMarker) {
+        (window as any).leafletMarker.setLatLng([newLoc.lat, newLoc.lng])
+      }
+    }
+    
+    // استخدام اسم المكان كجزء من العنوان
+    const shortName = result.display_name.split(',').slice(0, 3).join('،')
+    setAddress(shortName)
+  }, [])
+
+  // �📍 تحديد الموقع عبر GPS
   const getGPSLocation = useCallback(() => {
     if (!navigator.geolocation) {
       setError('المتصفح لا يدعم تحديد الموقع')
@@ -210,22 +275,61 @@ export const LocationPicker: React.FC<Props> = ({ isOpen, onClose, onConfirm, in
       <div className="relative w-full h-full sm:w-[95%] sm:h-[90%] sm:max-w-2xl sm:rounded-3xl overflow-hidden bg-white shadow-2xl flex flex-col">
         
         {/* الهيدر */}
-        <div className="bg-gradient-to-r from-sky-500 to-sky-600 text-white p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-              <MapPin className="w-5 h-5" />
+        <div className="bg-gradient-to-r from-sky-500 to-sky-600 text-white p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                <MapPin className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="font-bold text-lg">تحديد موقع التوصيل</h2>
+                <p className="text-sm text-white/80">ابحث أو اسحب الدبوس</p>
+              </div>
             </div>
-            <div>
-              <h2 className="font-bold text-lg">تحديد موقع التوصيل</h2>
-              <p className="text-sm text-white/80">اسحب الدبوس أو انقر على الخريطة</p>
-            </div>
+            <button 
+              onClick={onClose}
+              className="w-10 h-10 bg-white/20 hover:bg-white/30 rounded-xl flex items-center justify-center transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <button 
-            onClick={onClose}
-            className="w-10 h-10 bg-white/20 hover:bg-white/30 rounded-xl flex items-center justify-center transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          
+          {/* 🔍 حقل البحث */}
+          <div className="relative">
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                searchPlaces(e.target.value)
+              }}
+              onFocus={() => searchResults.length > 0 && setShowResults(true)}
+              placeholder="ابحث عن حي، شارع، أو مكان..."
+              className="w-full bg-white/95 text-gray-800 rounded-xl p-3 pr-10 pl-10 focus:outline-none focus:ring-2 focus:ring-white/50 transition placeholder:text-gray-400"
+            />
+            {searchLoading && (
+              <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-sky-500 animate-spin" />
+            )}
+            
+            {/* نتائج البحث */}
+            {showResults && searchResults.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl overflow-hidden z-[1001] max-h-60 overflow-y-auto">
+                {searchResults.map((result, index) => (
+                  <button
+                    key={index}
+                    onClick={() => selectSearchResult(result)}
+                    className="w-full p-3 text-right hover:bg-sky-50 border-b border-gray-100 last:border-0 transition flex items-start gap-3"
+                  >
+                    <MapPin className="w-5 h-5 text-sky-500 flex-shrink-0 mt-0.5" />
+                    <span className="text-gray-700 text-sm leading-relaxed">
+                      {result.display_name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* الخريطة */}

@@ -2,7 +2,9 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth";
-import { Menu, X, Home, ShoppingCart, Package, Store, Truck, Shield, Code2, ArrowRight, User } from "lucide-react";
+import { Menu, X, Home, ShoppingCart, Package, Store, Truck, Shield, Code2, ArrowRight, User, Bell } from "lucide-react";
+import { db } from "@/firebase";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
 
 const NavLink: React.FC<{ to: string; label: string; icon?: React.ReactNode; onClick?: () => void }> = ({
   to,
@@ -32,6 +34,7 @@ const NavLink: React.FC<{ to: string; label: string; icon?: React.ReactNode; onC
 export const Header: React.FC = () => {
   const { user, role, logout } = useAuth();
   const [open, setOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -52,6 +55,26 @@ export const Header: React.FC = () => {
     }
     return () => { document.body.style.overflow = ''; };
   }, [open]);
+
+  // مراقبة عدد الإشعارات غير المقروءة
+  useEffect(() => {
+    if (!user) {
+      setUnreadCount(0);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'notifications'),
+      where('recipientId', '==', user.uid),
+      where('read', '==', false)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      setUnreadCount(snap.size);
+    }, () => setUnreadCount(0));
+
+    return () => unsub();
+  }, [user]);
 
   return (
     <header className="bg-gradient-to-r from-sky-600 via-sky-500 to-sky-600 shadow-xl shadow-sky-200/30">
@@ -118,6 +141,22 @@ export const Header: React.FC = () => {
           {/* 👨‍💻 المطور */}
           {role === "developer" && (
             <NavLink to="/developer" label="لوحة المطور" />
+          )}
+
+          {/* 🔔 زر الإشعارات */}
+          {user && (
+            <Link
+              to="/notifications"
+              className="relative p-2.5 rounded-xl bg-white/20 hover:bg-white/30 transition text-white"
+              title="الإشعارات"
+            >
+              <Bell className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold animate-pulse">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </Link>
           )}
 
           {/* دخول/خروج */}
@@ -262,6 +301,16 @@ export const Header: React.FC = () => {
               to="/developer" 
               label="لوحة المطور" 
               icon={<Code2 className="w-5 h-5" />}
+              onClick={() => setOpen(false)} 
+            />
+          )}
+
+          {/* 🔔 الإشعارات */}
+          {user && (
+            <NavLink 
+              to="/notifications" 
+              label={`الإشعارات ${unreadCount > 0 ? `(${unreadCount})` : ''}`}
+              icon={<Bell className="w-5 h-5" />}
               onClick={() => setOpen(false)} 
             />
           )}

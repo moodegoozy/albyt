@@ -6,6 +6,9 @@ import { doc, getDoc, setDoc } from 'firebase/firestore'
 type Role = 'owner' | 'courier' | 'customer' | 'admin' | 'developer'
 type GeoLocation = { lat: number; lng: number }
 
+// مفتاح للتحقق من تحديد الموقع في هذه الجلسة
+const SESSION_LOCATION_KEY = 'broast_session_location'
+
 type AuthContextType = {
   user: User | null,
   role: Role | null,
@@ -39,8 +42,26 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
     const snap = await getDoc(doc(db, 'users', user.uid))
     if (snap.exists()) {
       const data = snap.data()
-      setUserLocation(data?.location || null)
-      setLocationRequired(!data?.location)
+      const r = data?.role as Role | undefined
+      const loc = data?.location as GeoLocation | undefined
+      const customerSavedLoc = data?.savedLocation as { lat: number; lng: number; address: string } | undefined
+      
+      // للعميل: استخدام savedLocation، لغيرهم: location
+      if (r === 'customer' || r === 'admin') {
+        const customerLoc = customerSavedLoc 
+          ? { lat: customerSavedLoc.lat, lng: customerSavedLoc.lng }
+          : loc || null
+        setUserLocation(customerLoc)
+        if (customerLoc) {
+          sessionStorage.setItem(SESSION_LOCATION_KEY, JSON.stringify(customerLoc))
+        }
+      } else {
+        setUserLocation(loc || null)
+        if (loc) {
+          sessionStorage.setItem(SESSION_LOCATION_KEY, JSON.stringify(loc))
+        }
+      }
+      setLocationRequired(false)
     }
   }
 
@@ -53,13 +74,42 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
         const r = snap.exists() ? (data?.role as Role) : null
         setRole(r)
         
-        // التحقق من الموقع
-        const loc = data?.location as GeoLocation | undefined
-        setUserLocation(loc || null)
+        // التحقق من الموقع - للعميل نستخدم savedLocation، لغيرهم location
+        const savedLoc = data?.location as GeoLocation | undefined
+        const customerSavedLoc = data?.savedLocation as { lat: number; lng: number; address: string } | undefined
         
-        // الموقع إلزامي للعملاء وأصحاب المطاعم والمناديب (ليس للأدمن والمطور)
-        const needsLocation = r === 'customer' || r === 'owner' || r === 'courier'
-        setLocationRequired(needsLocation && !loc)
+        // التحقق من موقع الجلسة الحالية
+        const sessionLocStr = sessionStorage.getItem(SESSION_LOCATION_KEY)
+        const sessionLoc = sessionLocStr ? JSON.parse(sessionLocStr) as GeoLocation : null
+        
+        // للعميل: استخدام savedLocation المحفوظ في الملف الشخصي
+        // لغيرهم: استخدام location العادي
+        let currentLoc: GeoLocation | null = null
+        if (r === 'customer' || r === 'admin') {
+          // العميل/المشرف: الأولوية للموقع المحفوظ في الحساب
+          currentLoc = customerSavedLoc 
+            ? { lat: customerSavedLoc.lat, lng: customerSavedLoc.lng }
+            : sessionLoc || savedLoc || null
+        } else {
+          currentLoc = sessionLoc || savedLoc || null
+        }
+        setUserLocation(currentLoc)
+        
+        // تحديد ما إذا كان الموقع مطلوباً
+        if (r === 'customer' || r === 'admin') {
+          // العميل/المشرف: لا يُطلب الموقع إذا كان محفوظاً في حسابه أو في الجلسة
+          const hasLocation = !!customerSavedLoc || !!sessionLoc
+          setLocationRequired(!hasLocation)
+          // إذا كان عنده موقع محفوظ، نحفظه في sessionStorage للاستخدام السريع
+          if (customerSavedLoc && !sessionLoc) {
+            sessionStorage.setItem(SESSION_LOCATION_KEY, JSON.stringify({ lat: customerSavedLoc.lat, lng: customerSavedLoc.lng }))
+          }
+        } else if (r === 'owner' || r === 'courier') {
+          // المندوب وصاحب المطعم: يطلب الموقع فقط إذا لم يحفظ من قبل
+          setLocationRequired(!savedLoc)
+        } else {
+          setLocationRequired(false)
+        }
 
         // تأكد من وجود مستند المطعم لأصحاب المطاعم
         if (r === 'owner') {

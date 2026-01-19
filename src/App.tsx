@@ -28,16 +28,23 @@ import { ManageMenu } from './pages/ManageMenu'
 import { OrdersAdmin } from './pages/OrdersAdmin'
 import { EditRestaurant } from './pages/EditRestaurant'
 import { CourierRequests } from './pages/CourierRequests'
+import { PackagesPage } from './pages/PackagesPage'
+import { PromotionPage } from './pages/PromotionPage'
 
 // صفحات المندوب
 import { CourierApp } from './pages/CourierApp'
 import { CourierHiring } from './pages/CourierHiring'
+import { ChatPage } from './pages/ChatPage'
+
+// صفحة الإشعارات
+import { NotificationsPage } from './pages/NotificationsPage'
 
 // صفحات الإدمن والمطور
 import { AdminDashboard } from './pages/AdminDashboard'
 import { AdminRestaurants } from './pages/AdminRestaurants'
 import { AdminOrders } from './pages/AdminOrders'
 import { Developer } from './pages/Developer'
+import { SetupDeveloper } from './pages/SetupDeveloper'
 
 // مسارات محمية
 import { ProtectedRoute } from './routes/ProtectedRoute'
@@ -80,6 +87,31 @@ export default function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/privacy-policy" element={<PrivacyPolicy />} />
           <Route path="/account-deleted" element={<AccountDeleted />} />
+          <Route path="/setup-dev" element={<SetupDeveloper />} />
+
+          {/* صفحة المحادثة */}
+          <Route
+            path="/chat"
+            element={
+              <ProtectedRoute>
+                <RoleGate allow={['customer', 'courier', 'owner', 'admin']}>
+                  <ChatPage />
+                </RoleGate>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* صفحة الإشعارات */}
+          <Route
+            path="/notifications"
+            element={
+              <ProtectedRoute>
+                <RoleGate allow={['customer', 'courier', 'owner', 'admin', 'developer']}>
+                  <NotificationsPage />
+                </RoleGate>
+              </ProtectedRoute>
+            }
+          />
 
           {/* صفحات العميل */}
           <Route
@@ -160,6 +192,26 @@ export default function App() {
               <ProtectedRoute>
                 <RoleGate allow={['owner', 'developer']}>
                   <CourierRequests />
+                </RoleGate>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/owner/packages"
+            element={
+              <ProtectedRoute>
+                <RoleGate allow={['owner']}>
+                  <PackagesPage />
+                </RoleGate>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/owner/promotion"
+            element={
+              <ProtectedRoute>
+                <RoleGate allow={['owner']}>
+                  <PromotionPage />
                 </RoleGate>
               </ProtectedRoute>
             }

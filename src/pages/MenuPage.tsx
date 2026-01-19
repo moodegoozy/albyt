@@ -1,12 +1,13 @@
 // src/pages/MenuPage.tsx
 import React, { useEffect, useState } from 'react'
 import { db } from '@/firebase'
-import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
+import { collection, getDocs, query, where, doc, getDoc, updateDoc, increment } from 'firebase/firestore'
 import { useCart } from '@/hooks/useCart'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/auth'
 import { useToast } from '@/components/ui/Toast'
-import { MenuItem, Restaurant } from '@/types'
+import { MenuItem, Restaurant, Promotion } from '@/types'
+import { Megaphone, X, Play } from 'lucide-react'
 
 type MenuItemWithRestaurant = MenuItem & { restaurant?: Restaurant }
 
@@ -14,6 +15,8 @@ export const MenuPage: React.FC = () => {
   const [items, setItems] = useState<MenuItemWithRestaurant[]>([])
   const [loading, setLoading] = useState(true)
   const [restaurantName, setRestaurantName] = useState<string | null>(null)
+  const [activePromotion, setActivePromotion] = useState<Promotion | null>(null)
+  const [showPromotion, setShowPromotion] = useState(true)
   const { add, subtotal, items: cartItems } = useCart()
   const { user, role } = useAuth()
   const toast = useToast()
@@ -36,6 +39,39 @@ export const MenuPage: React.FC = () => {
         const rSnap = await getDoc(doc(db, 'restaurants', restaurantId))
         if (rSnap.exists()) {
           setRestaurantName((rSnap.data() as Restaurant).name)
+        }
+
+        // جلب الإعلان النشط للمطعم
+        try {
+          const promoQuery = query(
+            collection(db, 'promotions'),
+            where('ownerId', '==', restaurantId),
+            where('isActive', '==', true)
+          )
+          const promoSnap = await getDocs(promoQuery)
+          if (!promoSnap.empty) {
+            const promos = promoSnap.docs.map(d => ({
+              id: d.id,
+              ...d.data(),
+              expiresAt: d.data().expiresAt?.toDate?.(),
+            } as Promotion))
+            
+            // فلترة الإعلانات غير المنتهية
+            const now = new Date()
+            const activePromos = promos.filter(p => !p.expiresAt || new Date(p.expiresAt) > now)
+            
+            if (activePromos.length > 0) {
+              const promo = activePromos[0]
+              setActivePromotion(promo)
+              
+              // زيادة عداد المشاهدات
+              await updateDoc(doc(db, 'promotions', promo.id), {
+                viewsCount: increment(1)
+              })
+            }
+          }
+        } catch (err) {
+          console.warn('Error loading promotion:', err)
         }
       } else {
         qy = query(collection(db, 'menuItems'), where('available', '==', true))
@@ -105,6 +141,65 @@ export const MenuPage: React.FC = () => {
           <Link to="/restaurants" className="text-sky-400 hover:text-sky-300 underline">
             ← العودة لقائمة المطاعم
           </Link>
+        </div>
+      )}
+
+      {/* الإعلان الممول */}
+      {activePromotion && showPromotion && (
+        <div className="mb-8 bg-gradient-to-r from-purple-900 via-purple-800 to-pink-900 rounded-2xl shadow-xl overflow-hidden relative">
+          {/* زر الإغلاق */}
+          <button
+            onClick={() => setShowPromotion(false)}
+            className="absolute top-3 left-3 z-10 p-2 bg-black/40 hover:bg-black/60 rounded-full text-white transition"
+          >
+            <X className="w-4 h-4" />
+          </button>
+
+          {/* شارة الإعلان */}
+          <div className="absolute top-3 right-3 z-10 inline-flex items-center gap-1 px-3 py-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-bold rounded-full shadow">
+            <Megaphone className="w-3 h-3" />
+            إعلان
+          </div>
+
+          {/* المحتوى */}
+          <div className="relative">
+            {/* الوسائط */}
+            {activePromotion.mediaUrl && (
+              <div className="relative">
+                {activePromotion.type === 'video' ? (
+                  <div className="relative">
+                    <video
+                      src={activePromotion.mediaUrl}
+                      controls
+                      className="w-full h-56 object-cover"
+                      poster=""
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
+                        <Play className="w-8 h-8 text-white fill-white" />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <img
+                    src={activePromotion.mediaUrl}
+                    alt={activePromotion.title}
+                    className="w-full h-56 object-cover"
+                  />
+                )}
+              </div>
+            )}
+
+            {/* النص */}
+            <div className="p-5">
+              {activePromotion.title && (
+                <h3 className="text-xl font-bold text-white mb-2">{activePromotion.title}</h3>
+              )}
+              {activePromotion.description && (
+                <p className="text-purple-100 text-sm leading-relaxed">{activePromotion.description}</p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

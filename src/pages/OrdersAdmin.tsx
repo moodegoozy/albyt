@@ -3,6 +3,8 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { collection, doc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useAuth } from '@/auth'
+import { useNavigate } from 'react-router-dom'
+import { MessageCircle } from 'lucide-react'
 
 type Order = any
 
@@ -36,6 +38,7 @@ const statusColor = (s: string) => {
 
 export const OrdersAdmin: React.FC = () => {
   const { user } = useAuth()
+  const nav = useNavigate()
   const [orders, setOrders] = useState<Order[]>([])
   const [error, setError] = useState<string | null>(null)
   const [deliveryFees, setDeliveryFees] = useState<Record<string, number>>({})
@@ -172,6 +175,17 @@ export const OrdersAdmin: React.FC = () => {
 
           {/* 🔘 أزرار تغيير الحالة */}
           <div className="mt-3 grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+            {/* زر المحادثة مع العميل */}
+            {!o.courierId && ['pending', 'accepted', 'preparing', 'ready'].includes(o.status) && (
+              <button
+                onClick={() => nav(`/chat?orderId=${o.id}`)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-orange-500 to-amber-500 text-white hover:shadow-lg transition flex items-center gap-2"
+              >
+                <MessageCircle className="w-4 h-4" />
+                محادثة العميل 💬
+              </button>
+            )}
+            
             {['accepted','preparing','ready','out_for_delivery','delivered','cancelled'].map(s => {
               // منع القبول بدون تحديد رسوم التوصيل
               const needsFee = s === 'accepted' && o.status === 'pending' && o.deliveryType === 'delivery'

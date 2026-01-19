@@ -114,6 +114,31 @@ service cloud.firestore {
       allow delete: if isDeveloper();
     }
 
+    /* ===== messages (رسائل المحادثة بين العميل والمندوب/المطعم) ===== */
+    match /orders/{orderId}/messages/{messageId} {
+      // الحصول على بيانات الطلب
+      function getOrder() {
+        return get(/databases/$(database)/documents/orders/$(orderId)).data;
+      }
+      
+      // التحقق من أن المستخدم مرتبط بالطلب
+      function isOrderParticipant() {
+        let order = getOrder();
+        return request.auth.uid == order.customerId 
+            || request.auth.uid == order.courierId 
+            || request.auth.uid == order.restaurantId;
+      }
+      
+      // القراءة: العميل أو المندوب أو صاحب المطعم المرتبطين بالطلب أو المطور
+      allow read: if isDeveloper() || (signedIn() && isOrderParticipant());
+      
+      // الإنشاء: العميل أو المندوب أو صاحب المطعم المرتبطين بالطلب
+      allow create: if signedIn() && isOrderParticipant();
+      
+      // لا يسمح بالتعديل أو الحذف
+      allow update, delete: if isDeveloper();
+    }
+
     /* ===== hiringRequests (طلبات توظيف المندوبين) ===== */
     match /hiringRequests/{requestId} {
       // القراءة: المندوب صاحب الطلب أو صاحب المطعم المستهدف أو المطور
@@ -130,6 +155,38 @@ service cloud.firestore {
       
       // الحذف: المطور فقط
       allow delete: if isDeveloper();
+    }
+
+    /* ===== notifications (إشعارات النظام) ===== */
+    match /notifications/{notificationId} {
+      // القراءة: المستلم أو المطور
+      allow read: if isDeveloper() || (signedIn() && resource.data.recipientId == request.auth.uid);
+      
+      // الإنشاء: المطور فقط (الإشعارات تُرسل من لوحة التحكم)
+      allow create: if isDeveloper();
+      
+      // التحديث: المستلم (لتحديث حالة القراءة) أو المطور
+      allow update: if isDeveloper() || (signedIn() && resource.data.recipientId == request.auth.uid);
+      
+      // الحذف: المطور أو المستلم
+      allow delete: if isDeveloper() || (signedIn() && resource.data.recipientId == request.auth.uid);
+    }
+
+    /* ===== promotions (الإعلانات الممولة للأسر المنتجة) ===== */
+    match /promotions/{promotionId} {
+      // القراءة: الجميع (لعرض الإعلانات للعملاء)
+      allow read: if true;
+      
+      // الإنشاء: صاحب الأسرة فقط (لإنشاء إعلان)
+      allow create: if isOwner() && request.resource.data.ownerId == request.auth.uid;
+      
+      // التحديث: صاحب الأسرة (لتعديل إعلانه) أو أي مستخدم (لزيادة المشاهدات) أو المطور
+      allow update: if isDeveloper() 
+                    || (isOwner() && resource.data.ownerId == request.auth.uid)
+                    || (signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount']));
+      
+      // الحذف: صاحب الأسرة (لحذف إعلانه) أو المطور
+      allow delete: if isDeveloper() || (isOwner() && resource.data.ownerId == request.auth.uid);
     }
   }
 }
