@@ -21,6 +21,12 @@ export const Register: React.FC = () => {
   // هل يتطلب هذا الدور الموافقة على الشروط؟
   const requiresTerms = role === 'owner' || role === 'courier'
 
+  // عند تغيير الدور، نعيد تعيين الموافقة
+  const handleRoleChange = (newRole: 'customer'|'courier'|'owner') => {
+    setRole(newRole)
+    setAcceptedTerms(false)
+  }
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!role) return alert('اختر نوع الحساب')
@@ -131,7 +137,7 @@ export const Register: React.FC = () => {
                     name="role" 
                     value={opt.value} 
                     className="hidden" 
-                    onChange={()=>setRole(opt.value as any)} 
+                    onChange={()=>handleRoleChange(opt.value as any)} 
                   />
                   <Icon className="w-6 h-6" />
                   <span className="text-sm font-bold">{opt.label}</span>
