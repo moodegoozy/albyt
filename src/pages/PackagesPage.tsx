@@ -288,10 +288,10 @@ export const PackagesPage: React.FC = () => {
               <div className="absolute inset-0 bg-gradient-to-r from-amber-400/10 via-yellow-400/10 to-orange-400/10" />
               <div className="relative">
                 <div className="flex items-baseline justify-center gap-1">
-                  <span className="text-5xl font-black bg-gradient-to-r from-amber-600 to-orange-500 bg-clip-text text-transparent">99</span>
+                  <span className="text-5xl font-black bg-gradient-to-r from-amber-600 to-orange-500 bg-clip-text text-transparent">45</span>
                   <span className="text-xl text-gray-600">ر.س</span>
                 </div>
-                <p className="text-amber-600 font-medium mt-1">شهرياً</p>
+                <p className="text-amber-600 font-medium mt-1">اشتراك شهري</p>
               </div>
             </div>
 

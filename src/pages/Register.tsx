@@ -174,6 +174,18 @@ export const Register: React.FC = () => {
               </>
             )}
           </button>
+
+          {/* رابط الشروط والأحكام */}
+          <p className="text-center text-sm text-gray-500">
+            بالتسجيل، أنت توافق على{' '}
+            <Link to="/terms" className="text-sky-500 hover:text-sky-700 font-semibold underline">
+              الشروط والأحكام
+            </Link>
+            {' '}و{' '}
+            <Link to="/privacy-policy" className="text-sky-500 hover:text-sky-700 font-semibold underline">
+              سياسة الخصوصية
+            </Link>
+          </p>
         </form>
 
         {/* رابط تسجيل الدخول */}
