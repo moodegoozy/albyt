@@ -18,11 +18,14 @@ export const Register: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const nav = useNavigate()
 
+  // هل يتطلب هذا الدور الموافقة على الشروط؟
+  const requiresTerms = role === 'owner' || role === 'courier'
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!role) return alert('اختر نوع الحساب')
     if (role === 'owner' && !restaurantName) return alert('أدخل اسم المطعم')
-    if (role === 'owner' && !acceptedTerms) return alert('يجب الموافقة على الشروط والأحكام')
+    if (requiresTerms && !acceptedTerms) return alert('يجب الموافقة على الشروط والأحكام')
 
     setLoading(true)
     try {
@@ -208,10 +211,44 @@ export const Register: React.FC = () => {
             </>
           )}
 
+          {/* شروط وأحكام المندوب */}
+          {role === 'courier' && (
+            <div 
+              onClick={() => setAcceptedTerms(!acceptedTerms)}
+              className={`flex items-start gap-3 p-4 rounded-2xl cursor-pointer transition-all border-2 ${
+                acceptedTerms 
+                  ? 'bg-green-50 border-green-400' 
+                  : 'bg-emerald-50 border-emerald-200 hover:border-emerald-300'
+              }`}
+            >
+              {acceptedTerms ? (
+                <CheckSquare className="w-6 h-6 text-green-500 flex-shrink-0 mt-0.5" />
+              ) : (
+                <Square className="w-6 h-6 text-emerald-400 flex-shrink-0 mt-0.5" />
+              )}
+              <div className="text-sm leading-relaxed">
+                <span className={acceptedTerms ? 'text-green-700' : 'text-emerald-700'}>
+                  أوافق على{' '}
+                </span>
+                <Link 
+                  to="/courier-terms" 
+                  target="_blank"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-emerald-600 hover:text-emerald-800 font-bold underline"
+                >
+                  شروط وأحكام المندوب
+                </Link>
+                <span className={acceptedTerms ? 'text-green-700' : 'text-emerald-700'}>
+                  {' '}وأتحمل كامل المسؤولية كمندوب مستقل
+                </span>
+              </div>
+            </div>
+          )}
+
           <button 
-            disabled={loading || (role === 'owner' && !acceptedTerms)} 
+            disabled={loading || (requiresTerms && !acceptedTerms)} 
             className={`w-full flex items-center justify-center gap-3 text-white font-bold p-4 rounded-2xl shadow-xl transition-all ${
-              role === 'owner' && !acceptedTerms
+              requiresTerms && !acceptedTerms
                 ? 'bg-gray-400 cursor-not-allowed'
                 : 'bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 shadow-sky-300/50 hover:scale-[1.02]'
             }`}
@@ -224,9 +261,13 @@ export const Register: React.FC = () => {
             )}
           </button>
 
-          {/* تنبيه للأسر المنتجة */}
-          {role === 'owner' && !acceptedTerms && (
-            <p className="text-center text-sm text-orange-600 bg-orange-50 p-3 rounded-xl">
+          {/* تنبيه للموافقة على الشروط */}
+          {requiresTerms && !acceptedTerms && (
+            <p className={`text-center text-sm p-3 rounded-xl ${
+              role === 'courier' 
+                ? 'text-emerald-600 bg-emerald-50' 
+                : 'text-orange-600 bg-orange-50'
+            }`}>
               ⚠️ يجب الموافقة على الشروط والأحكام لإكمال التسجيل
             </p>
           )}
