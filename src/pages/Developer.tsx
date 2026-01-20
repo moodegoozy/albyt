@@ -871,6 +871,153 @@ export const Developer: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {/* ملخص أنظمة التطبيق */}
+            <div className="bg-white rounded-2xl shadow-lg p-6">
+              <h2 className="text-xl font-bold mb-4">🛠️ ملخص أنظمة التطبيق</h2>
+              
+              {/* نظام الأدوار */}
+              <div className="mb-6">
+                <h3 className="font-bold text-lg text-sky-600 mb-3">👥 نظام الأدوار والصلاحيات</h3>
+                <div className="grid md:grid-cols-2 gap-3 text-sm">
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <span className="font-bold text-purple-600">developer:</span> وصول كامل، حذف، إدارة المستخدمين
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <span className="font-bold text-amber-600">admin:</span> إضافة مطاعم (يكسب عمولة)، طلب كعميل
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <span className="font-bold text-orange-600">owner:</span> إدارة القائمة، معالجة الطلبات، توظيف المناديب
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <span className="font-bold text-emerald-600">courier:</span> استلام الطلبات الجاهزة، تحديث حالة التوصيل
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <span className="font-bold text-blue-600">customer:</span> تصفح، طلب، تتبع
+                  </div>
+                </div>
+              </div>
+
+              {/* مجموعات Firestore */}
+              <div className="mb-6">
+                <h3 className="font-bold text-lg text-green-600 mb-3">🗄️ مجموعات Firestore</h3>
+                <div className="grid md:grid-cols-3 gap-2 text-sm">
+                  <div className="bg-green-50 rounded-lg p-2">📁 users/{'{uid}'}</div>
+                  <div className="bg-green-50 rounded-lg p-2">📁 restaurants/{'{ownerId}'}</div>
+                  <div className="bg-green-50 rounded-lg p-2">📁 menuItems/{'{auto}'}</div>
+                  <div className="bg-green-50 rounded-lg p-2">📁 orders/{'{auto}'}</div>
+                  <div className="bg-green-50 rounded-lg p-2">📁 orders/{'{id}'}/messages</div>
+                  <div className="bg-green-50 rounded-lg p-2">📁 wallets/{'{adminId}'}</div>
+                  <div className="bg-green-50 rounded-lg p-2">📁 hiringRequests/{'{auto}'}</div>
+                  <div className="bg-green-50 rounded-lg p-2">📁 notifications/{'{auto}'}</div>
+                  <div className="bg-green-50 rounded-lg p-2">📁 promotions/{'{auto}'}</div>
+                  <div className="bg-green-50 rounded-lg p-2">📁 tasks/{'{auto}'}</div>
+                  <div className="bg-green-50 rounded-lg p-2">📁 settings/{'{doc}'}</div>
+                </div>
+              </div>
+
+              {/* نظام الرسوم والعمولات */}
+              <div className="mb-6">
+                <h3 className="font-bold text-lg text-amber-600 mb-3">💰 نظام الرسوم والعمولات</h3>
+                <div className="grid md:grid-cols-2 gap-3 text-sm">
+                  <div className="bg-amber-50 rounded-xl p-3">
+                    <span className="font-bold">رسوم المنصة (platformFee):</span> 1.75 ريال لكل منتج (0.25 للمنتجات ≤2 ريال)
+                  </div>
+                  <div className="bg-amber-50 rounded-xl p-3">
+                    <span className="font-bold">عمولة المشرف (adminCommission):</span> 0.5 ريال (إذا المطعم مسجل عن طريق admin)
+                  </div>
+                  <div className="bg-amber-50 rounded-xl p-3">
+                    <span className="font-bold">رسوم المندوب:</span> 2-3 ريال لكل طلب
+                  </div>
+                  <div className="bg-amber-50 rounded-xl p-3">
+                    <span className="font-bold">محافظ المشرفين:</span> wallets/{'{adminId}'} لتتبع العمولات
+                  </div>
+                </div>
+              </div>
+
+              {/* نظام الطلبات */}
+              <div className="mb-6">
+                <h3 className="font-bold text-lg text-blue-600 mb-3">📦 نظام الطلبات</h3>
+                <div className="bg-blue-50 rounded-xl p-4">
+                  <div className="flex flex-wrap gap-2 items-center justify-center text-sm">
+                    <span className="bg-gray-200 px-3 py-1 rounded-full">pending</span>
+                    <span>→</span>
+                    <span className="bg-yellow-200 px-3 py-1 rounded-full">accepted</span>
+                    <span>→</span>
+                    <span className="bg-orange-200 px-3 py-1 rounded-full">preparing</span>
+                    <span>→</span>
+                    <span className="bg-cyan-200 px-3 py-1 rounded-full">ready</span>
+                    <span>→</span>
+                    <span className="bg-purple-200 px-3 py-1 rounded-full">out_for_delivery</span>
+                    <span>→</span>
+                    <span className="bg-green-200 px-3 py-1 rounded-full">delivered</span>
+                  </div>
+                  <p className="text-center text-gray-500 mt-2 text-xs">أو cancelled ❌</p>
+                </div>
+              </div>
+
+              {/* الصفحات والشروط */}
+              <div className="mb-6">
+                <h3 className="font-bold text-lg text-purple-600 mb-3">📄 الصفحات القانونية</h3>
+                <div className="grid md:grid-cols-3 gap-3 text-sm">
+                  <a href="/terms" target="_blank" className="bg-purple-50 rounded-xl p-3 hover:bg-purple-100 transition-colors flex items-center gap-2">
+                    <ExternalLink className="w-4 h-4" />
+                    شروط الأسر المنتجة
+                  </a>
+                  <a href="/courier-terms" target="_blank" className="bg-purple-50 rounded-xl p-3 hover:bg-purple-100 transition-colors flex items-center gap-2">
+                    <ExternalLink className="w-4 h-4" />
+                    شروط المندوب
+                  </a>
+                  <a href="/privacy-policy" target="_blank" className="bg-purple-50 rounded-xl p-3 hover:bg-purple-100 transition-colors flex items-center gap-2">
+                    <ExternalLink className="w-4 h-4" />
+                    سياسة الخصوصية
+                  </a>
+                </div>
+              </div>
+
+              {/* الميزات الرئيسية */}
+              <div>
+                <h3 className="font-bold text-lg text-rose-600 mb-3">✨ الميزات الرئيسية</h3>
+                <div className="grid md:grid-cols-2 gap-2 text-sm">
+                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                    <CheckCircle className="w-4 h-4 text-green-500" /> تسجيل الأسر المنتجة مع موافقة على الشروط
+                  </div>
+                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                    <CheckCircle className="w-4 h-4 text-green-500" /> تسجيل المناديب مع موافقة على الشروط
+                  </div>
+                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                    <CheckCircle className="w-4 h-4 text-green-500" /> سلة مشتريات (localStorage)
+                  </div>
+                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                    <CheckCircle className="w-4 h-4 text-green-500" /> تتبع الطلبات في الوقت الفعلي
+                  </div>
+                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                    <CheckCircle className="w-4 h-4 text-green-500" /> محادثة بين العميل والمندوب
+                  </div>
+                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                    <CheckCircle className="w-4 h-4 text-green-500" /> نظام التوظيف (hiringRequests)
+                  </div>
+                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                    <CheckCircle className="w-4 h-4 text-green-500" /> الإعلانات الممولة (promotions)
+                  </div>
+                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                    <CheckCircle className="w-4 h-4 text-green-500" /> نظام الإشعارات
+                  </div>
+                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                    <CheckCircle className="w-4 h-4 text-green-500" /> باقات المطاعم (free/premium)
+                  </div>
+                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                    <CheckCircle className="w-4 h-4 text-green-500" /> تصنيف البائعين (bronze/silver/gold)
+                  </div>
+                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                    <CheckCircle className="w-4 h-4 text-green-500" /> مهام المشرفين (tasks)
+                  </div>
+                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                    <CheckCircle className="w-4 h-4 text-green-500" /> تحديد الموقع عبر GPS
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
