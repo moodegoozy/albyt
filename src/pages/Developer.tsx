@@ -70,6 +70,8 @@ type Restaurant = {
   logoUrl?: string
   referredBy?: string
   referrerType?: string
+  packageType?: 'free' | 'premium'
+  packageRequest?: 'premium'
   createdAt?: any
 }
 
@@ -194,6 +196,9 @@ export const Developer: React.FC = () => {
   const [newTaskDueDate, setNewTaskDueDate] = useState('')
   const [creatingTask, setCreatingTask] = useState(false)
   const [taskFilter, setTaskFilter] = useState<string>('all')
+
+  // الإعلانات
+  const [promotions, setPromotions] = useState<any[]>([])
   
   // حفظ بيانات المطور الحالي لإعادة تسجيل الدخول
   const currentDeveloperEmail = user?.email || ''
@@ -441,6 +446,16 @@ export const Developer: React.FC = () => {
       } catch (err) {
         console.log('لا توجد مهام بعد')
       }
+
+      // جلب الإعلانات
+      let promotionsSnap: any = { docs: [] }
+      try {
+        promotionsSnap = await getDocs(collection(db, 'promotions'))
+      } catch (err) {
+        console.log('لا توجد إعلانات بعد')
+      }
+      const promotionsData = promotionsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }))
+      setPromotions(promotionsData)
 
       // المستخدمين
       const usersData = usersSnap.docs.map(d => ({ uid: d.id, ...d.data() } as User))
@@ -1015,6 +1030,125 @@ export const Developer: React.FC = () => {
                   <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
                     <CheckCircle className="w-4 h-4 text-green-500" /> تحديد الموقع عبر GPS
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* إحصائيات الباقات والإعلانات */}
+            <div className="bg-white rounded-2xl shadow-lg p-6">
+              <h2 className="text-xl font-bold mb-4">📊 إحصائيات الباقات والإعلانات</h2>
+              
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* الباقات */}
+                <div>
+                  <h3 className="font-bold text-lg text-purple-600 mb-3">📦 باقات المطاعم</h3>
+                  {(() => {
+                    const freeRestaurants = restaurants.filter(r => !r.packageType || r.packageType === 'free')
+                    const premiumRestaurants = restaurants.filter(r => r.packageType === 'premium')
+                    const pendingUpgrade = restaurants.filter(r => r.packageRequest === 'premium')
+                    return (
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center bg-gray-50 rounded-xl p-3">
+                          <span className="flex items-center gap-2">
+                            <Package className="w-5 h-5 text-gray-500" />
+                            باقة مجانية (Free)
+                          </span>
+                          <span className="font-bold text-2xl text-gray-600">{freeRestaurants.length}</span>
+                        </div>
+                        <div className="flex justify-between items-center bg-gradient-to-r from-amber-50 to-yellow-50 rounded-xl p-3 border border-amber-200">
+                          <span className="flex items-center gap-2">
+                            <Package className="w-5 h-5 text-amber-500" />
+                            باقة مميزة (Premium)
+                          </span>
+                          <span className="font-bold text-2xl text-amber-600">{premiumRestaurants.length}</span>
+                        </div>
+                        {pendingUpgrade.length > 0 && (
+                          <div className="flex justify-between items-center bg-blue-50 rounded-xl p-3 border border-blue-200">
+                            <span className="flex items-center gap-2">
+                              <Clock className="w-5 h-5 text-blue-500" />
+                              طلبات ترقية معلقة
+                            </span>
+                            <span className="font-bold text-2xl text-blue-600">{pendingUpgrade.length}</span>
+                          </div>
+                        )}
+                        {/* قائمة المشتركين بالباقة المميزة */}
+                        {premiumRestaurants.length > 0 && (
+                          <div className="mt-4">
+                            <p className="text-sm font-semibold text-amber-700 mb-2">المشتركين في الباقة المميزة:</p>
+                            <div className="space-y-2 max-h-40 overflow-y-auto">
+                              {premiumRestaurants.map(r => (
+                                <div key={r.id} className="text-sm bg-amber-50 rounded-lg p-2 flex justify-between">
+                                  <span>{r.name}</span>
+                                  <span className="text-gray-500">{r.city || '-'}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
+                </div>
+
+                {/* الإعلانات */}
+                <div>
+                  <h3 className="font-bold text-lg text-pink-600 mb-3">📢 الإعلانات الممولة</h3>
+                  {(() => {
+                    const activePromos = promotions.filter(p => p.isActive)
+                    const paidPromos = promotions.filter(p => p.isPaid)
+                    const totalPromoRevenue = promotions.reduce((sum, p) => sum + (p.isPaid ? (p.price || 0) : 0), 0)
+                    const totalViews = promotions.reduce((sum, p) => sum + (p.viewsCount || 0), 0)
+                    return (
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center bg-gray-50 rounded-xl p-3">
+                          <span>إجمالي الإعلانات</span>
+                          <span className="font-bold text-2xl">{promotions.length}</span>
+                        </div>
+                        <div className="flex justify-between items-center bg-green-50 rounded-xl p-3 border border-green-200">
+                          <span className="flex items-center gap-2">
+                            <CheckCircle className="w-5 h-5 text-green-500" />
+                            إعلانات نشطة
+                          </span>
+                          <span className="font-bold text-2xl text-green-600">{activePromos.length}</span>
+                        </div>
+                        <div className="flex justify-between items-center bg-emerald-50 rounded-xl p-3 border border-emerald-200">
+                          <span className="flex items-center gap-2">
+                            <Wallet className="w-5 h-5 text-emerald-500" />
+                            إعلانات مدفوعة
+                          </span>
+                          <span className="font-bold text-2xl text-emerald-600">{paidPromos.length}</span>
+                        </div>
+                        <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl p-4 text-white">
+                          <p className="text-sm opacity-90">💰 أرباح الإعلانات</p>
+                          <p className="text-3xl font-bold">{totalPromoRevenue.toFixed(2)} ر.س</p>
+                        </div>
+                        <div className="flex justify-between items-center bg-purple-50 rounded-xl p-3">
+                          <span>👁️ إجمالي المشاهدات</span>
+                          <span className="font-bold text-xl text-purple-600">{totalViews}</span>
+                        </div>
+                        {/* قائمة الإعلانات النشطة */}
+                        {activePromos.length > 0 && (
+                          <div className="mt-4">
+                            <p className="text-sm font-semibold text-pink-700 mb-2">الإعلانات النشطة:</p>
+                            <div className="space-y-2 max-h-40 overflow-y-auto">
+                              {activePromos.map(p => (
+                                <div key={p.id} className="text-sm bg-pink-50 rounded-lg p-2">
+                                  <div className="flex justify-between">
+                                    <span className="font-medium">{p.title || 'إعلان'}</span>
+                                    <span className="text-green-600">{p.price || 0} ر.س</span>
+                                  </div>
+                                  <div className="text-xs text-gray-500 flex justify-between mt-1">
+                                    <span>👁️ {p.viewsCount || 0} مشاهدة</span>
+                                    <span>{p.isPaid ? '✅ مدفوع' : '⏳ غير مدفوع'}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
             </div>
