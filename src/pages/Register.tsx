@@ -4,7 +4,7 @@ import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { auth, db } from '@/firebase'
 import { doc, setDoc } from 'firebase/firestore'
 import { useNavigate, Link } from 'react-router-dom'
-import { User, Mail, Lock, Store, UserPlus, Truck, ChefHat, Users, MapPin } from 'lucide-react'
+import { User, Mail, Lock, Store, UserPlus, Truck, ChefHat, Users, MapPin, CheckSquare, Square } from 'lucide-react'
 import { SAUDI_CITIES } from '@/utils/cities'
 
 export const Register: React.FC = () => {
@@ -14,6 +14,7 @@ export const Register: React.FC = () => {
   const [restaurantName, setRestaurantName] = useState('')
   const [city, setCity] = useState('')
   const [role, setRole] = useState<'customer'|'courier'|'owner'|''>('')
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [loading, setLoading] = useState(false)
   const nav = useNavigate()
 
@@ -21,6 +22,7 @@ export const Register: React.FC = () => {
     e.preventDefault()
     if (!role) return alert('اختر نوع الحساب')
     if (role === 'owner' && !restaurantName) return alert('أدخل اسم المطعم')
+    if (role === 'owner' && !acceptedTerms) return alert('يجب الموافقة على الشروط والأحكام')
 
     setLoading(true)
     try {
@@ -160,12 +162,59 @@ export const Register: React.FC = () => {
                   ))}
                 </select>
               </div>
+
+              {/* الموافقة على الشروط والأحكام */}
+              <div 
+                onClick={() => setAcceptedTerms(!acceptedTerms)}
+                className={`flex items-start gap-3 p-4 rounded-2xl cursor-pointer transition-all border-2 ${
+                  acceptedTerms 
+                    ? 'bg-green-50 border-green-400' 
+                    : 'bg-orange-50 border-orange-200 hover:border-orange-300'
+                }`}
+              >
+                {acceptedTerms ? (
+                  <CheckSquare className="w-6 h-6 text-green-500 flex-shrink-0 mt-0.5" />
+                ) : (
+                  <Square className="w-6 h-6 text-orange-400 flex-shrink-0 mt-0.5" />
+                )}
+                <div className="text-sm leading-relaxed">
+                  <span className={acceptedTerms ? 'text-green-700' : 'text-orange-700'}>
+                    أوافق على{' '}
+                  </span>
+                  <Link 
+                    to="/terms" 
+                    target="_blank"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-sky-600 hover:text-sky-800 font-bold underline"
+                  >
+                    الشروط والأحكام
+                  </Link>
+                  <span className={acceptedTerms ? 'text-green-700' : 'text-orange-700'}>
+                    {' '}و{' '}
+                  </span>
+                  <Link 
+                    to="/privacy-policy" 
+                    target="_blank"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-sky-600 hover:text-sky-800 font-bold underline"
+                  >
+                    سياسة الخصوصية
+                  </Link>
+                  <span className={acceptedTerms ? 'text-green-700' : 'text-orange-700'}>
+                    {' '}الخاصة بمنصة سفرة البيت
+                  </span>
+                </div>
+              </div>
             </>
           )}
 
           <button 
-            disabled={loading} 
-            className="w-full flex items-center justify-center gap-3 bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white font-bold p-4 rounded-2xl shadow-xl shadow-sky-300/50 transition-all hover:scale-[1.02]"
+            disabled={loading || (role === 'owner' && !acceptedTerms)} 
+            className={`w-full flex items-center justify-center gap-3 text-white font-bold p-4 rounded-2xl shadow-xl transition-all ${
+              role === 'owner' && !acceptedTerms
+                ? 'bg-gray-400 cursor-not-allowed'
+                : 'bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 shadow-sky-300/50 hover:scale-[1.02]'
+            }`}
           >
             {loading ? 'جارٍ التسجيل...' : (
               <>
@@ -175,17 +224,12 @@ export const Register: React.FC = () => {
             )}
           </button>
 
-          {/* رابط الشروط والأحكام */}
-          <p className="text-center text-sm text-gray-500">
-            بالتسجيل، أنت توافق على{' '}
-            <Link to="/terms" className="text-sky-500 hover:text-sky-700 font-semibold underline">
-              الشروط والأحكام
-            </Link>
-            {' '}و{' '}
-            <Link to="/privacy-policy" className="text-sky-500 hover:text-sky-700 font-semibold underline">
-              سياسة الخصوصية
-            </Link>
-          </p>
+          {/* تنبيه للأسر المنتجة */}
+          {role === 'owner' && !acceptedTerms && (
+            <p className="text-center text-sm text-orange-600 bg-orange-50 p-3 rounded-xl">
+              ⚠️ يجب الموافقة على الشروط والأحكام لإكمال التسجيل
+            </p>
+          )}
         </form>
 
         {/* رابط تسجيل الدخول */}
