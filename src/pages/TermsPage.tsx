@@ -224,10 +224,16 @@ export default function TermsPage() {
           تم آخر تحديث لهذه الشروط بتاريخ {new Date().toLocaleDateString("ar-SA")}
         </p>
 
-        <div className="mt-8 text-center">
+        <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
+          <Link
+            to="/register"
+            className="text-white bg-sky-500 hover:bg-sky-600 px-6 py-3 rounded-lg inline-block transition-colors text-center font-bold"
+          >
+            ✅ موافق - العودة للتسجيل
+          </Link>
           <Link
             to="/"
-            className="text-white bg-sky-500 hover:bg-sky-600 px-6 py-2 rounded-lg inline-block transition-colors"
+            className="text-sky-600 bg-sky-100 hover:bg-sky-200 px-6 py-3 rounded-lg inline-block transition-colors text-center"
           >
             الرجوع إلى الصفحة الرئيسية
           </Link>

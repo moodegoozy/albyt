@@ -193,10 +193,16 @@ export default function CourierTermsPage() {
           {new Date().toLocaleDateString("ar-SA")}
         </p>
 
-        <div className="mt-8 text-center">
+        <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
+          <Link
+            to="/register"
+            className="text-white bg-emerald-500 hover:bg-emerald-600 px-6 py-3 rounded-lg inline-block transition-colors text-center font-bold"
+          >
+            ✅ موافق - العودة للتسجيل
+          </Link>
           <Link
             to="/"
-            className="text-white bg-emerald-500 hover:bg-emerald-600 px-6 py-2 rounded-lg inline-block transition-colors"
+            className="text-emerald-600 bg-emerald-100 hover:bg-emerald-200 px-6 py-3 rounded-lg inline-block transition-colors text-center"
           >
             الرجوع إلى الصفحة الرئيسية
           </Link>
