@@ -167,9 +167,8 @@ export const CheckoutPage: React.FC = () => {
           updatedAt: serverTimestamp(),
         })
       }
-      console.log(`✅ تم إضافة ${restaurantEarnings} ريال لمحفظة المطعم ${restId}`)
     } catch (err) {
-      console.error('خطأ في تحديث محفظة المطعم:', err)
+      // خطأ في تحديث محفظة المطعم
     }
 
     // 💰 تحديث محفظة المشرف إذا كان المطعم مسجل عن طريقه
@@ -198,9 +197,8 @@ export const CheckoutPage: React.FC = () => {
         }
         
         // إضافة المعاملة للسجل (اختياري - يمكن إضافته لاحقاً)
-        console.log(`✅ تم إضافة ${adminCommission} ريال لمحفظة المشرف ${restaurant.referredBy} (${totalItemsCount} منتج × ${ADMIN_COMMISSION_PER_ITEM} ر.س)`)
       } catch (err) {
-        console.error('خطأ في تحديث محفظة المشرف:', err)
+        // خطأ في تحديث محفظة المشرف
       }
     }
 
@@ -225,9 +223,8 @@ export const CheckoutPage: React.FC = () => {
           updatedAt: serverTimestamp(),
         })
       }
-      console.log(`✅ تم إضافة ${appEarnings} ريال لمحفظة التطبيق`)
     } catch (err) {
-      console.error('خطأ في تحديث محفظة التطبيق:', err)
+      // خطأ في تحديث محفظة التطبيق
     }
 
     clear()

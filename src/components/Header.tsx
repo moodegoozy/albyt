@@ -58,7 +58,7 @@ export const Header: React.FC = () => {
 
   // مراقبة عدد الإشعارات غير المقروءة
   useEffect(() => {
-    if (!user) {
+    if (!user?.uid) {
       setUnreadCount(0);
       return;
     }
@@ -71,10 +71,13 @@ export const Header: React.FC = () => {
 
     const unsub = onSnapshot(q, (snap) => {
       setUnreadCount(snap.size);
-    }, () => setUnreadCount(0));
+    }, (error) => {
+      console.warn('Notifications listener error:', error);
+      setUnreadCount(0);
+    });
 
     return () => unsub();
-  }, [user]);
+  }, [user?.uid]); // ✅ استخدم user.uid بدلاً من user object
 
   return (
     <header className="bg-gradient-to-r from-sky-600 via-sky-500 to-sky-600 shadow-xl shadow-sky-200/30">

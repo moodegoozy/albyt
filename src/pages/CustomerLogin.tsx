@@ -43,10 +43,10 @@ export const CustomerLogin: React.FC = () => {
       recaptchaVerifierRef.current = new RecaptchaVerifier(auth, recaptchaRef.current, {
         size: 'invisible',
         callback: () => {
-          console.log('reCAPTCHA solved')
+          // reCAPTCHA solved
         },
         'expired-callback': () => {
-          console.log('reCAPTCHA expired')
+          // reCAPTCHA expired
           recaptchaVerifierRef.current = null
         }
       })
@@ -76,7 +76,6 @@ export const CustomerLogin: React.FC = () => {
     }
 
     const formattedPhone = formatPhoneNumber(phone)
-    console.log('Sending OTP to:', formattedPhone)
 
     setLoading(true)
     try {

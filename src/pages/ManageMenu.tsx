@@ -97,6 +97,12 @@ export const ManageMenu: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState<Item>(emptyItem())
   const [saving, setSaving] = useState(false)
+  
+  // ✅ حالة التعديل
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<Item>(emptyItem())
+  const [editSaving, setEditSaving] = useState(false)
+  const editFileRef = useRef<HTMLInputElement | null>(null)
 
   // Toast state
   const [toast, setToast] = useState<{ kind: ToastKind; message: string } | null>(null)
@@ -250,6 +256,91 @@ export const ManageMenu: React.FC = () => {
     }
   }
 
+  // ✅ بدء التعديل
+  const startEdit = (item: Item) => {
+    setEditingId(item.id || null)
+    setEditForm({ ...item, file: null })
+  }
+
+  // ✅ إلغاء التعديل
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditForm(emptyItem())
+    if (editFileRef.current) editFileRef.current.value = ''
+  }
+
+  // ✅ حفظ التعديل
+  const saveEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user || !editingId) return
+
+    const price = Number(editForm.price || 0)
+    if (!editForm.name.trim()) {
+      notify('warning', '⚠️ اكتب اسم الصنف')
+      return
+    }
+    if (!Number.isFinite(price) || price <= 0) {
+      notify('warning', '⚠️ أدخل سعر صالح')
+      return
+    }
+
+    setEditSaving(true)
+    const prevItems = items
+
+    // تحديث متفائل للـ UI
+    setItems(prev => prev.map(i => 
+      i.id === editingId 
+        ? { ...i, name: editForm.name, desc: editForm.desc, price, available: editForm.available }
+        : i
+    ))
+
+    try {
+      let imageUrl = editForm.imageUrl
+
+      // رفع صورة جديدة إن وُجدت
+      if (editForm.file) {
+        const blob = await compressImage(editForm.file)
+        const safeName = editForm.file.name.replace(/\s+/g, '_').slice(-60)
+        const path = `menuImages/${user.uid}_${Date.now()}_${safeName}`
+        const storageRef = ref(storage, path)
+        const task = uploadBytesResumable(storageRef, blob, {
+          contentType: editForm.file.type || 'image/jpeg',
+        })
+
+        await new Promise<void>((resolve, reject) => {
+          task.on('state_changed', null, reject, async () => {
+            const url = await getDownloadURL(task.snapshot.ref)
+            imageUrl = `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`
+            resolve()
+          })
+        })
+      }
+
+      // تحديث الوثيقة في Firestore
+      await updateDoc(doc(db, 'menuItems', editingId), {
+        name: editForm.name,
+        desc: editForm.desc || '',
+        price,
+        available: editForm.available,
+        ...(imageUrl ? { imageUrl } : {}),
+      })
+
+      // تحديث الـ UI بالصورة الجديدة
+      if (imageUrl) {
+        setItems(prev => prev.map(i => i.id === editingId ? { ...i, imageUrl } : i))
+      }
+
+      notify('success', '✅ تم تحديث الصنف بنجاح')
+      cancelEdit()
+    } catch (err: any) {
+      // رجوع عن التغييرات لو فشل
+      setItems(prevItems)
+      notify('error', `❌ فشل التحديث: ${err?.message || err}`)
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="grid lg:grid-cols-2 gap-6">
@@ -338,46 +429,133 @@ export const ManageMenu: React.FC = () => {
         {/* 🛒 عرض الأصناف */}
         <div className="space-y-3">
           {items.map(it => (
-            <div key={it.id || it._tempId} className="bg-white rounded-2xl shadow p-4 flex items-center gap-4">
-              <div className="relative">
-                <img
-                  src={it.imageUrl || ''}
-                  className="w-20 h-20 object-cover rounded-xl bg-gray-100"
-                  onError={(e: any) => { e.currentTarget.style.display = 'none' }}
-                />
-                {it._optimistic && (
-                  <div className="absolute -bottom-2 left-0 right-0">
-                    <div className="h-1 w-20 rounded bg-gray-200 overflow-hidden">
-                      <div
-                        className="h-full bg-yellow-500 transition-[width]"
-                        style={{ width: `${it._progress || 1}%` }}
+            <div key={it.id || it._tempId} className="bg-white rounded-2xl shadow p-4">
+              {/* وضع التعديل */}
+              {editingId === it.id ? (
+                <form onSubmit={saveEdit} className="space-y-3">
+                  <div className="flex items-center gap-3 mb-3">
+                    <img
+                      src={editForm.file ? URL.createObjectURL(editForm.file) : (editForm.imageUrl || '')}
+                      className="w-20 h-20 object-cover rounded-xl bg-gray-100"
+                      onError={(e: any) => { e.currentTarget.style.display = 'none' }}
+                    />
+                    <div className="flex-1">
+                      <label className="text-sm text-gray-600 block mb-1">تغيير الصورة</label>
+                      <input
+                        ref={editFileRef}
+                        type="file"
+                        accept="image/*"
+                        className="w-full text-sm border rounded-lg p-2"
+                        onChange={e => setEditForm({ ...editForm, file: e.target.files?.[0] || null })}
                       />
                     </div>
                   </div>
-                )}
-              </div>
 
-              <div className="flex-1">
-                <div className="font-bold">{it.name}</div>
-                {it.desc && <div className="text-sm text-gray-600">{it.desc}</div>}
-                <div className="font-semibold mt-1">{it.price?.toFixed?.(2)} ر.س</div>
-                {it._optimistic && <div className="text-xs text-yellow-600 mt-1">يتم الحفظ…</div>}
-              </div>
+                  <input
+                    className="w-full border rounded-xl p-3"
+                    placeholder="اسم الصنف"
+                    value={editForm.name}
+                    onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+                  />
 
-              <button
-                onClick={() => toggle(it.id, it.available)}
-                disabled={!!it._optimistic}
-                className="px-3 py-2 rounded-xl text-sm bg-blue-600 text-white disabled:opacity-50"
-              >
-                {it.available ? 'تعطيل' : 'تفعيل'}
-              </button>
-              <button
-                onClick={() => remove(it.id)}
-                disabled={!!it._optimistic}
-                className="px-3 py-2 rounded-xl text-sm bg-red-600 text-white disabled:opacity-50"
-              >
-                حذف
-              </button>
+                  <textarea
+                    className="w-full border rounded-xl p-3"
+                    placeholder="الوصف (اختياري)"
+                    value={editForm.desc || ''}
+                    onChange={e => setEditForm({ ...editForm, desc: e.target.value })}
+                  />
+
+                  <input
+                    className="w-full border rounded-xl p-3"
+                    placeholder="السعر"
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    inputMode="decimal"
+                    value={Number.isFinite(editForm.price) ? editForm.price : 0}
+                    onChange={e => setEditForm({ ...editForm, price: Number(e.target.value) })}
+                  />
+
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={editForm.available}
+                      onChange={e => setEditForm({ ...editForm, available: e.target.checked })}
+                    />
+                    متاح
+                  </label>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={editSaving}
+                      className="flex-1 px-4 py-2 rounded-xl bg-green-600 text-white disabled:opacity-60"
+                    >
+                      {editSaving ? 'جارِ الحفظ…' : '💾 حفظ التعديلات'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelEdit}
+                      disabled={editSaving}
+                      className="px-4 py-2 rounded-xl bg-gray-400 text-white disabled:opacity-60"
+                    >
+                      إلغاء
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                /* وضع العرض العادي */
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <img
+                      src={it.imageUrl || ''}
+                      className="w-20 h-20 object-cover rounded-xl bg-gray-100"
+                      onError={(e: any) => { e.currentTarget.style.display = 'none' }}
+                    />
+                    {it._optimistic && (
+                      <div className="absolute -bottom-2 left-0 right-0">
+                        <div className="h-1 w-20 rounded bg-gray-200 overflow-hidden">
+                          <div
+                            className="h-full bg-yellow-500 transition-[width]"
+                            style={{ width: `${it._progress || 1}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex-1">
+                    <div className="font-bold">{it.name}</div>
+                    {it.desc && <div className="text-sm text-gray-600">{it.desc}</div>}
+                    <div className="font-semibold mt-1">{it.price?.toFixed?.(2)} ر.س</div>
+                    {it._optimistic && <div className="text-xs text-yellow-600 mt-1">يتم الحفظ…</div>}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <button
+                      onClick={() => startEdit(it)}
+                      disabled={!!it._optimistic}
+                      className="px-3 py-2 rounded-xl text-sm bg-amber-500 text-white disabled:opacity-50"
+                    >
+                      ✏️ تعديل
+                    </button>
+                    <button
+                      onClick={() => toggle(it.id, it.available)}
+                      disabled={!!it._optimistic}
+                      className="px-3 py-2 rounded-xl text-sm bg-blue-600 text-white disabled:opacity-50"
+                    >
+                      {it.available ? 'تعطيل' : 'تفعيل'}
+                    </button>
+                    <button
+                      onClick={() => remove(it.id)}
+                      disabled={!!it._optimistic}
+                      className="px-3 py-2 rounded-xl text-sm bg-red-600 text-white disabled:opacity-50"
+                    >
+                      حذف
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
           {items.length === 0 && <div className="text-gray-600">لا توجد أصناف بعد.</div>}

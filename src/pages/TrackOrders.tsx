@@ -1,18 +1,67 @@
 // src/pages/TrackOrders.tsx
 import React, { useEffect, useState } from 'react'
-import { collection, getDocs, onSnapshot, orderBy, query, where, limit } from 'firebase/firestore'
+import { collection, getDocs, onSnapshot, orderBy, query, where, limit, doc, getDoc } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useAuth } from '@/auth'
 import { Order } from '@/types'
 import { useNavigate } from 'react-router-dom'
-import { MessageCircle, Package, MapPin, Truck, CheckCircle, Clock, ChefHat, XCircle, Store } from 'lucide-react'
+import { MessageCircle, Package, MapPin, Truck, CheckCircle, Clock, ChefHat, XCircle, Store, CreditCard, Building2, Copy, X } from 'lucide-react'
+import { useToast } from '@/components/ui/Toast'
 
 export const TrackOrders: React.FC = () => {
   const { user } = useAuth()
   const nav = useNavigate()
+  const toast = useToast()
   const [err, setErr] = useState<string | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [diag, setDiag] = useState<{ uid: string; fallbackCount: number; sample: any[] } | null>(null)
+  
+  // حالة عرض بيانات البنك
+  const [showPaymentModal, setShowPaymentModal] = useState<string | null>(null) // orderId
+  const [bankInfo, setBankInfo] = useState<{ bankName?: string; bankAccountName?: string; bankAccountNumber?: string } | null>(null)
+  const [loadingBank, setLoadingBank] = useState(false)
+
+  // جلب بيانات البنك للمطعم من subcollection المحمي
+  const fetchBankInfo = async (restaurantId: string, orderId: string) => {
+    setLoadingBank(true)
+    setShowPaymentModal(orderId)
+    try {
+      // محاولة جلب من subcollection المحمي أولاً
+      const bankSnap = await getDoc(doc(db, 'restaurants', restaurantId, 'private', 'bankInfo'))
+      if (bankSnap.exists()) {
+        const data = bankSnap.data() as any
+        setBankInfo({
+          bankName: data.bankName || '',
+          bankAccountName: data.bankAccountName || '',
+          bankAccountNumber: data.bankAccountNumber || '',
+        })
+      } else {
+        // fallback للبيانات القديمة في document المطعم (للتوافق مع البيانات السابقة)
+        const rSnap = await getDoc(doc(db, 'restaurants', restaurantId))
+        if (rSnap.exists()) {
+          const data = rSnap.data() as any
+          setBankInfo({
+            bankName: data.bankName || '',
+            bankAccountName: data.bankAccountName || '',
+            bankAccountNumber: data.bankAccountNumber || '',
+          })
+        } else {
+          setBankInfo(null)
+        }
+      }
+    } catch (e) {
+      toast.error('تعذر جلب بيانات الدفع')
+      setBankInfo(null)
+    } finally {
+      setLoadingBank(false)
+    }
+  }
+
+  // نسخ رقم الحساب
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    toast.success('تم نسخ رقم الحساب! 📋')
+  }
 
   useEffect(() => {
     if (!user) return
@@ -102,9 +151,102 @@ export const TrackOrders: React.FC = () => {
     return canChatWithCourier(order) || canChatWithRestaurant(order)
   }
 
+  // التحقق إذا كان الطلب يحتاج دفع (pending أو accepted)
+  const needsPayment = (order: Order) => {
+    return ['pending', 'accepted'].includes(order.status)
+  }
+
   return (
     <div className="space-y-3">
       <h1 className="text-xl font-bold">طلباتي</h1>
+
+      {/* نافذة بيانات الدفع */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPaymentModal(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+            {/* رأس النافذة */}
+            <div className="bg-gradient-to-r from-green-500 to-green-600 p-4 text-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CreditCard className="w-6 h-6" />
+                  <h2 className="text-lg font-bold">إتمام الدفع</h2>
+                </div>
+                <button onClick={() => setShowPaymentModal(null)} className="p-1 hover:bg-white/20 rounded-lg">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-5">
+              {loadingBank ? (
+                <div className="text-center py-8">
+                  <div className="w-10 h-10 border-3 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                  <p className="text-gray-500">جارِ التحميل...</p>
+                </div>
+              ) : bankInfo && bankInfo.bankName && bankInfo.bankAccountNumber ? (
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-600 bg-amber-50 p-3 rounded-xl">
+                    💰 حوّل المبلغ على الحساب البنكي التالي ثم أبلغ صاحب المطعم
+                  </p>
+
+                  {/* بيانات البنك */}
+                  <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <Building2 className="w-5 h-5 text-green-600" />
+                      <div>
+                        <p className="text-xs text-gray-500">البنك</p>
+                        <p className="font-bold text-gray-800">{bankInfo.bankName}</p>
+                      </div>
+                    </div>
+
+                    <div className="border-t pt-3">
+                      <p className="text-xs text-gray-500">اسم صاحب الحساب</p>
+                      <p className="font-bold text-gray-800">{bankInfo.bankAccountName}</p>
+                    </div>
+
+                    <div className="border-t pt-3">
+                      <p className="text-xs text-gray-500">رقم الآيبان / الحساب</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-mono font-bold text-gray-800 flex-1 text-left" dir="ltr">
+                          {bankInfo.bankAccountNumber}
+                        </p>
+                        <button
+                          onClick={() => copyToClipboard(bankInfo.bankAccountNumber || '')}
+                          className="p-2 bg-green-100 text-green-600 rounded-lg hover:bg-green-200 transition"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* المبلغ المطلوب */}
+                  {orders.find(o => o.id === showPaymentModal) && (
+                    <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 text-center">
+                      <p className="text-sm text-green-600 mb-1">المبلغ المطلوب تحويله</p>
+                      <p className="text-3xl font-black text-green-700">
+                        {orders.find(o => o.id === showPaymentModal)?.total?.toFixed(2)} ر.س
+                      </p>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-gray-500 text-center">
+                    ⚠️ بعد التحويل، تواصل مع المطعم لتأكيد الدفع
+                  </p>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Building2 className="w-8 h-8 text-gray-400" />
+                  </div>
+                  <p className="text-gray-600 font-semibold mb-2">لم يتم إضافة بيانات الحساب البنكي</p>
+                  <p className="text-sm text-gray-500">يرجى التواصل مع المطعم مباشرة لمعرفة طريقة الدفع</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {err && (
         <div className="text-xs bg-yellow-50 text-yellow-800 border border-yellow-200 rounded-xl p-3">
@@ -178,36 +320,53 @@ export const TrackOrders: React.FC = () => {
               )}
             </div>
 
-            <div className="mt-3 pt-3 border-t flex items-center justify-between">
-              <div className="font-bold text-lg text-primary">
-                الإجمالي: {o.total?.toFixed?.(2)} ر.س
+            <div className="mt-3 pt-3 border-t space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="font-bold text-lg text-primary">
+                  الإجمالي: {o.total?.toFixed?.(2)} ر.س
+                </div>
               </div>
-              
-              {/* زر المحادثة مع المندوب */}
-              {canChatWithCourier(o) && (
+
+              {/* زر إتمام الدفع - يظهر للطلبات الجديدة */}
+              {needsPayment(o) && o.restaurantId && (
                 <button
-                  onClick={() => nav(`/chat?orderId=${o.id}`)}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary to-accent 
-                             text-white rounded-full font-medium shadow-lg hover:shadow-xl 
-                             hover:scale-105 transition-all duration-200 animate-pulse"
+                  onClick={() => fetchBankInfo(o.restaurantId!, o.id)}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-green-500 to-green-600 
+                             text-white rounded-xl font-bold shadow-lg hover:shadow-xl 
+                             hover:scale-[1.02] transition-all duration-200"
                 >
-                  <MessageCircle className="w-5 h-5" />
-                  <span>تواصل مع المندوب 🚗</span>
+                  <CreditCard className="w-5 h-5" />
+                  <span>إتمام الدفع 💳</span>
                 </button>
               )}
-              
-              {/* زر المحادثة مع المطعم (إذا لم يكن هناك مندوب) */}
-              {canChatWithRestaurant(o) && (
-                <button
-                  onClick={() => nav(`/chat?orderId=${o.id}`)}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 
-                             text-white rounded-full font-medium shadow-lg hover:shadow-xl 
-                             hover:scale-105 transition-all duration-200"
-                >
-                  <Store className="w-5 h-5" />
-                  <span>تواصل مع المطعم 🍽️</span>
-                </button>
-              )}
+
+              <div className="flex gap-2">
+                {/* زر المحادثة مع المندوب */}
+                {canChatWithCourier(o) && (
+                  <button
+                    onClick={() => nav(`/chat?orderId=${o.id}`)}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-primary to-accent 
+                               text-white rounded-full font-medium shadow-lg hover:shadow-xl 
+                               hover:scale-105 transition-all duration-200 animate-pulse"
+                  >
+                    <MessageCircle className="w-5 h-5" />
+                    <span>تواصل مع المندوب 🚗</span>
+                  </button>
+                )}
+                
+                {/* زر المحادثة مع المطعم (إذا لم يكن هناك مندوب) */}
+                {canChatWithRestaurant(o) && (
+                  <button
+                    onClick={() => nav(`/chat?orderId=${o.id}`)}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 
+                               text-white rounded-full font-medium shadow-lg hover:shadow-xl 
+                               hover:scale-105 transition-all duration-200"
+                  >
+                    <Store className="w-5 h-5" />
+                    <span>تواصل مع المطعم 🍽️</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

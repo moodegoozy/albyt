@@ -1,10 +1,10 @@
 // src/pages/RestaurantsPage.tsx
 import React, { useEffect, useState, useMemo } from 'react'
 import { db } from '@/firebase'
-import { collection, getDocs, query, where, updateDoc, doc, increment } from 'firebase/firestore'
-import { Link } from 'react-router-dom'
+import { collection, getDocs, query, where, updateDoc, doc, increment, setDoc, addDoc, serverTimestamp, getDoc } from 'firebase/firestore'
+import { Link, useSearchParams } from 'react-router-dom'
 import { SAUDI_CITIES } from '@/utils/cities'
-import { MapPin, Filter, X, Navigation, AlertCircle, CheckCircle, Crown, Medal, Award, Megaphone, ChevronLeft, ChevronRight, Play } from 'lucide-react'
+import { MapPin, Filter, X, Navigation, AlertCircle, CheckCircle, Crown, Medal, Award, Megaphone, ChevronLeft, ChevronRight, Play, Eye, Star, ShoppingBag, Utensils } from 'lucide-react'
 import { useAuth } from '@/auth'
 import { calculateDistance, MAX_DELIVERY_DISTANCE } from '@/utils/distance'
 import { Promotion } from '@/types'
@@ -20,19 +20,73 @@ type Restaurant = {
   isVerified?: boolean
   sellerTier?: 'bronze' | 'silver' | 'gold'
   packageType?: 'free' | 'premium'
+  // إحصائيات للعرض في الباقة المميزة
+  totalOrders?: number
+  averageRating?: number
+  menuItemsCount?: number
 }
 
 type RestaurantWithDistance = Restaurant & {
   distance?: number
 }
 
+// دالة تسجيل الزيارة
+const logVisit = async (restaurantId: string, userId?: string, source?: string) => {
+  try {
+    // تسجيل الزيارة في سجلات الزيارات
+    await addDoc(collection(db, 'visitLogs'), {
+      restaurantId,
+      visitorId: userId || null,
+      visitorType: userId ? 'customer' : 'anonymous',
+      source: source || 'direct',
+      page: 'menu',
+      createdAt: serverTimestamp()
+    })
+
+    // تحديث إحصائيات المطعم
+    const statsRef = doc(db, 'restaurantStats', restaurantId)
+    const statsSnap = await getDoc(statsRef)
+    
+    const today = new Date().toISOString().split('T')[0]
+    
+    if (statsSnap.exists()) {
+      const data = statsSnap.data()
+      const dailyViews = data.dailyViews || {}
+      dailyViews[today] = (dailyViews[today] || 0) + 1
+      
+      await updateDoc(statsRef, {
+        totalProfileViews: increment(1),
+        dailyViews,
+        updatedAt: serverTimestamp()
+      })
+    } else {
+      await setDoc(statsRef, {
+        totalProfileViews: 1,
+        totalMenuViews: 0,
+        totalItemViews: 0,
+        totalShareClicks: 0,
+        whatsappShareCount: 0,
+        registeredCustomers: 0,
+        appDownloads: 0,
+        dailyViews: { [today]: 1 },
+        updatedAt: serverTimestamp()
+      })
+    }
+  } catch (err) {
+    console.warn('خطأ في تسجيل الزيارة:', err)
+  }
+}
+
 export const RestaurantsPage: React.FC = () => {
-  const { userLocation, role } = useAuth()
+  const { userLocation, role, user } = useAuth()
+  const [searchParams] = useSearchParams()
+  const refSource = searchParams.get('ref') // مصدر الإحالة (whatsapp, social, etc)
   const [restaurants, setRestaurants] = useState<RestaurantWithDistance[]>([])
   const [promotions, setPromotions] = useState<(Promotion & { restaurantName?: string })[]>([])
   const [currentPromoIndex, setCurrentPromoIndex] = useState(0)
   const [loading, setLoading] = useState(true)
   const [selectedCity, setSelectedCity] = useState<string>('')
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
 
   useEffect(() => {
     (async () => {
@@ -343,92 +397,200 @@ export const RestaurantsPage: React.FC = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredRestaurants.map(r => (
-          <Link
-            key={r.id}
-            to={`/menu?restaurant=${r.id}`}
-            className={`bg-white border text-gray-800 rounded-2xl shadow-lg hover:shadow-2xl hover:-translate-y-1 transform transition p-6 flex flex-col items-center text-center relative overflow-hidden ${
-              r.sellerTier === 'gold' ? 'border-amber-300 ring-2 ring-amber-200' : 'border-gray-200'
-            }`}
-          >
-            {/* شارات التميز في الأعلى */}
-            <div className="absolute top-3 right-3 flex flex-col gap-1.5">
-              {/* شارة التوثيق */}
-              {r.isVerified ? (
-                <div className="bg-green-500 text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow">
-                  <CheckCircle className="w-3 h-3" />
-                  موثقة ✓
-                </div>
-              ) : (
-                <div className="bg-gray-400 text-white text-xs font-medium px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
-                  غير موثقة
-                </div>
-              )}
-              {/* شارة التصنيف */}
-              {r.sellerTier === 'gold' && (
-                <div className="bg-gradient-to-r from-amber-400 to-yellow-400 text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow">
-                  <Crown className="w-3 h-3" />
-                  Gold
-                </div>
-              )}
-              {r.sellerTier === 'silver' && (
-                <div className="bg-gradient-to-r from-gray-400 to-gray-500 text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow">
-                  <Medal className="w-3 h-3" />
-                  Silver
-                </div>
-              )}
-              {/* شارة باقة التميز */}
-              {r.packageType === 'premium' && (
-                <div className="bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow">
-                  ✨ مميزة
-                </div>
-              )}
+      {/* === الأسر المميزة (Premium) - عرض مميز بمربعات === */}
+      {filteredRestaurants.filter(r => r.packageType === 'premium').length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Crown className="w-6 h-6 text-amber-500" />
+              <h2 className="text-xl font-bold text-gray-800">⭐ الأسر المميزة</h2>
             </div>
-            
-            {/* شارة المسافة */}
-            {r.distance !== undefined && (
-              <div className="absolute top-3 left-3 bg-sky-500 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
-                <Navigation className="w-3 h-3" />
-                {r.distance < 1 ? `${Math.round(r.distance * 1000)} م` : `${r.distance.toFixed(1)} كم`}
-              </div>
-            )}
-            
-            {/* الشعار مع إطار ذهبي للـ Gold */}
-            {r.logoUrl ? (
-              <img
-                src={r.logoUrl}
-                alt={r.name}
-                className={`w-28 h-28 object-cover rounded-full mb-4 ${
-                  r.sellerTier === 'gold' 
-                    ? 'border-4 border-amber-400 ring-4 ring-amber-100' 
-                    : r.sellerTier === 'silver'
-                    ? 'border-4 border-gray-300'
-                    : 'border-4 border-sky-100'
+            <span className="text-sm text-gray-500">{filteredRestaurants.filter(r => r.packageType === 'premium').length} أسرة</span>
+          </div>
+          
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {filteredRestaurants.filter(r => r.packageType === 'premium').map(r => (
+              <Link
+                key={r.id}
+                to={`/menu?restaurant=${r.id}${refSource ? `&ref=${refSource}` : ''}`}
+                onClick={() => logVisit(r.id, user?.uid, refSource || 'direct')}
+                className="group bg-gradient-to-br from-amber-50 via-white to-purple-50 border-2 border-amber-200 rounded-2xl shadow-lg hover:shadow-2xl hover:-translate-y-2 transform transition-all duration-300 p-4 flex flex-col items-center text-center relative overflow-hidden"
+              >
+                {/* خلفية متوهجة */}
+                <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                
+                {/* شارة مميزة */}
+                <div className="absolute top-2 right-2">
+                  <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow flex items-center gap-1">
+                    <Crown className="w-3 h-3" />
+                    مميزة
+                  </div>
+                </div>
+
+                {/* شارة المسافة */}
+                {r.distance !== undefined && (
+                  <div className="absolute top-2 left-2 bg-sky-500/90 backdrop-blur text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                    <Navigation className="w-2.5 h-2.5" />
+                    {r.distance < 1 ? `${Math.round(r.distance * 1000)}م` : `${r.distance.toFixed(1)}كم`}
+                  </div>
+                )}
+                
+                {/* الشعار - مربع صغير مميز */}
+                <div className="relative mt-4 mb-3">
+                  {r.logoUrl ? (
+                    <img
+                      src={r.logoUrl}
+                      alt={r.name}
+                      className="w-20 h-20 object-cover rounded-xl border-3 border-amber-300 shadow-lg group-hover:scale-110 transition-transform duration-300"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 flex items-center justify-center rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 border-3 border-amber-300 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                      <Utensils className="w-8 h-8 text-amber-600" />
+                    </div>
+                  )}
+                  {/* شارة التوثيق */}
+                  {r.isVerified && (
+                    <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center border-2 border-white">
+                      <CheckCircle className="w-3.5 h-3.5 text-white" />
+                    </div>
+                  )}
+                </div>
+                
+                {/* اسم الأسرة */}
+                <h3 className="font-bold text-sm text-gray-800 line-clamp-1">{r.name}</h3>
+                
+                {/* المدينة */}
+                {r.city && (
+                  <p className="text-xs text-gray-500 flex items-center gap-0.5 mt-1">
+                    <MapPin className="w-3 h-3" />
+                    {r.city}
+                  </p>
+                )}
+
+                {/* إحصائيات سريعة */}
+                <div className="flex items-center justify-center gap-3 mt-2 text-[10px] text-gray-400">
+                  {r.averageRating !== undefined && r.averageRating > 0 && (
+                    <span className="flex items-center gap-0.5">
+                      <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
+                      {r.averageRating.toFixed(1)}
+                    </span>
+                  )}
+                  {r.totalOrders !== undefined && r.totalOrders > 0 && (
+                    <span className="flex items-center gap-0.5">
+                      <ShoppingBag className="w-3 h-3" />
+                      {r.totalOrders}
+                    </span>
+                  )}
+                </div>
+
+                {/* شارات التصنيف */}
+                <div className="flex gap-1 mt-2">
+                  {r.sellerTier === 'gold' && (
+                    <span className="bg-gradient-to-r from-amber-400 to-yellow-400 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">👑 Gold</span>
+                  )}
+                  {r.sellerTier === 'silver' && (
+                    <span className="bg-gradient-to-r from-gray-400 to-gray-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">🥈 Silver</span>
+                  )}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* === باقي الأسر (المجانية) - العرض العادي === */}
+      {filteredRestaurants.filter(r => r.packageType !== 'premium').length > 0 && (
+        <div>
+          {filteredRestaurants.filter(r => r.packageType === 'premium').length > 0 && (
+            <div className="flex items-center gap-2 mb-4">
+              <Utensils className="w-5 h-5 text-gray-500" />
+              <h2 className="text-lg font-bold text-gray-700">جميع الأسر</h2>
+            </div>
+          )}
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredRestaurants.filter(r => r.packageType !== 'premium').map(r => (
+              <Link
+                key={r.id}
+                to={`/menu?restaurant=${r.id}${refSource ? `&ref=${refSource}` : ''}`}
+                onClick={() => logVisit(r.id, user?.uid, refSource || 'direct')}
+                className={`bg-white border text-gray-800 rounded-2xl shadow-lg hover:shadow-2xl hover:-translate-y-1 transform transition p-6 flex flex-col items-center text-center relative overflow-hidden ${
+                  r.sellerTier === 'gold' ? 'border-amber-300 ring-2 ring-amber-200' : 'border-gray-200'
                 }`}
-              />
-            ) : (
-              <div className={`w-28 h-28 flex items-center justify-center rounded-full text-3xl mb-4 ${
-                r.sellerTier === 'gold' 
-                  ? 'bg-amber-100 border-4 border-amber-400' 
-                  : r.sellerTier === 'silver'
-                  ? 'bg-gray-100 border-4 border-gray-300'
-                  : 'bg-sky-100 border-4 border-sky-200'
-              }`}>
-                🍴
-              </div>
-            )}
-            
-            <h3 className="font-bold text-xl text-gray-800">{r.name}</h3>
-            {r.city && (
-              <p className="text-sm text-gray-500 mt-1 flex items-center justify-center gap-1">
-                <MapPin className="w-4 h-4" />
-                {r.city}
-              </p>
-            )}
-          </Link>
-        ))}
-      </div>
+              >
+                {/* شارات التميز في الأعلى */}
+                <div className="absolute top-3 right-3 flex flex-col gap-1.5">
+                  {/* شارة التوثيق */}
+                  {r.isVerified ? (
+                    <div className="bg-green-500 text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow">
+                      <CheckCircle className="w-3 h-3" />
+                      موثقة ✓
+                    </div>
+                  ) : (
+                    <div className="bg-gray-400 text-white text-xs font-medium px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
+                      غير موثقة
+                    </div>
+                  )}
+                  {/* شارة التصنيف */}
+                  {r.sellerTier === 'gold' && (
+                    <div className="bg-gradient-to-r from-amber-400 to-yellow-400 text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow">
+                      <Crown className="w-3 h-3" />
+                      Gold
+                    </div>
+                  )}
+                  {r.sellerTier === 'silver' && (
+                    <div className="bg-gradient-to-r from-gray-400 to-gray-500 text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow">
+                      <Medal className="w-3 h-3" />
+                      Silver
+                    </div>
+                  )}
+                </div>
+                
+                {/* شارة المسافة */}
+                {r.distance !== undefined && (
+                  <div className="absolute top-3 left-3 bg-sky-500 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
+                    <Navigation className="w-3 h-3" />
+                    {r.distance < 1 ? `${Math.round(r.distance * 1000)} م` : `${r.distance.toFixed(1)} كم`}
+                  </div>
+                )}
+                
+                {/* الشعار مع إطار ذهبي للـ Gold */}
+                {r.logoUrl ? (
+                  <img
+                    src={r.logoUrl}
+                    alt={r.name}
+                    className={`w-28 h-28 object-cover rounded-full mb-4 ${
+                      r.sellerTier === 'gold' 
+                        ? 'border-4 border-amber-400 ring-4 ring-amber-100' 
+                        : r.sellerTier === 'silver'
+                        ? 'border-4 border-gray-300'
+                        : 'border-4 border-sky-100'
+                    }`}
+                  />
+                ) : (
+                  <div className={`w-28 h-28 flex items-center justify-center rounded-full text-3xl mb-4 ${
+                    r.sellerTier === 'gold' 
+                      ? 'bg-amber-100 border-4 border-amber-400' 
+                      : r.sellerTier === 'silver'
+                      ? 'bg-gray-100 border-4 border-gray-300'
+                      : 'bg-sky-100 border-4 border-sky-200'
+                  }`}>
+                    🍴
+                  </div>
+                )}
+                
+                <h3 className="font-bold text-xl text-gray-800">{r.name}</h3>
+                {r.city && (
+                  <p className="text-sm text-gray-500 mt-1 flex items-center justify-center gap-1">
+                    <MapPin className="w-4 h-4" />
+                    {r.city}
+                  </p>
+                )}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

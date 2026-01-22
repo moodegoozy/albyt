@@ -9,28 +9,29 @@
 ## Architecture
 ```
 src/
-├── auth.tsx          # AuthContext: user, role, location, refreshUserData()
+├── auth.tsx          # AuthContext: user, role, userLocation, locationRequired, refreshUserData()
 ├── firebase.ts       # Firebase init: exports { app, auth, db, storage }
 ├── App.tsx           # Routes with ProtectedRoute + RoleGate wrappers
-├── pages/            # One component per route
+├── pages/            # One component per route (30+ pages)
 ├── components/ui/    # Toast, ConfirmDialog (context-based providers)
-├── hooks/useCart.ts  # localStorage cart (⚠️ context/CartContext.tsx is DEPRECATED)
+├── hooks/useCart.ts  # localStorage cart with ownerId tracking
 ├── routes/           # ProtectedRoute, RoleGate components
-├── types/index.ts    # Centralized TypeScript interfaces
-└── utils/            # Helpers: cities.ts, distance.ts, config.ts
+└── types/index.ts    # Centralized TypeScript interfaces (MenuItem, Restaurant, Order, etc.)
 ```
+> ⚠️ `context/CartContext.tsx` is DEPRECATED — use `hooks/useCart.ts`
 
 ## Role-Based Access
 Roles: `customer | courier | owner | admin | developer`
-- `developer`: Full access, delete ops, user management
-- `admin`: Add restaurants (earns commission), can order like customer
-- `owner`: Manage menu, process orders, hire couriers
-- `courier`: Claim ready orders, update delivery status
-- `customer`: Browse, order, track
+| Role | Capabilities |
+|------|--------------|
+| `developer` | Full access, delete ops, user management, system config |
+| `admin` | Add restaurants (earns 0.5 SAR commission), can order like customer |
+| `owner` | Manage menu, process orders, restaurant settings, hire couriers |
+| `courier` | Claim ready orders, update delivery status, chat with customers |
+| `customer` | Browse, order, track, chat |
 
 ## Route Protection Pattern
 ```tsx
-// App.tsx pattern - nest ProtectedRoute > RoleGate
 <ProtectedRoute>                          {/* → /login if !auth */}
   <RoleGate allow={['owner', 'admin']}>   {/* → / if role mismatch */}
     <YourPage />
@@ -38,31 +39,59 @@ Roles: `customer | courier | owner | admin | developer`
 </ProtectedRoute>
 ```
 
-## Firestore Collections
-| Collection | Doc ID | Notes |
-|------------|--------|-------|
-| `users` | `{uid}` | Role, location, profile |
-| `restaurants` | `{ownerId}` | **⚠️ Doc ID = owner's UID** → use `doc()` NOT `where()` |
-| `menuItems` | auto | `ownerId` links to restaurant |
-| `orders` | auto | Status: `pending→accepted→preparing→ready→out_for_delivery→delivered` |
+## Firestore Collections & Rules
+| Collection | Doc ID | Key Fields |
+|------------|--------|------------|
+| `users` | `{uid}` | `role`, `location`, `savedLocation` (customer) |
+| `restaurants` | `{ownerId}` | **⚠️ Doc ID = owner's UID** → `doc(db, 'restaurants', ownerId)` |
+| `menuItems` | auto | `ownerId` links to restaurant, `available`, `price` |
+| `orders` | auto | `status`, `customerId`, `courierId?`, `restaurantId` |
 | `orders/{id}/messages` | auto | Chat subcollection |
-| `wallets` | `{adminId}` | Commission tracking |
-| `hiringRequests` | auto | Courier job applications |
-| `notifications` | auto | System notifications |
-| `promotions` | auto | Paid ads for restaurants |
-| `tasks` | auto | Admin task assignments |
-| `settings` | `{doc}` | Global config (deliveryFee, platformFee) |
+| `wallets` | `{adminId}` | Commission tracking for admins |
+| `settings` | `{doc}` | Global config (delivery fees, hours) |
+| `hiringRequests` | auto | Courier hiring: `courierId`, `restaurantId`, `status` |
+| `notifications` | auto | System notifications: `recipientId`, `read` |
+| `promotions` | auto | Restaurant ads: `ownerId`, `viewsCount` |
+| `packageRequests` | auto | Package subscription requests |
+| `restaurantStats` | `{restaurantId}` | Visit tracking: `totalProfileViews`, `dailyViews`, `whatsappShareCount` |
+| `visitLogs` | auto | Visit records: `restaurantId`, `source`, `visitorType` |
+| `customerRegistrations` | auto | Referral registrations: `restaurantId`, `customerId` |
 
-**⚠️ Update `firestore.rules` FIRST when adding collections.** Use rule helpers: `isOwner()`, `isAdmin()`, `isDeveloper()`, `isCourier()`, `isCustomer()`
+**⚠️ Update `firestore.rules` FIRST when adding collections.** Helper functions in rules: `isOwner()`, `isAdmin()`, `isDeveloper()`, `isCourier()`, `isCustomer()`
+
+## Order Status Flow
+`pending → accepted → preparing → ready → out_for_delivery → delivered`
+(can also be `cancelled`)
 
 ## Key Patterns
 
-### Cart (localStorage hook)
+### Visit Tracking (Premium Analytics)
+```tsx
+// Track visits when customer opens restaurant page
+await addDoc(collection(db, 'visitLogs'), {
+  restaurantId, visitorId: userId || null,
+  source: 'whatsapp' | 'direct' | 'social', page: 'menu',
+  createdAt: serverTimestamp()
+})
+// Update restaurant stats
+await updateDoc(doc(db, 'restaurantStats', restaurantId), {
+  totalProfileViews: increment(1)
+})
+```
+
+### WhatsApp Share with Tracking
+```tsx
+const link = `${origin}/menu?restaurant=${uid}&ref=whatsapp`
+const text = encodeURIComponent(`🍽️ تفضل بزيارة ${name}!\n\n${link}`)
+window.open(`https://wa.me/?text=${text}`, '_blank')
+// Update whatsappShareCount in restaurantStats
+```
+
+### Cart (localStorage with ownerId)
 ```tsx
 import { useCart } from '@/hooks/useCart'
 const { items, add, remove, changeQty, clear, subtotal } = useCart()
-// ⚠️ Do NOT use context/CartContext.tsx - it's deprecated
-// Cart items include ownerId for multi-restaurant support
+// CartItem: { id, name, price, qty, ownerId }
 ```
 
 ### UI Feedback (Context-based)
@@ -77,59 +106,33 @@ const dialog = useDialog()
 const confirmed = await dialog.confirm('متأكد؟')  // Promise<boolean>
 ```
 
-### Realtime Subscriptions (always cleanup!)
+### Realtime Subscriptions (Always cleanup!)
 ```tsx
 useEffect(() => {
   const unsub = onSnapshot(query(collection(db, 'orders'), where(...)), snap => {...})
-  return () => unsub()  // ← ALWAYS cleanup
+  return () => unsub()
 }, [deps])
 ```
 
 ### Firebase Imports
 ```tsx
 import { db, auth, storage } from '@/firebase'
-import { collection, doc, getDoc, setDoc, updateDoc, addDoc, deleteDoc, onSnapshot, query, where, orderBy, serverTimestamp } from 'firebase/firestore'
-```
-
-### Timestamps
-Always use `serverTimestamp()` for date fields:
-```tsx
-await addDoc(collection(db, 'orders'), {
-  ...orderData,
-  createdAt: serverTimestamp(),
-  updatedAt: serverTimestamp(),
-})
+import { collection, doc, getDoc, setDoc, updateDoc, onSnapshot, query, where, orderBy, serverTimestamp, increment } from 'firebase/firestore'
 ```
 
 ## Adding Features Checklist
-1. **New Page**: Create in `src/pages/`, add route in [App.tsx](src/App.tsx) with ProtectedRoute/RoleGate
-2. **New Collection**: Update [firestore.rules](firestore.rules) FIRST, add types to [types/index.ts](src/types/index.ts)
-3. **New Type**: Add to `src/types/index.ts` - keep all interfaces centralized
+1. **New Page**: Create in `src/pages/`, add route in `App.tsx` with `ProtectedRoute`/`RoleGate`
+2. **New Collection**: Update `firestore.rules` FIRST, add types to `types/index.ts`
+3. **New Types**: Add to `src/types/index.ts` for consistency
 4. **Icons**: Use `lucide-react` exclusively
 
 ## Critical Gotchas
-- `restaurants/{uid}` uses owner UID → `doc(db, 'restaurants', ownerId)` NOT `where('ownerId', '==', ...)`
-- `admin` role can order like `customer` → include both in checkout RoleGate: `allow={['customer', 'admin']}`
-- Owner restaurant doc auto-created on first login ([auth.tsx#L103-L114](src/auth.tsx#L103-L114))
-- Customer location uses `sessionStorage` key: `broast_session_location`
-- Cart data stored in `localStorage` key: `broast_cart`
-- `LocationRequired` component blocks UI until location is set for customer/owner/courier roles
-- Auth uses IndexedDB persistence (mobile-friendly) - see [firebase.ts](src/firebase.ts)
-
-## Order Flow & Status
-```
-pending → accepted → preparing → ready → out_for_delivery → delivered
-                                    ↓
-                              (or cancelled)
-```
-- `pending`: عند إنشاء الطلب - ينتظر موافقة المطعم
-- `accepted`: المطعم قبل الطلب
-- `preparing`: المطعم يحضر الطلب
-- `ready`: الطلب جاهز للتوصيل/الاستلام
-- `out_for_delivery`: المندوب في الطريق
-- `delivered`: تم التوصيل بنجاح
-
-## Commission System
-- `platformFee`: 1.5 ريال لكل طلب (رسوم التطبيق)
-- `adminCommission`: 0.5 ريال (إذا المطعم مسجل عن طريق admin)
-- `wallets/{adminId}` tracks commission for admins who referred restaurants
+- **Restaurant lookup**: `doc(db, 'restaurants', ownerId)` NOT `where('ownerId', '==', ...)`
+- **Admin ordering**: `admin` can order like `customer` → include both in checkout `RoleGate`
+- **Auto-create restaurant**: Owner's restaurant doc created on first login in `auth.tsx` (lines 106-117)
+- **Location session**: Customer location stored in `sessionStorage` key `broast_session_location`
+- **Location required**: App shows `LocationRequired` component if `locationRequired` is true in auth context
+- **Timestamps**: Use `serverTimestamp()` for `createdAt`/`updatedAt` fields
+- **Commission system**: Platform fee 1.5 SAR/order + 0.5 SAR admin referral commission
+- **Package system**: Restaurants have `packageType: 'free' | 'premium'` with subscription dates
+- **Seller tiers**: `bronze | silver | gold` based on ratings and delivery performance

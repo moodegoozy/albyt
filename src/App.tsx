@@ -15,8 +15,6 @@ import { Login } from './pages/Login'
 import { Register } from './pages/Register'
 import { CustomerLogin } from './pages/CustomerLogin'
 import PrivacyPolicy from './pages/PrivacyPolicy'
-import TermsPage from './pages/TermsPage'
-import CourierTermsPage from './pages/CourierTermsPage'
 import AccountDeleted from './pages/AccountDeleted'
 
 // صفحات العميل
@@ -88,8 +86,6 @@ export default function App() {
           <Route path="/customer-login" element={<CustomerLogin />} />
           <Route path="/register" element={<Register />} />
           <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-          <Route path="/terms" element={<TermsPage />} />
-          <Route path="/courier-terms" element={<CourierTermsPage />} />
           <Route path="/account-deleted" element={<AccountDeleted />} />
           <Route path="/setup-dev" element={<SetupDeveloper />} />
 

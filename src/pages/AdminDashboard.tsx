@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Building2, ShoppingCart, Wallet, BarChart3, User as UserIcon, ClipboardList, CheckCircle } from 'lucide-react'
 import { useAuth } from '@/auth'
 import { RoleGate } from '@/routes/RoleGate'
-import { collection, getDocs, doc, getDoc, query, where, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, getDocs, doc, getDoc, query, where, updateDoc, serverTimestamp, limit, getCountFromServer } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { Order, Restaurant, User } from '@/types'
 import { useToast } from '@/components/ui/Toast'
@@ -55,16 +55,27 @@ export const AdminDashboard: React.FC = () => {
 
     (async () => {
       try {
-        // جلب عدد المطاعم
-        const restaurantsSnap = await getDocs(collection(db, 'restaurants'))
-        const totalRestaurants = restaurantsSnap.size
+        // ✅ استخدام getCountFromServer للعد بدلاً من جلب كل الوثائق
+        const restaurantsCount = await getCountFromServer(collection(db, 'restaurants'))
+        const totalRestaurants = restaurantsCount.data().count
 
-        // جلب الطلبات
-        const ordersSnap = await getDocs(collection(db, 'orders'))
-        const orders = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() } as Order))
-        const totalOrders = orders.length
-        const pendingOrders = orders.filter(o => o.status === 'pending').length
-        const totalEarnings = orders.reduce((sum, o) => sum + (o.deliveryFee || 0), 0)
+        // ✅ جلب الطلبات المعلقة فقط مع limit
+        const pendingQuery = query(
+          collection(db, 'orders'), 
+          where('status', '==', 'pending'),
+          limit(100)
+        )
+        const pendingSnap = await getDocs(pendingQuery)
+        const pendingOrders = pendingSnap.size
+        
+        // جلب عدد الطلبات الكلي باستخدام count
+        const ordersCount = await getCountFromServer(collection(db, 'orders'))
+        const totalOrders = ordersCount.data().count
+        
+        // حساب الإيرادات من آخر 100 طلب فقط (للسرعة)
+        const recentOrdersQuery = query(collection(db, 'orders'), limit(100))
+        const recentSnap = await getDocs(recentOrdersQuery)
+        const totalEarnings = recentSnap.docs.reduce((sum, d) => sum + (d.data().deliveryFee || 0), 0)
 
         // جلب محفظة الإدمن
         try {

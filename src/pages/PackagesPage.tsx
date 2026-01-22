@@ -1,8 +1,9 @@
 // src/pages/PackagesPage.tsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/auth'
-import { db } from '@/firebase'
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { db, storage } from '@/firebase'
+import { doc, getDoc, updateDoc, serverTimestamp, addDoc, collection, query, where, getDocs, onSnapshot } from 'firebase/firestore'
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { useToast } from '@/components/ui/Toast'
 import { useDialog } from '@/components/ui/ConfirmDialog'
 import { 
@@ -19,10 +20,26 @@ import {
   Calendar,
   ChevronLeft,
   Gift,
-  Home
+  Home,
+  Upload,
+  ExternalLink,
+  Clock,
+  CreditCard
 } from 'lucide-react'
 
 type PackageType = 'free' | 'premium'
+type RequestStatus = 'pending' | 'bank_sent' | 'payment_sent' | 'approved' | 'rejected' | 'expired'
+
+type PackageRequest = {
+  id: string
+  status: RequestStatus
+  bankAccountImageUrl?: string
+  paymentProofImageUrl?: string
+  subscriptionAmount?: number
+  subscriptionDuration?: number
+  createdAt?: any
+  expiresAt?: any
+}
 
 export const PackagesPage: React.FC = () => {
   const { user } = useAuth()
@@ -32,23 +49,68 @@ export const PackagesPage: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [subscribing, setSubscribing] = useState(false)
   const [selectingFree, setSelectingFree] = useState(false)
+  
+  // حالة طلب الاشتراك
+  const [activeRequest, setActiveRequest] = useState<PackageRequest | null>(null)
+  const [uploadingProof, setUploadingProof] = useState(false)
+  const [proofFile, setProofFile] = useState<File | null>(null)
+  const proofFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    const loadPackage = async () => {
-      if (!user) return
+    if (!user) return
+    
+    const loadData = async () => {
       try {
+        // تحميل بيانات المطعم
         const restSnap = await getDoc(doc(db, 'restaurants', user.uid))
         if (restSnap.exists()) {
           const data = restSnap.data()
           setCurrentPackage(data?.packageType || 'free')
         }
+        
+        // تحميل طلب الاشتراك النشط
+        const requestsQuery = query(
+          collection(db, 'packageRequests'),
+          where('restaurantId', '==', user.uid)
+        )
+        const requestsSnap = await getDocs(requestsQuery)
+        if (!requestsSnap.empty) {
+          // جلب آخر طلب
+          const requests = requestsSnap.docs.map(d => ({ id: d.id, ...d.data() } as PackageRequest))
+          const activeReq = requests.find(r => !['approved', 'rejected', 'expired'].includes(r.status))
+          if (activeReq) {
+            setActiveRequest(activeReq)
+          }
+        }
       } catch (err) {
-        console.error('خطأ في تحميل الباقة:', err)
+        console.error('خطأ في تحميل البيانات:', err)
       } finally {
         setLoading(false)
       }
     }
-    loadPackage()
+    
+    loadData()
+    
+    // الاستماع لتحديثات الطلب في الوقت الفعلي
+    const requestsQuery = query(
+      collection(db, 'packageRequests'),
+      where('restaurantId', '==', user.uid)
+    )
+    const unsub = onSnapshot(requestsQuery, (snap) => {
+      if (!snap.empty) {
+        const requests = snap.docs.map(d => ({ id: d.id, ...d.data() } as PackageRequest))
+        const activeReq = requests.find(r => !['approved', 'rejected', 'expired'].includes(r.status))
+        setActiveRequest(activeReq || null)
+        
+        // إذا تمت الموافقة، تحديث الباقة
+        const approvedReq = requests.find(r => r.status === 'approved')
+        if (approvedReq) {
+          setCurrentPackage('premium')
+        }
+      }
+    })
+    
+    return () => unsub()
   }, [user])
 
   // اختيار الباقة المجانية
@@ -91,8 +153,14 @@ export const PackagesPage: React.FC = () => {
   const handleSubscribePremium = async () => {
     if (!user) return
     
+    // التحقق من وجود طلب نشط
+    if (activeRequest) {
+      toast.info('لديك طلب اشتراك قيد المعالجة')
+      return
+    }
+    
     const confirmed = await dialog.confirm(
-      'سيتم التواصل معك قريباً لإتمام الاشتراك في باقة التميز. هل تريد المتابعة؟',
+      'سيتم إرسال طلبك للمطور وسيتواصل معك لإتمام الاشتراك في باقة التميز. هل تريد المتابعة؟',
       {
         title: '✨ الاشتراك في باقة التميز',
         confirmText: 'نعم، أريد الاشتراك',
@@ -104,17 +172,150 @@ export const PackagesPage: React.FC = () => {
 
     setSubscribing(true)
     try {
+      // جلب بيانات المطعم
+      const restSnap = await getDoc(doc(db, 'restaurants', user.uid))
+      const restData = restSnap.data()
+      
+      // إنشاء طلب اشتراك جديد
+      const requestRef = await addDoc(collection(db, 'packageRequests'), {
+        restaurantId: user.uid,
+        restaurantName: restData?.name || 'أسرة منتجة',
+        ownerName: restData?.ownerName || '',
+        ownerPhone: restData?.phone || '',
+        status: 'pending',
+        subscriptionAmount: 99, // سيحدده المطور
+        subscriptionDuration: 30, // 30 يوم
+        requestedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+      
+      // تحديث المطعم
       await updateDoc(doc(db, 'restaurants', user.uid), {
         packageRequest: 'premium',
         packageRequestedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
+      
+      // إرسال إشعار للمطور
+      try {
+        const devQuery = query(collection(db, 'users'), where('role', '==', 'developer'))
+        const devSnap = await getDocs(devQuery)
+        
+        if (!devSnap.empty) {
+          // إرسال إشعار لكل المطورين
+          for (const devDoc of devSnap.docs) {
+            await addDoc(collection(db, 'notifications'), {
+              recipientId: devDoc.id,
+              title: '📦 طلب اشتراك جديد في باقة التميز',
+              message: `${restData?.name || 'أسرة منتجة'} طلبت الاشتراك في باقة التميز`,
+              type: 'package_request',
+              read: false,
+              data: { requestId: requestRef.id, restaurantId: user.uid },
+              createdAt: serverTimestamp(),
+            })
+          }
+        } else {
+          // لا يوجد مطور - نرسل للمشرفين بدلاً منه
+          const adminQuery = query(collection(db, 'users'), where('role', '==', 'admin'))
+          const adminSnap = await getDocs(adminQuery)
+          for (const adminDoc of adminSnap.docs) {
+            await addDoc(collection(db, 'notifications'), {
+              recipientId: adminDoc.id,
+              title: '📦 طلب اشتراك جديد في باقة التميز',
+              message: `${restData?.name || 'أسرة منتجة'} طلبت الاشتراك في باقة التميز`,
+              type: 'package_request',
+              read: false,
+              data: { requestId: requestRef.id, restaurantId: user.uid },
+              createdAt: serverTimestamp(),
+            })
+          }
+        }
+      } catch (notifErr) {
+        // لا نوقف العملية إذا فشل إرسال الإشعار
+        console.warn('فشل إرسال الإشعار:', notifErr)
+      }
+      
       toast.success('تم إرسال طلب الاشتراك! سنتواصل معك قريباً ✨')
     } catch (err) {
       console.error('خطأ في إرسال الطلب:', err)
       toast.error('حدث خطأ، حاول مرة أخرى')
     } finally {
       setSubscribing(false)
+    }
+  }
+
+  // رفع إثبات التحويل
+  const handleUploadPaymentProof = async () => {
+    if (!user || !activeRequest || !proofFile) {
+      toast.warning('يرجى اختيار صورة إثبات التحويل')
+      return
+    }
+
+    setUploadingProof(true)
+    try {
+      // رفع الصورة
+      const path = `paymentProofs/${user.uid}_${Date.now()}_${proofFile.name}`
+      const storageRef = ref(storage, path)
+      await uploadBytes(storageRef, proofFile)
+      const imageUrl = await getDownloadURL(storageRef)
+
+      // تحديث الطلب
+      await updateDoc(doc(db, 'packageRequests', activeRequest.id), {
+        status: 'payment_sent',
+        paymentProofImageUrl: imageUrl,
+        paymentSentAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+
+      // إرسال إشعار للمطور
+      try {
+        const restSnap = await getDoc(doc(db, 'restaurants', user.uid))
+        const restName = restSnap.data()?.name || 'أسرة منتجة'
+        
+        const devQuery = query(collection(db, 'users'), where('role', '==', 'developer'))
+        const devSnap = await getDocs(devQuery)
+        
+        if (!devSnap.empty) {
+          for (const devDoc of devSnap.docs) {
+            await addDoc(collection(db, 'notifications'), {
+              recipientId: devDoc.id,
+              title: '💳 تم إرسال إثبات تحويل',
+              message: `${restName} أرسلت إثبات تحويل مبلغ الاشتراك`,
+              type: 'payment_proof_sent',
+              read: false,
+              data: { requestId: activeRequest.id, restaurantId: user.uid },
+              createdAt: serverTimestamp(),
+            })
+          }
+        } else {
+          // لا يوجد مطور - نرسل للمشرفين
+          const adminQuery = query(collection(db, 'users'), where('role', '==', 'admin'))
+          const adminSnap = await getDocs(adminQuery)
+          for (const adminDoc of adminSnap.docs) {
+            await addDoc(collection(db, 'notifications'), {
+              recipientId: adminDoc.id,
+              title: '💳 تم إرسال إثبات تحويل',
+              message: `${restName} أرسلت إثبات تحويل مبلغ الاشتراك`,
+              type: 'payment_proof_sent',
+              read: false,
+              data: { requestId: activeRequest.id, restaurantId: user.uid },
+              createdAt: serverTimestamp(),
+            })
+          }
+        }
+      } catch (notifErr) {
+        console.warn('فشل إرسال الإشعار:', notifErr)
+      }
+
+      toast.success('تم إرسال إثبات التحويل بنجاح! سيتم مراجعته وتفعيل الباقة ✨')
+      setProofFile(null)
+      if (proofFileRef.current) proofFileRef.current.value = ''
+    } catch (err: any) {
+      console.error('خطأ في رفع الإثبات:', err)
+      toast.error(`حدث خطأ: ${err.message}`)
+    } finally {
+      setUploadingProof(false)
     }
   }
 
@@ -144,6 +345,103 @@ export const PackagesPage: React.FC = () => {
           ابدأ مجاناً واستمتع بجميع المميزات الأساسية، أو اشترك في باقة التميز للحصول على مزايا حصرية
         </p>
       </div>
+
+      {/* === قسم حالة طلب الاشتراك النشط === */}
+      {activeRequest && (
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl p-6 border-2 border-amber-200 shadow-lg">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 bg-amber-500 rounded-xl flex items-center justify-center">
+              <CreditCard className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-amber-800">طلب اشتراك قيد المعالجة</h3>
+              <p className="text-amber-600 text-sm">
+                {activeRequest.status === 'pending' && '⏳ بانتظار إرسال بيانات الحساب البنكي'}
+                {activeRequest.status === 'bank_sent' && '🏦 تم إرسال بيانات البنك - يرجى التحويل ورفع الإثبات'}
+                {activeRequest.status === 'payment_sent' && '💳 تم إرسال إثبات التحويل - بانتظار التأكيد'}
+              </p>
+            </div>
+          </div>
+
+          {/* === حالة: المطور أرسل صورة البنك === */}
+          {activeRequest.status === 'bank_sent' && (
+            <div className="space-y-4">
+              {/* عرض صورة الحساب البنكي */}
+              {activeRequest.bankAccountImageUrl && (
+                <div className="bg-white rounded-xl p-4">
+                  <p className="font-semibold text-gray-700 mb-2">📋 بيانات الحساب البنكي للتحويل:</p>
+                  <a
+                    href={activeRequest.bankAccountImageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 bg-blue-100 hover:bg-blue-200 text-blue-700 px-4 py-2 rounded-lg transition"
+                  >
+                    <ExternalLink className="w-5 h-5" />
+                    عرض صورة الحساب البنكي
+                  </a>
+                  <p className="text-green-600 font-bold mt-2">
+                    💰 المبلغ المطلوب: {activeRequest.subscriptionAmount || 99} ريال
+                  </p>
+                </div>
+              )}
+
+              {/* رفع إثبات التحويل */}
+              <div className="bg-white rounded-xl p-4 space-y-3">
+                <p className="font-semibold text-gray-700">📤 بعد التحويل، ارفع صورة إثبات التحويل:</p>
+                <input
+                  ref={proofFileRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setProofFile(e.target.files?.[0] || null)}
+                  className="w-full border-2 border-dashed border-amber-300 rounded-xl p-4 bg-amber-50"
+                />
+                {proofFile && (
+                  <p className="text-sm text-green-600">✅ تم اختيار: {proofFile.name}</p>
+                )}
+                <button
+                  onClick={handleUploadPaymentProof}
+                  disabled={uploadingProof || !proofFile}
+                  className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white py-3 rounded-xl font-bold disabled:opacity-50 transition flex items-center justify-center gap-2"
+                >
+                  {uploadingProof ? (
+                    <>
+                      <Clock className="w-5 h-5 animate-spin" />
+                      جارِ الرفع...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-5 h-5" />
+                      إرسال إثبات التحويل
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* === حالة: بانتظار تأكيد المطور === */}
+          {activeRequest.status === 'payment_sent' && (
+            <div className="bg-purple-100 rounded-xl p-4 flex items-center gap-3">
+              <Clock className="w-8 h-8 text-purple-600 animate-pulse" />
+              <div>
+                <p className="font-bold text-purple-800">تم إرسال إثبات التحويل بنجاح ✅</p>
+                <p className="text-purple-600 text-sm">جارِ مراجعة الإثبات وتفعيل الباقة... سيتم إشعارك قريباً</p>
+              </div>
+            </div>
+          )}
+
+          {/* === حالة: طلب جديد بانتظار المطور === */}
+          {activeRequest.status === 'pending' && (
+            <div className="bg-yellow-100 rounded-xl p-4 flex items-center gap-3">
+              <Clock className="w-8 h-8 text-yellow-600 animate-pulse" />
+              <div>
+                <p className="font-bold text-yellow-800">تم إرسال طلبك بنجاح ✅</p>
+                <p className="text-yellow-600 text-sm">جارِ مراجعة الطلب وإرسال بيانات الحساب البنكي للتحويل...</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* الباقات */}
       <div className="grid md:grid-cols-2 gap-6">
@@ -288,10 +586,10 @@ export const PackagesPage: React.FC = () => {
               <div className="absolute inset-0 bg-gradient-to-r from-amber-400/10 via-yellow-400/10 to-orange-400/10" />
               <div className="relative">
                 <div className="flex items-baseline justify-center gap-1">
-                  <span className="text-5xl font-black bg-gradient-to-r from-amber-600 to-orange-500 bg-clip-text text-transparent">45</span>
+                  <span className="text-5xl font-black bg-gradient-to-r from-amber-600 to-orange-500 bg-clip-text text-transparent">99</span>
                   <span className="text-xl text-gray-600">ر.س</span>
                 </div>
-                <p className="text-amber-600 font-medium mt-1">اشتراك شهري</p>
+                <p className="text-amber-600 font-medium mt-1">شهرياً</p>
               </div>
             </div>
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 export type CartItem = {
   id: string
@@ -24,7 +24,8 @@ export function useCart() {
     localStorage.setItem(KEY, JSON.stringify(items))
   }, [items])
 
-  const add = (it: Omit<CartItem, 'qty'>, qty = 1) => {
+  // ✅ استخدام useCallback لمنع إعادة إنشاء الدوال في كل render
+  const add = useCallback((it: Omit<CartItem, 'qty'>, qty = 1) => {
     setItems(prev => {
       const idx = prev.findIndex(p => p.id === it.id)
       if (idx >= 0) {
@@ -38,17 +39,19 @@ export function useCart() {
       }
       return [...prev, { ...it, qty }]
     })
-  }
+  }, [])
 
-  const remove = (id: string) => 
-    setItems(prev => prev.filter(p => p.id !== id))
+  const remove = useCallback((id: string) => 
+    setItems(prev => prev.filter(p => p.id !== id)), [])
 
-  const changeQty = (id: string, qty: number) => 
-    setItems(prev => prev.map(p => p.id === id ? { ...p, qty } : p))
+  const changeQty = useCallback((id: string, qty: number) => 
+    setItems(prev => prev.map(p => p.id === id ? { ...p, qty } : p)), [])
 
-  const clear = () => setItems([])
+  const clear = useCallback(() => setItems([]), [])
 
-  const subtotal = items.reduce((s, it) => s + it.price * it.qty, 0)
+  // ✅ استخدام useMemo لحساب المجموع فقط عند تغيير items
+  const subtotal = useMemo(() => 
+    items.reduce((s, it) => s + it.price * it.qty, 0), [items])
 
   return { items, add, remove, changeQty, clear, subtotal }
 }

@@ -24,7 +24,6 @@ export const Login: React.FC = () => {
       const snap = await getDoc(doc(db, "users", uid))
       if (snap.exists()) {
         const userData = snap.data()
-        console.log("✅ بيانات المستخدم:", userData)
 
         if (userData.role === "owner") {
           nav("/owner")

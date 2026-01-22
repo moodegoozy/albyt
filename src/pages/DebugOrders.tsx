@@ -2,13 +2,19 @@
 import React, { useEffect, useState } from "react"
 import { collection, getDocs, limit, orderBy, query } from "firebase/firestore"
 import { db, app } from "@/firebase"
+import { useAuth } from "@/auth"
+import { Navigate } from "react-router-dom"
 
 export const DebugOrders: React.FC = () => {
+  const { role, loading: authLoading } = useAuth()
   const [rows, setRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    // لا نجلب البيانات إلا إذا كان المستخدم مطور
+    if (authLoading || role !== 'developer') return
+    
     (async () => {
       try {
         setError(null)
@@ -57,13 +63,22 @@ export const DebugOrders: React.FC = () => {
         setLoading(false)
       }
     })()
-  }, [])
+  }, [authLoading, role])
+
+  // حماية الصفحة: فقط للمطور
+  if (authLoading) {
+    return <div className="p-8 text-center">جارِ التحميل...</div>
+  }
+  
+  if (role !== 'developer') {
+    return <Navigate to="/" replace />
+  }
 
   const projectId = (app.options as any)?.projectId
 
   return (
     <div className="p-4 space-y-3">
-      <h1 className="text-xl font-bold">DEBUG: Orders Snapshot</h1>
+      <h1 className="text-xl font-bold">🔧 DEBUG: Orders Snapshot (للمطور فقط)</h1>
       <div className="text-sm">
         ProjectId: <b>{String(projectId)}</b>
       </div>

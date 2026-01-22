@@ -6,7 +6,7 @@ import { db, storage } from "@/firebase"
 import { useAuth } from "@/auth"
 import { useToast } from "@/components/ui/Toast"
 import { SAUDI_CITIES } from "@/utils/cities"
-import { MapPin, FileText, ShieldCheck, AlertCircle, CheckCircle, Clock, Store } from "lucide-react"
+import { MapPin, FileText, ShieldCheck, AlertCircle, CheckCircle, Clock, Store, Building2, Briefcase, Lock } from "lucide-react"
 
 type RestaurantForm = {
   name: string
@@ -18,6 +18,14 @@ type RestaurantForm = {
   commercialLicenseUrl?: string
   licenseStatus?: 'pending' | 'approved' | 'rejected'
   licenseNotes?: string
+  // بيانات الحساب البنكي
+  bankName?: string
+  bankAccountName?: string
+  bankAccountNumber?: string
+  // بيانات التوظيف
+  isHiring?: boolean
+  hiringDescription?: string
+  hiringContact?: string
 }
 
 export const EditRestaurant: React.FC = () => {
@@ -34,6 +42,12 @@ export const EditRestaurant: React.FC = () => {
     commercialLicenseUrl: "",
     licenseStatus: undefined,
     licenseNotes: "",
+    bankName: "",
+    bankAccountName: "",
+    bankAccountNumber: "",
+    isHiring: false,
+    hiringDescription: "",
+    hiringContact: "",
   })
 
   const [file, setFile] = useState<File | null>(null)
@@ -48,9 +62,27 @@ export const EditRestaurant: React.FC = () => {
     if (!user) return
     ;(async () => {
       try {
+        // جلب بيانات المطعم الأساسية
         const snap = await getDoc(doc(db, "restaurants", user.uid))
         if (snap.exists()) {
           const data = snap.data() as RestaurantForm
+          
+          // جلب بيانات البنك من subcollection منفصل (محمي)
+          let bankData = { bankName: "", bankAccountName: "", bankAccountNumber: "" }
+          try {
+            const bankSnap = await getDoc(doc(db, "restaurants", user.uid, "private", "bankInfo"))
+            if (bankSnap.exists()) {
+              const bd = bankSnap.data()
+              bankData = {
+                bankName: bd.bankName ?? "",
+                bankAccountName: bd.bankAccountName ?? "",
+                bankAccountNumber: bd.bankAccountNumber ?? "",
+              }
+            }
+          } catch (e) {
+            // بيانات البنك غير موجودة - هذا طبيعي
+          }
+          
           setForm({
             name: data.name ?? "",
             phone: data.phone ?? "",
@@ -61,6 +93,12 @@ export const EditRestaurant: React.FC = () => {
             commercialLicenseUrl: (data as any).commercialLicenseUrl ?? "",
             licenseStatus: (data as any).licenseStatus,
             licenseNotes: (data as any).licenseNotes ?? "",
+            bankName: bankData.bankName,
+            bankAccountName: bankData.bankAccountName,
+            bankAccountNumber: bankData.bankAccountNumber,
+            isHiring: (data as any).isHiring ?? false,
+            hiringDescription: (data as any).hiringDescription ?? "",
+            hiringContact: (data as any).hiringContact ?? "",
           })
         }
       } catch (e: any) {
@@ -189,16 +227,32 @@ export const EditRestaurant: React.FC = () => {
         }
       }
 
+      // حفظ بيانات المطعم الأساسية (بدون بيانات البنك)
+      const { bankName, bankAccountName, bankAccountNumber, ...publicData } = form
+      
       await setDoc(
         doc(db, "restaurants", user.uid),
         { 
-          ...form, 
+          ...publicData, 
           logoUrl,
           commercialLicenseUrl,
           licenseStatus,
         },
         { merge: true }
       )
+
+      // حفظ بيانات البنك في subcollection محمي منفصل
+      if (bankName || bankAccountName || bankAccountNumber) {
+        await setDoc(
+          doc(db, "restaurants", user.uid, "private", "bankInfo"),
+          {
+            bankName: bankName || "",
+            bankAccountName: bankAccountName || "",
+            bankAccountNumber: bankAccountNumber || "",
+          },
+          { merge: true }
+        )
+      }
 
       // تنظيف الملفات
       if (preview) URL.revokeObjectURL(preview)
@@ -381,6 +435,122 @@ export const EditRestaurant: React.FC = () => {
             )}
           </div>
 
+        </div>
+
+        {/* قسم بيانات الحساب البنكي */}
+        <div className="border-t pt-4 mt-4">
+          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-green-500" />
+            بيانات الحساب البنكي
+          </h2>
+          <p className="text-sm text-gray-500 mb-4 bg-green-50 p-3 rounded-xl">
+            💰 أدخل بيانات حسابك البنكي ليتمكن العملاء من تحويل مبلغ الطلب مباشرة
+          </p>
+
+          <div className="space-y-3">
+            <div className="relative">
+              <select
+                name="bankName"
+                value={form.bankName || ""}
+                onChange={(e) => setForm(p => ({ ...p, bankName: e.target.value }))}
+                className="w-full border p-3 rounded-xl bg-white appearance-none cursor-pointer focus:border-green-400 focus:ring-2 focus:ring-green-100"
+              >
+                <option value="">اختر البنك</option>
+                <option value="الراجحي">بنك الراجحي</option>
+                <option value="الأهلي">البنك الأهلي السعودي</option>
+                <option value="الإنماء">مصرف الإنماء</option>
+                <option value="الرياض">بنك الرياض</option>
+                <option value="البلاد">بنك البلاد</option>
+                <option value="الجزيرة">بنك الجزيرة</option>
+                <option value="العربي">البنك العربي الوطني</option>
+                <option value="السعودي الفرنسي">البنك السعودي الفرنسي</option>
+                <option value="ساب">بنك ساب</option>
+                <option value="stc pay">STC Pay</option>
+                <option value="أخرى">أخرى</option>
+              </select>
+            </div>
+
+            <input
+              name="bankAccountName"
+              placeholder="اسم صاحب الحساب"
+              value={form.bankAccountName || ""}
+              onChange={onChange}
+              className="w-full border p-3 rounded-xl focus:border-green-400 focus:ring-2 focus:ring-green-100"
+            />
+
+            <input
+              name="bankAccountNumber"
+              placeholder="رقم الآيبان أو الحساب"
+              value={form.bankAccountNumber || ""}
+              onChange={onChange}
+              className="w-full border p-3 rounded-xl focus:border-green-400 focus:ring-2 focus:ring-green-100 font-mono text-left"
+              dir="ltr"
+            />
+
+            {form.bankName && form.bankAccountName && form.bankAccountNumber && (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-green-700 text-sm">
+                ✅ بيانات البنك مكتملة - سيتمكن العملاء من رؤيتها عند الطلب
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* قسم التوظيف */}
+        <div className="border-t pt-4 mt-4">
+          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <Briefcase className="w-5 h-5 text-purple-500" />
+            توظيف عاملات للطبخ
+          </h2>
+          <p className="text-sm text-gray-500 mb-4 bg-purple-50 p-3 rounded-xl">
+            👩‍🍳 فعّل هذا الخيار إذا كنت تبحث عن عاملات للمساعدة في الطبخ
+          </p>
+
+          {/* زر تفعيل التوظيف */}
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl mb-4">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${form.isHiring ? 'bg-purple-500' : 'bg-gray-300'}`}>
+                <Briefcase className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-800">البحث عن موظفات</p>
+                <p className="text-sm text-gray-500">عرض إعلان توظيف في صفحتك</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setForm(p => ({ ...p, isHiring: !p.isHiring }))}
+              className={`relative w-14 h-8 rounded-full transition-colors ${form.isHiring ? 'bg-purple-500' : 'bg-gray-300'}`}
+            >
+              <span className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow transition-transform ${form.isHiring ? 'right-1' : 'left-1'}`} />
+            </button>
+          </div>
+
+          {form.isHiring && (
+            <div className="space-y-3 bg-purple-50 p-4 rounded-xl">
+              <textarea
+                name="hiringDescription"
+                placeholder="وصف الوظيفة المطلوبة (مثال: نبحث عن طباخة ماهرة للعمل بدوام جزئي...)"
+                value={form.hiringDescription || ""}
+                onChange={(e) => setForm(p => ({ ...p, hiringDescription: e.target.value }))}
+                className="w-full border p-3 rounded-xl focus:border-purple-400 focus:ring-2 focus:ring-purple-100 min-h-[100px]"
+                rows={3}
+              />
+
+              <input
+                name="hiringContact"
+                placeholder="رقم التواصل للتوظيف (واتساب)"
+                value={form.hiringContact || ""}
+                onChange={onChange}
+                className="w-full border p-3 rounded-xl focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+              />
+
+              {form.hiringDescription && form.hiringContact && (
+                <div className="bg-purple-100 border border-purple-200 rounded-xl p-3 text-purple-700 text-sm">
+                  ✅ إعلان التوظيف جاهز للعرض في صفحتك
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <button

@@ -55,6 +55,14 @@ export interface Restaurant {
   averageRating?: number; // متوسط التقييم
   onTimeDeliveryRate?: number; // نسبة الالتزام بالوقت
   complaintsCount?: number; // عدد الشكاوى
+  // بيانات الحساب البنكي للتحويل
+  bankName?: string; // اسم البنك
+  bankAccountName?: string; // اسم صاحب الحساب
+  bankAccountNumber?: string; // رقم الآيبان أو الحساب
+  // بيانات التوظيف
+  isHiring?: boolean; // هل الأسرة تبحث عن موظفات؟
+  hiringDescription?: string; // وصف الوظيفة المطلوبة
+  hiringContact?: string; // رقم التواصل للتوظيف
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -217,4 +225,92 @@ export interface Promotion {
   expiresAt?: Date; // تاريخ انتهاء الإعلان
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+/**
+ * PackageSubscriptionRequest - طلب اشتراك في باقة التميز
+ */
+export interface PackageSubscriptionRequest {
+  id: string;
+  restaurantId: string; // معرف المطعم/الأسرة
+  restaurantName: string; // اسم الأسرة
+  ownerName?: string; // اسم صاحب الأسرة
+  ownerPhone?: string; // رقم الجوال
+  status: PackageRequestStatus;
+  // بيانات الدفع
+  bankAccountImageUrl?: string; // صورة الحساب البنكي من المطور
+  paymentProofImageUrl?: string; // صورة إثبات التحويل من الأسرة
+  subscriptionAmount: number; // مبلغ الاشتراك
+  subscriptionDuration: number; // مدة الاشتراك بالأيام (30 يوم مثلاً)
+  // ملاحظات
+  developerNotes?: string; // ملاحظات المطور
+  ownerNotes?: string; // ملاحظات الأسرة
+  // تواريخ
+  requestedAt?: Date;
+  bankSentAt?: Date; // تاريخ إرسال صورة البنك
+  paymentSentAt?: Date; // تاريخ إرسال إثبات التحويل
+  approvedAt?: Date;
+  rejectedAt?: Date;
+  expiresAt?: Date; // تاريخ انتهاء الاشتراك
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+/**
+ * حالات طلب الاشتراك في الباقة
+ */
+export type PackageRequestStatus = 
+  | 'pending'           // طلب جديد بانتظار المطور
+  | 'bank_sent'         // المطور أرسل صورة الحساب البنكي
+  | 'payment_sent'      // الأسرة أرسلت إثبات التحويل
+  | 'approved'          // تم القبول وتفعيل الباقة
+  | 'rejected'          // مرفوض
+  | 'expired';          // منتهي الصلاحية
+
+/**
+ * RestaurantStats - إحصائيات المطعم/الأسرة المنتجة
+ */
+export interface RestaurantStats {
+  id: string; // = restaurant ID
+  // إحصائيات الزيارات
+  totalProfileViews: number; // عدد مشاهدات الملف التعريفي
+  totalMenuViews: number; // عدد مشاهدات صفحة القائمة
+  totalItemViews: number; // عدد مشاهدات الأصناف
+  // إحصائيات المشاركة
+  totalShareClicks: number; // عدد مرات الضغط على زر المشاركة
+  whatsappShareCount: number; // عدد مرات المشاركة عبر واتساب
+  // إحصائيات التسجيل
+  registeredCustomers: number; // عدد العملاء المسجلين عبر رابط الأسرة
+  appDownloads: number; // عدد تحميلات التطبيق عبر رابط الأسرة
+  // تفاصيل الزيارات
+  dailyViews: Record<string, number>; // عدد الزيارات اليومية { "2024-01-22": 50 }
+  // آخر تحديث
+  updatedAt?: Date;
+}
+
+/**
+ * VisitLog - سجل زيارة لتتبع زيارات العملاء
+ */
+export interface VisitLog {
+  id: string;
+  restaurantId: string; // معرف المطعم
+  visitorId?: string; // معرف الزائر (إذا مسجل)
+  visitorType: 'anonymous' | 'customer' | 'registered_via_link';
+  source: 'direct' | 'whatsapp_share' | 'social_share' | 'referral';
+  page: 'menu' | 'profile' | 'item';
+  itemId?: string; // معرف الصنف (إذا كانت زيارة صنف)
+  referralCode?: string; // كود الإحالة
+  createdAt?: Date;
+}
+
+/**
+ * CustomerRegistration - تسجيل عميل عبر رابط الأسرة
+ */
+export interface CustomerRegistration {
+  id: string;
+  customerId: string; // معرف العميل
+  restaurantId: string; // معرف الأسرة التي سجل عبرها
+  registrationType: 'website' | 'app';
+  referralCode?: string;
+  createdAt?: Date;
 }

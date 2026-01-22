@@ -46,6 +46,17 @@ service cloud.firestore {
       allow delete: if isDeveloper();
     }
 
+    /* ===== بيانات البنك الحساسة للمطاعم ===== */
+    match /restaurants/{ownerId}/private/bankInfo {
+      // القراءة: صاحب المطعم فقط أو المطور أو العميل (لإتمام الدفع)
+      allow read: if isDeveloper() 
+                  || (isOwner() && request.auth.uid == ownerId)
+                  || isCustomer();
+      // الكتابة: صاحب المطعم فقط أو المطور
+      allow create, update: if isDeveloper() || (isOwner() && request.auth.uid == ownerId);
+      allow delete: if isDeveloper();
+    }
+
     /* ===== menu ===== */
     match /menuItems/{itemId} {
       allow read: if true;
@@ -97,6 +108,22 @@ service cloud.firestore {
     match /settings/{doc} {
       allow read: if true;
       allow create, update, delete: if isOwner() || isDeveloper();
+    }
+
+    /* ===== packageRequests (طلبات الاشتراك في الباقات) ===== */
+    match /packageRequests/{requestId} {
+      // القراءة: المطور أو صاحب الطلب
+      allow read: if isDeveloper() || (isOwner() && resource.data.restaurantId == request.auth.uid);
+      
+      // الإنشاء: صاحب المطعم فقط
+      allow create: if isOwner() && request.resource.data.restaurantId == request.auth.uid;
+      
+      // التحديث: المطور (لإرسال البنك/القبول/الرفض) أو صاحب المطعم (لإرسال إثبات التحويل)
+      allow update: if isDeveloper() 
+                    || (isOwner() && resource.data.restaurantId == request.auth.uid);
+      
+      // الحذف: المطور فقط
+      allow delete: if isDeveloper();
     }
 
     /* ===== tasks (مهام المشرفين) ===== */
@@ -162,8 +189,8 @@ service cloud.firestore {
       // القراءة: المستلم أو المطور
       allow read: if isDeveloper() || (signedIn() && resource.data.recipientId == request.auth.uid);
       
-      // الإنشاء: المطور فقط (الإشعارات تُرسل من لوحة التحكم)
-      allow create: if isDeveloper();
+      // الإنشاء: المطور أو أي مستخدم مسجل (لإرسال إشعارات للمطور/المشرف)
+      allow create: if signedIn();
       
       // التحديث: المستلم (لتحديث حالة القراءة) أو المطور
       allow update: if isDeveloper() || (signedIn() && resource.data.recipientId == request.auth.uid);
@@ -187,6 +214,43 @@ service cloud.firestore {
       
       // الحذف: صاحب الأسرة (لحذف إعلانه) أو المطور
       allow delete: if isDeveloper() || (isOwner() && resource.data.ownerId == request.auth.uid);
+    }
+
+    /* ===== restaurantStats (إحصائيات المطاعم/الأسر المنتجة) ===== */
+    match /restaurantStats/{restaurantId} {
+      // القراءة: صاحب المطعم أو المطور
+      allow read: if isDeveloper() || (isOwner() && request.auth.uid == restaurantId);
+      
+      // الإنشاء والتحديث: المطور أو أي مستخدم (لتحديث الإحصائيات عند الزيارة)
+      allow create: if signedIn() || isDeveloper();
+      allow update: if signedIn() || isDeveloper();
+      
+      // الحذف: المطور فقط
+      allow delete: if isDeveloper();
+    }
+
+    /* ===== visitLogs (سجلات الزيارات) ===== */
+    match /visitLogs/{logId} {
+      // القراءة: صاحب المطعم (زياراته فقط) أو المطور
+      allow read: if isDeveloper() || (isOwner() && resource.data.restaurantId == request.auth.uid);
+      
+      // الإنشاء: أي شخص (لتسجيل الزيارة)
+      allow create: if true;
+      
+      // لا يسمح بالتعديل أو الحذف إلا للمطور
+      allow update, delete: if isDeveloper();
+    }
+
+    /* ===== customerRegistrations (تسجيلات العملاء عبر روابط الأسر) ===== */
+    match /customerRegistrations/{regId} {
+      // القراءة: صاحب المطعم (تسجيلاته فقط) أو المطور
+      allow read: if isDeveloper() || (isOwner() && resource.data.restaurantId == request.auth.uid);
+      
+      // الإنشاء: العميل عند التسجيل أو المطور
+      allow create: if signedIn() || isDeveloper();
+      
+      // لا يسمح بالتعديل أو الحذف إلا للمطور
+      allow update, delete: if isDeveloper();
     }
   }
 }

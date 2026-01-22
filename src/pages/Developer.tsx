@@ -12,7 +12,7 @@ import { db, app, auth } from '@/firebase'
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth'
 import { 
   collection, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, 
-  serverTimestamp, addDoc 
+  serverTimestamp, addDoc, query, where, orderBy, limit 
 } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL, getStorage } from 'firebase/storage'
 
@@ -70,8 +70,6 @@ type Restaurant = {
   logoUrl?: string
   referredBy?: string
   referrerType?: string
-  packageType?: 'free' | 'premium'
-  packageRequest?: 'premium'
   createdAt?: any
 }
 
@@ -121,7 +119,31 @@ type Task = {
 }
 
 // تبويبات اللوحة
-type Tab = 'overview' | 'restaurants' | 'orders' | 'users' | 'couriers' | 'admins' | 'settings' | 'finance' | 'tools' | 'tasks' | 'licenses'
+type Tab = 'overview' | 'restaurants' | 'orders' | 'users' | 'couriers' | 'admins' | 'settings' | 'finance' | 'tools' | 'tasks' | 'licenses' | 'packages' | 'storeAnalytics'
+
+// نوع طلب الباقة
+type PackageRequest = {
+  id: string
+  restaurantId: string
+  restaurantName: string
+  ownerName?: string
+  ownerPhone?: string
+  status: 'pending' | 'bank_sent' | 'payment_sent' | 'approved' | 'rejected' | 'expired'
+  bankAccountImageUrl?: string
+  paymentProofImageUrl?: string
+  subscriptionAmount: number
+  subscriptionDuration: number
+  developerNotes?: string
+  ownerNotes?: string
+  requestedAt?: any
+  bankSentAt?: any
+  paymentSentAt?: any
+  approvedAt?: any
+  rejectedAt?: any
+  expiresAt?: any
+  createdAt?: any
+  updatedAt?: any
+}
 
 
 export const Developer: React.FC = () => {
@@ -197,8 +219,13 @@ export const Developer: React.FC = () => {
   const [creatingTask, setCreatingTask] = useState(false)
   const [taskFilter, setTaskFilter] = useState<string>('all')
 
-  // الإعلانات
-  const [promotions, setPromotions] = useState<any[]>([])
+  // طلبات الباقات
+  const [packageRequests, setPackageRequests] = useState<PackageRequest[]>([])
+  const [packageFilter, setPackageFilter] = useState<string>('all')
+  const [uploadingBankImage, setUploadingBankImage] = useState<string | null>(null)
+  const [bankImageFile, setBankImageFile] = useState<File | null>(null)
+  const [subscriptionAmount, setSubscriptionAmount] = useState<number>(99)
+  const [subscriptionDuration, setSubscriptionDuration] = useState<number>(30)
   
   // حفظ بيانات المطور الحالي لإعادة تسجيل الدخول
   const currentDeveloperEmail = user?.email || ''
@@ -444,18 +471,16 @@ export const Developer: React.FC = () => {
       try {
         tasksSnap = await getDocs(collection(db, 'tasks'))
       } catch (err) {
-        console.log('لا توجد مهام بعد')
+        // لا توجد مهام بعد
       }
 
-      // جلب الإعلانات
-      let promotionsSnap: any = { docs: [] }
+      // جلب طلبات الباقات
+      let packageRequestsSnap: any = { docs: [] }
       try {
-        promotionsSnap = await getDocs(collection(db, 'promotions'))
+        packageRequestsSnap = await getDocs(collection(db, 'packageRequests'))
       } catch (err) {
-        console.log('لا توجد إعلانات بعد')
+        // لا توجد طلبات باقات بعد
       }
-      const promotionsData = promotionsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }))
-      setPromotions(promotionsData)
 
       // المستخدمين
       const usersData = usersSnap.docs.map(d => ({ uid: d.id, ...d.data() } as User))
@@ -472,6 +497,10 @@ export const Developer: React.FC = () => {
       // المهام
       const tasksData: Task[] = tasksSnap.docs.map((d: any) => ({ id: d.id, ...d.data() } as Task))
       setTasks(tasksData.sort((a: Task, b: Task) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)))
+
+      // طلبات الباقات
+      const packageRequestsData: PackageRequest[] = packageRequestsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() } as PackageRequest))
+      setPackageRequests(packageRequestsData.sort((a: PackageRequest, b: PackageRequest) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)))
       
       // المحافظ
       const walletsData: Record<string, any> = {}
@@ -754,6 +783,8 @@ export const Developer: React.FC = () => {
             { id: 'overview', label: '📊 نظرة عامة' },
             { id: 'finance', label: '💰 المالية' },
             { id: 'restaurants', label: '🏪 المطاعم' },
+            { id: 'storeAnalytics', label: '📈 مراقبة المتاجر' },
+            { id: 'packages', label: '📦 طلبات الباقات' },
             { id: 'licenses', label: '📄 التراخيص' },
             { id: 'orders', label: '📦 الطلبات' },
             { id: 'users', label: '👤 المستخدمين' },
@@ -780,6 +811,37 @@ export const Developer: React.FC = () => {
         {/* ===== نظرة عامة ===== */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
+            {/* 🔔 تنبيهات هامة */}
+            {packageRequests.filter(r => ['pending', 'payment_sent'].includes(r.status)).length > 0 && (
+              <div className="bg-gradient-to-r from-amber-100 to-orange-100 border-2 border-amber-300 rounded-2xl p-5 shadow-lg">
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-amber-500 rounded-xl flex items-center justify-center animate-pulse">
+                      <Package className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-amber-800">🔔 طلبات باقات تحتاج إجراء</h3>
+                      <p className="text-amber-700">
+                        {packageRequests.filter(r => r.status === 'pending').length > 0 && (
+                          <span>⏳ {packageRequests.filter(r => r.status === 'pending').length} طلب جديد</span>
+                        )}
+                        {packageRequests.filter(r => r.status === 'pending').length > 0 && packageRequests.filter(r => r.status === 'payment_sent').length > 0 && ' • '}
+                        {packageRequests.filter(r => r.status === 'payment_sent').length > 0 && (
+                          <span>💳 {packageRequests.filter(r => r.status === 'payment_sent').length} بانتظار التأكيد</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab('packages')}
+                    className="bg-amber-500 hover:bg-amber-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg transition transform hover:scale-105"
+                  >
+                    📦 عرض الطلبات
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* إحصائيات سريعة */}
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
               <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-4 text-white text-center">
@@ -794,9 +856,9 @@ export const Developer: React.FC = () => {
                 <p className="text-3xl font-bold">{stats.orders}</p>
                 <p className="text-sm opacity-90">📦 الطلبات</p>
               </div>
-              <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl p-4 text-white text-center">
-                <p className="text-3xl font-bold">{stats.admins}</p>
-                <p className="text-sm opacity-90">👑 المشرفين</p>
+              <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl p-4 text-white text-center cursor-pointer hover:scale-105 transition" onClick={() => setActiveTab('packages')}>
+                <p className="text-3xl font-bold">{packageRequests.filter(r => r.status === 'pending').length}</p>
+                <p className="text-sm opacity-90">📦 طلبات معلقة</p>
               </div>
               <div className="bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-2xl p-4 text-white text-center">
                 <p className="text-3xl font-bold">{stats.couriers}</p>
@@ -883,272 +945,6 @@ export const Developer: React.FC = () => {
                 <div className="text-center p-4 bg-red-50 rounded-xl">
                   <p className="text-2xl font-bold text-red-600">1</p>
                   <p className="text-sm text-gray-600">مطور</p>
-                </div>
-              </div>
-            </div>
-
-            {/* ملخص أنظمة التطبيق */}
-            <div className="bg-white rounded-2xl shadow-lg p-6">
-              <h2 className="text-xl font-bold mb-4">🛠️ ملخص أنظمة التطبيق</h2>
-              
-              {/* نظام الأدوار */}
-              <div className="mb-6">
-                <h3 className="font-bold text-lg text-sky-600 mb-3">👥 نظام الأدوار والصلاحيات</h3>
-                <div className="grid md:grid-cols-2 gap-3 text-sm">
-                  <div className="bg-gray-50 rounded-xl p-3">
-                    <span className="font-bold text-purple-600">developer:</span> وصول كامل، حذف، إدارة المستخدمين
-                  </div>
-                  <div className="bg-gray-50 rounded-xl p-3">
-                    <span className="font-bold text-amber-600">admin:</span> إضافة مطاعم (يكسب عمولة)، طلب كعميل
-                  </div>
-                  <div className="bg-gray-50 rounded-xl p-3">
-                    <span className="font-bold text-orange-600">owner:</span> إدارة القائمة، معالجة الطلبات، توظيف المناديب
-                  </div>
-                  <div className="bg-gray-50 rounded-xl p-3">
-                    <span className="font-bold text-emerald-600">courier:</span> استلام الطلبات الجاهزة، تحديث حالة التوصيل
-                  </div>
-                  <div className="bg-gray-50 rounded-xl p-3">
-                    <span className="font-bold text-blue-600">customer:</span> تصفح، طلب، تتبع
-                  </div>
-                </div>
-              </div>
-
-              {/* مجموعات Firestore */}
-              <div className="mb-6">
-                <h3 className="font-bold text-lg text-green-600 mb-3">🗄️ مجموعات Firestore</h3>
-                <div className="grid md:grid-cols-3 gap-2 text-sm">
-                  <div className="bg-green-50 rounded-lg p-2">📁 users/{'{uid}'}</div>
-                  <div className="bg-green-50 rounded-lg p-2">📁 restaurants/{'{ownerId}'}</div>
-                  <div className="bg-green-50 rounded-lg p-2">📁 menuItems/{'{auto}'}</div>
-                  <div className="bg-green-50 rounded-lg p-2">📁 orders/{'{auto}'}</div>
-                  <div className="bg-green-50 rounded-lg p-2">📁 orders/{'{id}'}/messages</div>
-                  <div className="bg-green-50 rounded-lg p-2">📁 wallets/{'{adminId}'}</div>
-                  <div className="bg-green-50 rounded-lg p-2">📁 hiringRequests/{'{auto}'}</div>
-                  <div className="bg-green-50 rounded-lg p-2">📁 notifications/{'{auto}'}</div>
-                  <div className="bg-green-50 rounded-lg p-2">📁 promotions/{'{auto}'}</div>
-                  <div className="bg-green-50 rounded-lg p-2">📁 tasks/{'{auto}'}</div>
-                  <div className="bg-green-50 rounded-lg p-2">📁 settings/{'{doc}'}</div>
-                </div>
-              </div>
-
-              {/* نظام الرسوم والعمولات */}
-              <div className="mb-6">
-                <h3 className="font-bold text-lg text-amber-600 mb-3">💰 نظام الرسوم والعمولات</h3>
-                <div className="grid md:grid-cols-2 gap-3 text-sm">
-                  <div className="bg-amber-50 rounded-xl p-3">
-                    <span className="font-bold">رسوم المنصة (platformFee):</span> 1.75 ريال لكل منتج (0.25 للمنتجات ≤2 ريال)
-                  </div>
-                  <div className="bg-amber-50 rounded-xl p-3">
-                    <span className="font-bold">عمولة المشرف (adminCommission):</span> 0.5 ريال (إذا المطعم مسجل عن طريق admin)
-                  </div>
-                  <div className="bg-amber-50 rounded-xl p-3">
-                    <span className="font-bold">رسوم المندوب:</span> 2-3 ريال لكل طلب
-                  </div>
-                  <div className="bg-amber-50 rounded-xl p-3">
-                    <span className="font-bold">محافظ المشرفين:</span> wallets/{'{adminId}'} لتتبع العمولات
-                  </div>
-                </div>
-              </div>
-
-              {/* نظام الطلبات */}
-              <div className="mb-6">
-                <h3 className="font-bold text-lg text-blue-600 mb-3">📦 نظام الطلبات</h3>
-                <div className="bg-blue-50 rounded-xl p-4">
-                  <div className="flex flex-wrap gap-2 items-center justify-center text-sm">
-                    <span className="bg-gray-200 px-3 py-1 rounded-full">pending</span>
-                    <span>→</span>
-                    <span className="bg-yellow-200 px-3 py-1 rounded-full">accepted</span>
-                    <span>→</span>
-                    <span className="bg-orange-200 px-3 py-1 rounded-full">preparing</span>
-                    <span>→</span>
-                    <span className="bg-cyan-200 px-3 py-1 rounded-full">ready</span>
-                    <span>→</span>
-                    <span className="bg-purple-200 px-3 py-1 rounded-full">out_for_delivery</span>
-                    <span>→</span>
-                    <span className="bg-green-200 px-3 py-1 rounded-full">delivered</span>
-                  </div>
-                  <p className="text-center text-gray-500 mt-2 text-xs">أو cancelled ❌</p>
-                </div>
-              </div>
-
-              {/* الصفحات والشروط */}
-              <div className="mb-6">
-                <h3 className="font-bold text-lg text-purple-600 mb-3">📄 الصفحات القانونية</h3>
-                <div className="grid md:grid-cols-3 gap-3 text-sm">
-                  <a href="/terms" target="_blank" className="bg-purple-50 rounded-xl p-3 hover:bg-purple-100 transition-colors flex items-center gap-2">
-                    <ExternalLink className="w-4 h-4" />
-                    شروط الأسر المنتجة
-                  </a>
-                  <a href="/courier-terms" target="_blank" className="bg-purple-50 rounded-xl p-3 hover:bg-purple-100 transition-colors flex items-center gap-2">
-                    <ExternalLink className="w-4 h-4" />
-                    شروط المندوب
-                  </a>
-                  <a href="/privacy-policy" target="_blank" className="bg-purple-50 rounded-xl p-3 hover:bg-purple-100 transition-colors flex items-center gap-2">
-                    <ExternalLink className="w-4 h-4" />
-                    سياسة الخصوصية
-                  </a>
-                </div>
-              </div>
-
-              {/* الميزات الرئيسية */}
-              <div>
-                <h3 className="font-bold text-lg text-rose-600 mb-3">✨ الميزات الرئيسية</h3>
-                <div className="grid md:grid-cols-2 gap-2 text-sm">
-                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" /> تسجيل الأسر المنتجة مع موافقة على الشروط
-                  </div>
-                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" /> تسجيل المناديب مع موافقة على الشروط
-                  </div>
-                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" /> سلة مشتريات (localStorage)
-                  </div>
-                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" /> تتبع الطلبات في الوقت الفعلي
-                  </div>
-                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" /> محادثة بين العميل والمندوب
-                  </div>
-                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" /> نظام التوظيف (hiringRequests)
-                  </div>
-                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" /> الإعلانات الممولة (promotions)
-                  </div>
-                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" /> نظام الإشعارات
-                  </div>
-                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" /> باقات المطاعم (free/premium)
-                  </div>
-                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" /> تصنيف البائعين (bronze/silver/gold)
-                  </div>
-                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" /> مهام المشرفين (tasks)
-                  </div>
-                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" /> تحديد الموقع عبر GPS
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* إحصائيات الباقات والإعلانات */}
-            <div className="bg-white rounded-2xl shadow-lg p-6">
-              <h2 className="text-xl font-bold mb-4">📊 إحصائيات الباقات والإعلانات</h2>
-              
-              <div className="grid md:grid-cols-2 gap-6">
-                {/* الباقات */}
-                <div>
-                  <h3 className="font-bold text-lg text-purple-600 mb-3">📦 باقات المطاعم</h3>
-                  {(() => {
-                    const freeRestaurants = restaurants.filter(r => !r.packageType || r.packageType === 'free')
-                    const premiumRestaurants = restaurants.filter(r => r.packageType === 'premium')
-                    const pendingUpgrade = restaurants.filter(r => r.packageRequest === 'premium')
-                    return (
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-center bg-gray-50 rounded-xl p-3">
-                          <span className="flex items-center gap-2">
-                            <Package className="w-5 h-5 text-gray-500" />
-                            باقة مجانية (Free)
-                          </span>
-                          <span className="font-bold text-2xl text-gray-600">{freeRestaurants.length}</span>
-                        </div>
-                        <div className="flex justify-between items-center bg-gradient-to-r from-amber-50 to-yellow-50 rounded-xl p-3 border border-amber-200">
-                          <span className="flex items-center gap-2">
-                            <Package className="w-5 h-5 text-amber-500" />
-                            باقة مميزة (Premium)
-                          </span>
-                          <span className="font-bold text-2xl text-amber-600">{premiumRestaurants.length}</span>
-                        </div>
-                        {pendingUpgrade.length > 0 && (
-                          <div className="flex justify-between items-center bg-blue-50 rounded-xl p-3 border border-blue-200">
-                            <span className="flex items-center gap-2">
-                              <Clock className="w-5 h-5 text-blue-500" />
-                              طلبات ترقية معلقة
-                            </span>
-                            <span className="font-bold text-2xl text-blue-600">{pendingUpgrade.length}</span>
-                          </div>
-                        )}
-                        {/* قائمة المشتركين بالباقة المميزة */}
-                        {premiumRestaurants.length > 0 && (
-                          <div className="mt-4">
-                            <p className="text-sm font-semibold text-amber-700 mb-2">المشتركين في الباقة المميزة:</p>
-                            <div className="space-y-2 max-h-40 overflow-y-auto">
-                              {premiumRestaurants.map(r => (
-                                <div key={r.id} className="text-sm bg-amber-50 rounded-lg p-2 flex justify-between">
-                                  <span>{r.name}</span>
-                                  <span className="text-gray-500">{r.city || '-'}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })()}
-                </div>
-
-                {/* الإعلانات */}
-                <div>
-                  <h3 className="font-bold text-lg text-pink-600 mb-3">📢 الإعلانات الممولة</h3>
-                  {(() => {
-                    const activePromos = promotions.filter(p => p.isActive)
-                    const paidPromos = promotions.filter(p => p.isPaid)
-                    const totalPromoRevenue = promotions.reduce((sum, p) => sum + (p.isPaid ? (p.price || 0) : 0), 0)
-                    const totalViews = promotions.reduce((sum, p) => sum + (p.viewsCount || 0), 0)
-                    return (
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-center bg-gray-50 rounded-xl p-3">
-                          <span>إجمالي الإعلانات</span>
-                          <span className="font-bold text-2xl">{promotions.length}</span>
-                        </div>
-                        <div className="flex justify-between items-center bg-green-50 rounded-xl p-3 border border-green-200">
-                          <span className="flex items-center gap-2">
-                            <CheckCircle className="w-5 h-5 text-green-500" />
-                            إعلانات نشطة
-                          </span>
-                          <span className="font-bold text-2xl text-green-600">{activePromos.length}</span>
-                        </div>
-                        <div className="flex justify-between items-center bg-emerald-50 rounded-xl p-3 border border-emerald-200">
-                          <span className="flex items-center gap-2">
-                            <Wallet className="w-5 h-5 text-emerald-500" />
-                            إعلانات مدفوعة
-                          </span>
-                          <span className="font-bold text-2xl text-emerald-600">{paidPromos.length}</span>
-                        </div>
-                        <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl p-4 text-white">
-                          <p className="text-sm opacity-90">💰 أرباح الإعلانات</p>
-                          <p className="text-3xl font-bold">{totalPromoRevenue.toFixed(2)} ر.س</p>
-                        </div>
-                        <div className="flex justify-between items-center bg-purple-50 rounded-xl p-3">
-                          <span>👁️ إجمالي المشاهدات</span>
-                          <span className="font-bold text-xl text-purple-600">{totalViews}</span>
-                        </div>
-                        {/* قائمة الإعلانات النشطة */}
-                        {activePromos.length > 0 && (
-                          <div className="mt-4">
-                            <p className="text-sm font-semibold text-pink-700 mb-2">الإعلانات النشطة:</p>
-                            <div className="space-y-2 max-h-40 overflow-y-auto">
-                              {activePromos.map(p => (
-                                <div key={p.id} className="text-sm bg-pink-50 rounded-lg p-2">
-                                  <div className="flex justify-between">
-                                    <span className="font-medium">{p.title || 'إعلان'}</span>
-                                    <span className="text-green-600">{p.price || 0} ر.س</span>
-                                  </div>
-                                  <div className="text-xs text-gray-500 flex justify-between mt-1">
-                                    <span>👁️ {p.viewsCount || 0} مشاهدة</span>
-                                    <span>{p.isPaid ? '✅ مدفوع' : '⏳ غير مدفوع'}</span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })()}
                 </div>
               </div>
             </div>
@@ -2862,6 +2658,26 @@ export const Developer: React.FC = () => {
           />
         )}
 
+        {/* ===== طلبات الباقات ===== */}
+        {activeTab === 'packages' && (
+          <PackageRequestsSection
+            packageRequests={packageRequests}
+            onUpdate={handleRefresh}
+            toast={toast}
+            dialog={dialog}
+            storage={storage}
+          />
+        )}
+
+        {/* ===== مراقبة المتاجر ===== */}
+        {activeTab === 'storeAnalytics' && (
+          <StoreAnalyticsSection
+            restaurants={restaurants}
+            orders={orders}
+            toast={toast}
+          />
+        )}
+
         {/* معلومات النظام */}
         <div className="bg-gray-100 rounded-2xl p-4 text-sm">
           <div className="flex flex-wrap gap-4 text-gray-600">
@@ -2896,14 +2712,50 @@ const LicensesReviewSection: React.FC<{
   toast: any
   dialog: any
 }> = ({ restaurants, onUpdate, toast, dialog }) => {
-  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'missing'>('pending')
+  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'missing' | 'sent_messages'>('pending')
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
   const [updating, setUpdating] = useState<string | null>(null)
   const [messageText, setMessageText] = useState('')
   const [sendingTo, setSendingTo] = useState<string | null>(null)
   const [selectedMissing, setSelectedMissing] = useState<Set<string>>(new Set())
   const [bulkMessage, setBulkMessage] = useState('')
+  
+  // سجل الرسائل المرسلة
+  const [sentMessages, setSentMessages] = useState<any[]>([])
+  const [loadingMessages, setLoadingMessages] = useState(false)
   const [sendingBulk, setSendingBulk] = useState(false)
+
+  // تحميل الرسائل المرسلة عند اختيار التبويب
+  useEffect(() => {
+    if (filter === 'sent_messages' && sentMessages.length === 0) {
+      loadSentMessages()
+    }
+  }, [filter])
+
+  const loadSentMessages = async () => {
+    setLoadingMessages(true)
+    try {
+      const q = query(
+        collection(db, 'notifications'),
+        where('type', '==', 'license_reminder'),
+        orderBy('createdAt', 'desc'),
+        limit(100)
+      )
+      const snap = await getDocs(q)
+      const messages = snap.docs.map(d => ({
+        id: d.id,
+        ...d.data(),
+        createdAt: d.data().createdAt?.toDate?.() || null,
+      }))
+      setSentMessages(messages)
+    } catch (err: any) {
+      console.error('خطأ في تحميل الرسائل:', err)
+      // قد يكون الفهرس غير موجود
+      toast.warning('تحتاج لإنشاء فهرس مركب لـ notifications (type + createdAt)')
+    } finally {
+      setLoadingMessages(false)
+    }
+  }
 
   // المطاعم التي لديها تراخيص
   const restaurantsWithLicenses = restaurants.filter(
@@ -2919,6 +2771,7 @@ const LicensesReviewSection: React.FC<{
   const filteredRestaurants = restaurantsWithLicenses.filter((r: LicenseRestaurant) => {
     if (filter === 'all') return true
     if (filter === 'missing') return false // يتم عرضها في قسم منفصل
+    if (filter === 'sent_messages') return false // قسم الرسائل منفصل
     return r.licenseStatus === filter || (!r.licenseStatus && filter === 'pending')
   })
 
@@ -2929,6 +2782,7 @@ const LicensesReviewSection: React.FC<{
     approved: restaurantsWithLicenses.filter(r => r.licenseStatus === 'approved').length,
     rejected: restaurantsWithLicenses.filter(r => r.licenseStatus === 'rejected').length,
     missing: restaurantsWithoutLicenses.length,
+    sent_messages: sentMessages.length,
   }
 
   // إرسال رسالة لمطعم واحد
@@ -3125,13 +2979,15 @@ const LicensesReviewSection: React.FC<{
           مراجعة التراخيص
         </h2>
         <div className="flex gap-2 flex-wrap">
-          {(['pending', 'approved', 'rejected', 'all', 'missing'] as const).map(f => (
+          {(['pending', 'approved', 'rejected', 'all', 'missing', 'sent_messages'] as const).map(f => (
             <button
               key={f}
               onClick={() => setFilter(f)}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
                 filter === f
-                  ? f === 'missing' ? 'bg-orange-500 text-white' : 'bg-sky-500 text-white'
+                  ? f === 'missing' ? 'bg-orange-500 text-white' 
+                    : f === 'sent_messages' ? 'bg-purple-500 text-white'
+                    : 'bg-sky-500 text-white'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
@@ -3140,10 +2996,71 @@ const LicensesReviewSection: React.FC<{
               {f === 'approved' && `موافق (${counts.approved})`}
               {f === 'rejected' && `مرفوض (${counts.rejected})`}
               {f === 'missing' && `⚠️ لم يرفع (${counts.missing})`}
+              {f === 'sent_messages' && `📨 الرسائل المرسلة`}
             </button>
           ))}
         </div>
       </div>
+
+      {/* ===== قسم الرسائل المرسلة ===== */}
+      {filter === 'sent_messages' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-purple-700 flex items-center gap-2">
+              📨 سجل الرسائل المرسلة للمطاعم
+            </h3>
+            <button
+              onClick={loadSentMessages}
+              disabled={loadingMessages}
+              className="px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-xl font-medium transition disabled:opacity-50"
+            >
+              {loadingMessages ? '⏳ جارِ التحميل...' : '🔄 تحديث'}
+            </button>
+          </div>
+
+          {loadingMessages ? (
+            <div className="text-center py-12">
+              <div className="w-10 h-10 border-4 border-purple-200 border-t-purple-500 rounded-full animate-spin mx-auto mb-4" />
+              <p className="text-gray-500">جارِ تحميل الرسائل...</p>
+            </div>
+          ) : sentMessages.length === 0 ? (
+            <div className="text-center py-12 bg-gray-50 rounded-2xl">
+              <p className="text-gray-500">لا توجد رسائل مرسلة بعد</p>
+              <p className="text-gray-400 text-sm mt-2">الرسائل التي ترسلها للمطاعم ستظهر هنا</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {sentMessages.map((msg: any) => (
+                <div key={msg.id} className="bg-white rounded-xl shadow p-4 border-r-4 border-purple-500">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="font-bold text-gray-800">{msg.restaurantName || 'مطعم'}</span>
+                        {msg.read ? (
+                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">✓ مقروءة</span>
+                        ) : (
+                          <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">⏳ لم تُقرأ</span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-600 font-semibold mb-1">{msg.title}</p>
+                      <p className="text-gray-700 text-sm bg-gray-50 p-3 rounded-lg">{msg.message}</p>
+                    </div>
+                    <div className="text-left text-xs text-gray-400 whitespace-nowrap">
+                      {msg.createdAt ? new Date(msg.createdAt).toLocaleDateString('ar-SA', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      }) : '-'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* قسم المطاعم التي لم ترفع التراخيص */}
       {filter === 'missing' && (
@@ -3393,3 +3310,833 @@ const LicensesReviewSection: React.FC<{
   )
 }
 
+// ===== مكون إدارة طلبات الباقات =====
+type PackageRequestItem = {
+  id: string
+  restaurantId: string
+  restaurantName: string
+  ownerName?: string
+  ownerPhone?: string
+  status: 'pending' | 'bank_sent' | 'payment_sent' | 'approved' | 'rejected' | 'expired'
+  bankAccountImageUrl?: string
+  paymentProofImageUrl?: string
+  subscriptionAmount: number
+  subscriptionDuration: number
+  developerNotes?: string
+  ownerNotes?: string
+  requestedAt?: any
+  bankSentAt?: any
+  paymentSentAt?: any
+  approvedAt?: any
+  rejectedAt?: any
+  expiresAt?: any
+  createdAt?: any
+}
+
+// ===== مكون مراقبة المتاجر =====
+const StoreAnalyticsSection: React.FC<{
+  restaurants: Restaurant[]
+  orders: Order[]
+  toast: any
+}> = ({ restaurants, orders, toast }) => {
+  const [selectedStore, setSelectedStore] = useState<string | null>(null)
+  const [storeStats, setStoreStats] = useState<Record<string, any>>({})
+  const [loadingStats, setLoadingStats] = useState(false)
+
+  // جلب إحصائيات متجر معين
+  const loadStoreStats = async (restaurantId: string) => {
+    setLoadingStats(true)
+    try {
+      // جلب إحصائيات الزيارات
+      const statsDoc = await getDoc(doc(db, 'restaurantStats', restaurantId))
+      const visitStats = statsDoc.exists() ? statsDoc.data() : null
+
+      // جلب الطلبات الخاصة بهذا المتجر
+      const storeOrders = orders.filter(o => o.restaurantId === restaurantId)
+      const deliveredOrders = storeOrders.filter(o => o.status === 'delivered')
+
+      // جلب عدد الأصناف
+      const menuQuery = query(collection(db, 'menuItems'), where('ownerId', '==', restaurantId))
+      const menuSnap = await getDocs(menuQuery)
+
+      // جلب تسجيلات العملاء
+      let registrations = 0
+      try {
+        const regQuery = query(collection(db, 'customerRegistrations'), where('restaurantId', '==', restaurantId))
+        const regSnap = await getDocs(regQuery)
+        registrations = regSnap.size
+      } catch {}
+
+      // حساب الإيرادات
+      const totalRevenue = deliveredOrders.reduce((sum, o) => sum + (o.total || 0), 0)
+      
+      // حساب زيارات اليوم
+      const todayKey = new Date().toISOString().split('T')[0]
+      const todayViews = visitStats?.dailyViews?.[todayKey] || 0
+
+      setStoreStats(prev => ({
+        ...prev,
+        [restaurantId]: {
+          totalOrders: storeOrders.length,
+          deliveredOrders: deliveredOrders.length,
+          totalRevenue,
+          menuItemsCount: menuSnap.size,
+          profileViews: visitStats?.totalProfileViews || 0,
+          menuViews: visitStats?.totalMenuViews || 0,
+          itemViews: visitStats?.totalItemViews || 0,
+          shareClicks: visitStats?.totalShareClicks || 0,
+          whatsappShares: visitStats?.whatsappShareCount || 0,
+          registeredCustomers: registrations,
+          todayViews,
+          dailyViews: visitStats?.dailyViews || {}
+        }
+      }))
+    } catch (err) {
+      console.error('خطأ في جلب إحصائيات المتجر:', err)
+      toast.error('خطأ في جلب البيانات')
+    } finally {
+      setLoadingStats(false)
+    }
+  }
+
+  // فتح تفاصيل متجر
+  const handleSelectStore = (restaurantId: string) => {
+    setSelectedStore(restaurantId)
+    if (!storeStats[restaurantId]) {
+      loadStoreStats(restaurantId)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold">📈 مراقبة إحصائيات المتاجر</h2>
+        <span className="text-gray-500">{restaurants.length} متجر</span>
+      </div>
+
+      {/* قائمة المتاجر */}
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {restaurants.map(r => {
+          const rStats = storeStats[r.id]
+          return (
+            <div
+              key={r.id}
+              onClick={() => handleSelectStore(r.id)}
+              className={`bg-white rounded-2xl shadow p-4 cursor-pointer transition hover:shadow-lg ${
+                selectedStore === r.id ? 'ring-2 ring-sky-500' : ''
+              }`}
+            >
+              <div className="flex items-center gap-3 mb-3">
+                {r.logoUrl ? (
+                  <img src={r.logoUrl} alt={r.name} className="w-12 h-12 rounded-xl object-cover" />
+                ) : (
+                  <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
+                    🏪
+                  </div>
+                )}
+                <div className="flex-1">
+                  <h3 className="font-bold text-gray-900">{r.name}</h3>
+                  <p className="text-xs text-gray-500">{r.city || 'غير محدد'}</p>
+                </div>
+              </div>
+
+              {rStats && (
+                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="bg-blue-50 rounded-lg p-2">
+                    <p className="font-bold text-blue-700">{rStats.profileViews}</p>
+                    <p className="text-blue-600">زيارة</p>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-2">
+                    <p className="font-bold text-green-700">{rStats.deliveredOrders}</p>
+                    <p className="text-green-600">طلب</p>
+                  </div>
+                  <div className="bg-purple-50 rounded-lg p-2">
+                    <p className="font-bold text-purple-700">{rStats.whatsappShares}</p>
+                    <p className="text-purple-600">مشاركة</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* تفاصيل المتجر المحدد */}
+      {selectedStore && (
+        <div className="bg-white rounded-2xl shadow-lg p-6">
+          {loadingStats ? (
+            <div className="text-center py-8">
+              <RefreshCw className="w-8 h-8 animate-spin mx-auto text-sky-500" />
+              <p className="text-gray-500 mt-2">جاري تحميل البيانات...</p>
+            </div>
+          ) : storeStats[selectedStore] ? (
+            <div className="space-y-6">
+              {/* عنوان */}
+              <div className="flex items-center justify-between border-b pb-4">
+                <div className="flex items-center gap-3">
+                  {restaurants.find(r => r.id === selectedStore)?.logoUrl ? (
+                    <img 
+                      src={restaurants.find(r => r.id === selectedStore)?.logoUrl} 
+                      alt="" 
+                      className="w-16 h-16 rounded-xl object-cover"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center text-2xl">🏪</div>
+                  )}
+                  <div>
+                    <h3 className="text-xl font-bold">
+                      {restaurants.find(r => r.id === selectedStore)?.name}
+                    </h3>
+                    <p className="text-gray-500">
+                      {restaurants.find(r => r.id === selectedStore)?.city}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => loadStoreStats(selectedStore)}
+                  className="p-2 bg-gray-100 hover:bg-gray-200 rounded-xl"
+                >
+                  <RefreshCw className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* الإحصائيات */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4">
+                  <p className="text-3xl font-bold text-blue-700">{storeStats[selectedStore].profileViews}</p>
+                  <p className="text-sm text-blue-600">مشاهدة الصفحة</p>
+                </div>
+                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4">
+                  <p className="text-3xl font-bold text-green-700">{storeStats[selectedStore].todayViews}</p>
+                  <p className="text-sm text-green-600">زيارات اليوم</p>
+                </div>
+                <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4">
+                  <p className="text-3xl font-bold text-purple-700">{storeStats[selectedStore].whatsappShares}</p>
+                  <p className="text-sm text-purple-600">مشاركة واتساب</p>
+                </div>
+                <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-4">
+                  <p className="text-3xl font-bold text-amber-700">{storeStats[selectedStore].shareClicks}</p>
+                  <p className="text-sm text-amber-600">إجمالي المشاركات</p>
+                </div>
+              </div>
+
+              {/* إحصائيات الطلبات والإيرادات */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white border-2 border-gray-200 rounded-xl p-4">
+                  <p className="text-2xl font-bold">{storeStats[selectedStore].totalOrders}</p>
+                  <p className="text-sm text-gray-600">إجمالي الطلبات</p>
+                </div>
+                <div className="bg-white border-2 border-gray-200 rounded-xl p-4">
+                  <p className="text-2xl font-bold">{storeStats[selectedStore].deliveredOrders}</p>
+                  <p className="text-sm text-gray-600">طلبات مكتملة</p>
+                </div>
+                <div className="bg-white border-2 border-gray-200 rounded-xl p-4">
+                  <p className="text-2xl font-bold text-green-600">{storeStats[selectedStore].totalRevenue.toFixed(0)}</p>
+                  <p className="text-sm text-gray-600">الإيرادات (ر.س)</p>
+                </div>
+                <div className="bg-white border-2 border-gray-200 rounded-xl p-4">
+                  <p className="text-2xl font-bold">{storeStats[selectedStore].menuItemsCount}</p>
+                  <p className="text-sm text-gray-600">عدد الأصناف</p>
+                </div>
+              </div>
+
+              {/* التسجيلات عبر الرابط */}
+              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-4">
+                <h4 className="font-bold text-indigo-800 mb-2">👥 التسجيلات عبر رابط الأسرة</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-indigo-600">{storeStats[selectedStore].registeredCustomers}</p>
+                    <p className="text-xs text-indigo-500">عميل سجل عبر الرابط</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-purple-600">{storeStats[selectedStore].itemViews}</p>
+                    <p className="text-xs text-purple-500">مشاهدات الأصناف</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* رسم بياني للزيارات اليومية */}
+              {Object.keys(storeStats[selectedStore].dailyViews || {}).length > 0 && (
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <h4 className="font-bold text-gray-800 mb-3">📊 الزيارات اليومية (آخر 7 أيام)</h4>
+                  <div className="flex items-end gap-2 h-32">
+                    {(() => {
+                      const dailyViews = storeStats[selectedStore].dailyViews || {}
+                      const last7Days = []
+                      for (let i = 6; i >= 0; i--) {
+                        const d = new Date()
+                        d.setDate(d.getDate() - i)
+                        const key = d.toISOString().split('T')[0]
+                        last7Days.push({ date: key, views: dailyViews[key] || 0 })
+                      }
+                      const maxViews = Math.max(...last7Days.map(d => d.views), 1)
+                      
+                      return last7Days.map((day, i) => (
+                        <div key={day.date} className="flex-1 flex flex-col items-center gap-1">
+                          <div 
+                            className="w-full bg-sky-500 rounded-t"
+                            style={{ height: `${(day.views / maxViews) * 100}%`, minHeight: day.views > 0 ? '4px' : '0' }}
+                          />
+                          <span className="text-xs text-gray-500">
+                            {new Date(day.date).toLocaleDateString('ar-SA', { weekday: 'short' })}
+                          </span>
+                          <span className="text-xs font-bold">{day.views}</span>
+                        </div>
+                      ))
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-center text-gray-500 py-8">اضغط على متجر لعرض إحصائياته</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const PackageRequestsSection: React.FC<{
+  packageRequests: PackageRequestItem[]
+  onUpdate: () => void
+  toast: any
+  dialog: any
+  storage: any
+}> = ({ packageRequests, onUpdate, toast, dialog, storage }) => {
+  const [filter, setFilter] = useState<string>('all')
+  const [updating, setUpdating] = useState<string | null>(null)
+  const [bankImageFile, setBankImageFile] = useState<File | null>(null)
+  const [subscriptionAmount, setSubscriptionAmount] = useState<number>(99)
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null)
+  const [sendingNotification, setSendingNotification] = useState<string | null>(null)
+  const [customMessage, setCustomMessage] = useState<string>('')
+  const [showMessageInput, setShowMessageInput] = useState<string | null>(null)
+
+  // إرسال رسالة/إشعار للمطعم
+  const sendNotificationToRestaurant = async (request: PackageRequestItem, message: string) => {
+    if (!message.trim()) {
+      toast.warning('يرجى كتابة الرسالة')
+      return
+    }
+    
+    setSendingNotification(request.id)
+    try {
+      await addDoc(collection(db, 'notifications'), {
+        recipientId: request.restaurantId,
+        title: '📬 رسالة من الإدارة',
+        message: message.trim(),
+        type: 'admin_message',
+        read: false,
+        data: { requestId: request.id },
+        createdAt: serverTimestamp(),
+      })
+      
+      toast.success('تم إرسال الرسالة بنجاح! 📬')
+      setShowMessageInput(null)
+      setCustomMessage('')
+    } catch (err: any) {
+      toast.error(`فشل الإرسال: ${err.message}`)
+    } finally {
+      setSendingNotification(null)
+    }
+  }
+
+  // فلترة الطلبات
+  const filteredRequests = packageRequests.filter(r => {
+    if (filter === 'all') return true
+    return r.status === filter
+  })
+
+  // عدد الطلبات حسب الحالة
+  const pendingCount = packageRequests.filter(r => r.status === 'pending').length
+  const bankSentCount = packageRequests.filter(r => r.status === 'bank_sent').length
+  const paymentSentCount = packageRequests.filter(r => r.status === 'payment_sent').length
+  const approvedCount = packageRequests.filter(r => r.status === 'approved').length
+
+  // ترجمة الحالة
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'pending': return { label: 'طلب جديد', color: 'bg-yellow-100 text-yellow-700', icon: '⏳' }
+      case 'bank_sent': return { label: 'بانتظار التحويل', color: 'bg-blue-100 text-blue-700', icon: '🏦' }
+      case 'payment_sent': return { label: 'بانتظار التأكيد', color: 'bg-purple-100 text-purple-700', icon: '💳' }
+      case 'approved': return { label: 'مفعّل', color: 'bg-green-100 text-green-700', icon: '✅' }
+      case 'rejected': return { label: 'مرفوض', color: 'bg-red-100 text-red-700', icon: '❌' }
+      case 'expired': return { label: 'منتهي', color: 'bg-gray-100 text-gray-700', icon: '⏰' }
+      default: return { label: status, color: 'bg-gray-100', icon: '📦' }
+    }
+  }
+
+  // إرسال صورة الحساب البنكي
+  const handleSendBankAccount = async (requestId: string) => {
+    if (!bankImageFile) {
+      toast.warning('يرجى اختيار صورة الحساب البنكي')
+      return
+    }
+
+    setUpdating(requestId)
+    try {
+      // رفع الصورة
+      const path = `bankAccounts/${Date.now()}_${bankImageFile.name}`
+      const storageRef = ref(storage, path)
+      await uploadBytes(storageRef, bankImageFile)
+      const imageUrl = await getDownloadURL(storageRef)
+
+      // تحديث الطلب
+      await updateDoc(doc(db, 'packageRequests', requestId), {
+        status: 'bank_sent',
+        bankAccountImageUrl: imageUrl,
+        subscriptionAmount,
+        bankSentAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+
+      // إرسال إشعار للأسرة
+      const request = packageRequests.find(r => r.id === requestId)
+      if (request) {
+        await addDoc(collection(db, 'notifications'), {
+          recipientId: request.restaurantId,
+          title: '🏦 تم إرسال بيانات الحساب البنكي',
+          message: `يرجى تحويل مبلغ ${subscriptionAmount} ريال ثم رفع صورة إثبات التحويل`,
+          type: 'package_bank_sent',
+          read: false,
+          data: { requestId, amount: subscriptionAmount },
+          createdAt: serverTimestamp(),
+        })
+      }
+
+      toast.success('تم إرسال بيانات الحساب البنكي بنجاح')
+      setBankImageFile(null)
+      setSelectedRequestId(null)
+      onUpdate()
+    } catch (err: any) {
+      toast.error(`فشل الإرسال: ${err.message}`)
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  // تأكيد الدفع وتفعيل الباقة
+  const handleApprovePayment = async (request: PackageRequestItem) => {
+    const confirmed = await dialog.confirm(
+      `هل تأكد من استلام مبلغ ${request.subscriptionAmount} ريال وتفعيل باقة التميز لـ "${request.restaurantName}"؟`,
+      { title: '✅ تأكيد الدفع وتفعيل الباقة', confirmText: 'نعم، فعّل الباقة' }
+    )
+    if (!confirmed) return
+
+    setUpdating(request.id)
+    try {
+      const expiresAt = new Date()
+      expiresAt.setDate(expiresAt.getDate() + (request.subscriptionDuration || 30))
+
+      // تحديث طلب الباقة
+      await updateDoc(doc(db, 'packageRequests', request.id), {
+        status: 'approved',
+        approvedAt: serverTimestamp(),
+        expiresAt,
+        updatedAt: serverTimestamp(),
+      })
+
+      // تفعيل الباقة في المطعم
+      await updateDoc(doc(db, 'restaurants', request.restaurantId), {
+        packageType: 'premium',
+        packageSubscribedAt: serverTimestamp(),
+        packageExpiresAt: expiresAt,
+        packageRequest: null,
+        updatedAt: serverTimestamp(),
+      })
+
+      // إرسال إشعار للأسرة
+      await addDoc(collection(db, 'notifications'), {
+        recipientId: request.restaurantId,
+        title: '🎉 تم تفعيل باقة التميز!',
+        message: `مبروك! تم تفعيل باقة التميز حتى ${expiresAt.toLocaleDateString('ar-SA')}`,
+        type: 'package_approved',
+        read: false,
+        data: { requestId: request.id },
+        createdAt: serverTimestamp(),
+      })
+
+      toast.success('تم تفعيل الباقة بنجاح! 🎉')
+      onUpdate()
+    } catch (err: any) {
+      toast.error(`فشل التفعيل: ${err.message}`)
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  // رفض الطلب
+  const handleRejectRequest = async (request: PackageRequestItem) => {
+    const confirmed = await dialog.confirm(
+      `هل تريد رفض طلب "${request.restaurantName}"؟`,
+      { title: '❌ رفض الطلب', confirmText: 'نعم، ارفض', dangerous: true }
+    )
+    if (!confirmed) return
+
+    setUpdating(request.id)
+    try {
+      await updateDoc(doc(db, 'packageRequests', request.id), {
+        status: 'rejected',
+        rejectedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+
+      // إرسال إشعار
+      await addDoc(collection(db, 'notifications'), {
+        recipientId: request.restaurantId,
+        title: '❌ تم رفض طلب الاشتراك',
+        message: 'للأسف تم رفض طلب اشتراكك في باقة التميز. يمكنك التواصل معنا لمعرفة السبب.',
+        type: 'package_rejected',
+        read: false,
+        createdAt: serverTimestamp(),
+      })
+
+      toast.success('تم رفض الطلب')
+      onUpdate()
+    } catch (err: any) {
+      toast.error(`فشل الرفض: ${err.message}`)
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <Package className="w-8 h-8 text-amber-500" />
+          <div>
+            <h2 className="text-2xl font-bold">طلبات الاشتراك في الباقات</h2>
+            <p className="text-gray-600">إدارة طلبات الأسر المنتجة للاشتراك في باقة التميز</p>
+          </div>
+        </div>
+      </div>
+
+      {/* إحصائيات سريعة */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-yellow-50 rounded-xl p-4 text-center border border-yellow-200">
+          <p className="text-3xl font-bold text-yellow-600">{pendingCount}</p>
+          <p className="text-sm text-yellow-700">⏳ طلب جديد</p>
+        </div>
+        <div className="bg-blue-50 rounded-xl p-4 text-center border border-blue-200">
+          <p className="text-3xl font-bold text-blue-600">{bankSentCount}</p>
+          <p className="text-sm text-blue-700">🏦 بانتظار التحويل</p>
+        </div>
+        <div className="bg-purple-50 rounded-xl p-4 text-center border border-purple-200">
+          <p className="text-3xl font-bold text-purple-600">{paymentSentCount}</p>
+          <p className="text-sm text-purple-700">💳 بانتظار التأكيد</p>
+        </div>
+        <div className="bg-green-50 rounded-xl p-4 text-center border border-green-200">
+          <p className="text-3xl font-bold text-green-600">{approvedCount}</p>
+          <p className="text-sm text-green-700">✅ مفعّل</p>
+        </div>
+      </div>
+
+      {/* فلتر الحالة */}
+      <div className="flex flex-wrap gap-2">
+        {[
+          { id: 'all', label: 'الكل' },
+          { id: 'pending', label: '⏳ طلبات جديدة' },
+          { id: 'bank_sent', label: '🏦 بانتظار التحويل' },
+          { id: 'payment_sent', label: '💳 بانتظار التأكيد' },
+          { id: 'approved', label: '✅ مفعّلة' },
+          { id: 'rejected', label: '❌ مرفوضة' },
+        ].map(f => (
+          <button
+            key={f.id}
+            onClick={() => setFilter(f.id)}
+            className={`px-4 py-2 rounded-xl font-semibold transition ${
+              filter === f.id
+                ? 'bg-amber-500 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {/* قائمة الطلبات */}
+      {filteredRequests.length === 0 ? (
+        <div className="text-center py-16 bg-gray-50 rounded-2xl">
+          <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <p className="text-gray-500 text-lg">لا توجد طلبات {filter !== 'all' && 'بهذه الحالة'}</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {filteredRequests.map(request => {
+            const statusInfo = getStatusLabel(request.status)
+            return (
+              <div key={request.id} className="bg-white rounded-2xl shadow-lg overflow-hidden">
+                {/* رأس البطاقة */}
+                <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-4 text-white">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center text-2xl">
+                        👨‍🍳
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-lg">{request.restaurantName}</h3>
+                        <p className="text-white/80 text-sm">
+                          {request.ownerName || 'صاحب الأسرة'} • {request.ownerPhone || 'بدون رقم'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {/* زر التواصل واتساب */}
+                      {request.ownerPhone && (
+                        <a
+                          href={`https://wa.me/${request.ownerPhone.replace(/[^0-9]/g, '').replace(/^0/, '966')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-xl text-sm font-semibold transition"
+                        >
+                          📱 واتساب
+                        </a>
+                      )}
+                      <div className={`px-4 py-2 rounded-full text-sm font-bold ${statusInfo.color}`}>
+                        {statusInfo.icon} {statusInfo.label}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* محتوى البطاقة */}
+                <div className="p-4 space-y-4">
+                  {/* تفاصيل الطلب */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <p className="text-gray-500">تاريخ الطلب</p>
+                      <p className="font-semibold">
+                        {request.requestedAt?.toDate?.()?.toLocaleDateString('ar-SA') || 
+                         request.createdAt?.toDate?.()?.toLocaleDateString('ar-SA') || '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">المبلغ</p>
+                      <p className="font-semibold text-green-600">{request.subscriptionAmount || 99} ر.س</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">المدة</p>
+                      <p className="font-semibold">{request.subscriptionDuration || 30} يوم</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">معرف الأسرة</p>
+                      <p className="font-mono text-xs">{request.restaurantId.slice(0, 12)}...</p>
+                    </div>
+                  </div>
+
+                  {/* === أزرار التواصل === */}
+                  <div className="border-t pt-4">
+                    {showMessageInput === request.id ? (
+                      <div className="space-y-3 bg-sky-50 p-4 rounded-xl">
+                        <h4 className="font-bold text-sky-600">📬 إرسال رسالة للأسرة</h4>
+                        <textarea
+                          value={customMessage}
+                          onChange={(e) => setCustomMessage(e.target.value)}
+                          placeholder="اكتب رسالتك هنا..."
+                          className="w-full border rounded-lg p-3 resize-none"
+                          rows={3}
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => sendNotificationToRestaurant(request, customMessage)}
+                            disabled={sendingNotification === request.id || !customMessage.trim()}
+                            className="flex-1 bg-sky-500 hover:bg-sky-600 text-white py-2 rounded-xl font-semibold disabled:opacity-50"
+                          >
+                            {sendingNotification === request.id ? 'جارِ الإرسال...' : '📬 إرسال الرسالة'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowMessageInput(null)
+                              setCustomMessage('')
+                            }}
+                            className="px-4 bg-gray-200 hover:bg-gray-300 rounded-xl"
+                          >
+                            إلغاء
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => setShowMessageInput(request.id)}
+                          className="flex items-center gap-2 bg-sky-100 hover:bg-sky-200 text-sky-700 px-4 py-2 rounded-xl font-semibold transition"
+                        >
+                          📬 إرسال رسالة
+                        </button>
+                        {request.ownerPhone && (
+                          <a
+                            href={`https://wa.me/${request.ownerPhone.replace(/[^0-9]/g, '').replace(/^0/, '966')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 bg-green-100 hover:bg-green-200 text-green-700 px-4 py-2 rounded-xl font-semibold transition"
+                          >
+                            📱 واتساب
+                          </a>
+                        )}
+                        {!request.ownerPhone && (
+                          <span className="text-gray-400 text-sm self-center">⚠️ لا يوجد رقم هاتف</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* === حالة: طلب جديد - إرسال صورة البنك === */}
+                  {request.status === 'pending' && (
+                    <div className="border-t pt-4 space-y-3">
+                      <h4 className="font-bold text-amber-600">📤 إرسال بيانات الحساب البنكي</h4>
+                      
+                      {selectedRequestId === request.id ? (
+                        <div className="space-y-3 bg-amber-50 p-4 rounded-xl">
+                          <div>
+                            <label className="block text-sm font-semibold mb-1">صورة الحساب البنكي (IBAN)</label>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => setBankImageFile(e.target.files?.[0] || null)}
+                              className="w-full border rounded-lg p-2"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold mb-1">مبلغ الاشتراك (ريال)</label>
+                            <input
+                              type="number"
+                              value={subscriptionAmount}
+                              onChange={(e) => setSubscriptionAmount(Number(e.target.value))}
+                              className="w-full border rounded-lg p-2"
+                              min={1}
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleSendBankAccount(request.id)}
+                              disabled={updating === request.id || !bankImageFile}
+                              className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-xl font-semibold disabled:opacity-50"
+                            >
+                              {updating === request.id ? 'جارِ الإرسال...' : '📤 إرسال للأسرة'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedRequestId(null)
+                                setBankImageFile(null)
+                              }}
+                              className="px-4 bg-gray-200 hover:bg-gray-300 rounded-xl"
+                            >
+                              إلغاء
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setSelectedRequestId(request.id)}
+                            className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl font-semibold"
+                          >
+                            🏦 إرسال بيانات البنك
+                          </button>
+                          <button
+                            onClick={() => handleRejectRequest(request)}
+                            disabled={updating === request.id}
+                            className="px-6 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl font-semibold"
+                          >
+                            ❌ رفض
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* === حالة: بانتظار التحويل === */}
+                  {request.status === 'bank_sent' && (
+                    <div className="border-t pt-4">
+                      <div className="bg-blue-50 p-4 rounded-xl">
+                        <p className="text-blue-700 font-semibold mb-2">🏦 تم إرسال بيانات الحساب البنكي</p>
+                        <p className="text-blue-600 text-sm">بانتظار تحويل مبلغ {request.subscriptionAmount} ريال من الأسرة</p>
+                        {request.bankAccountImageUrl && (
+                          <a
+                            href={request.bankAccountImageUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-blue-600 hover:underline mt-2 text-sm"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            عرض صورة البنك المرسلة
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* === حالة: بانتظار التأكيد (الأسرة حولت) === */}
+                  {request.status === 'payment_sent' && (
+                    <div className="border-t pt-4 space-y-3">
+                      <div className="bg-purple-50 p-4 rounded-xl">
+                        <p className="text-purple-700 font-semibold mb-2">💳 الأسرة أرسلت إثبات التحويل</p>
+                        {request.paymentProofImageUrl && (
+                          <a
+                            href={request.paymentProofImageUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 bg-white px-4 py-2 rounded-lg text-purple-600 hover:bg-purple-100 transition"
+                          >
+                            <ExternalLink className="w-5 h-5" />
+                            عرض صورة إثبات التحويل
+                          </a>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleApprovePayment(request)}
+                          disabled={updating === request.id}
+                          className="flex-1 bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl font-bold disabled:opacity-50"
+                        >
+                          {updating === request.id ? 'جارِ التفعيل...' : '✅ تأكيد الدفع وتفعيل الباقة'}
+                        </button>
+                        <button
+                          onClick={() => handleRejectRequest(request)}
+                          disabled={updating === request.id}
+                          className="px-6 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl font-semibold"
+                        >
+                          ❌ رفض
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* === حالة: مفعّل === */}
+                  {request.status === 'approved' && (
+                    <div className="border-t pt-4">
+                      <div className="bg-green-50 p-4 rounded-xl flex items-center gap-3">
+                        <CheckCircle className="w-8 h-8 text-green-500" />
+                        <div>
+                          <p className="text-green-700 font-semibold">✅ الباقة مفعّلة</p>
+                          <p className="text-green-600 text-sm">
+                            تنتهي في: {request.expiresAt?.toDate?.()?.toLocaleDateString('ar-SA') || '-'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* === حالة: مرفوض === */}
+                  {request.status === 'rejected' && (
+                    <div className="border-t pt-4">
+                      <div className="bg-red-50 p-4 rounded-xl">
+                        <p className="text-red-700 font-semibold">❌ تم رفض الطلب</p>
+                        <p className="text-red-600 text-sm">
+                          بتاريخ: {request.rejectedAt?.toDate?.()?.toLocaleDateString('ar-SA') || '-'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}

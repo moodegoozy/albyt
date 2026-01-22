@@ -1,13 +1,15 @@
 // src/pages/Register.tsx
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { auth, db } from '@/firebase'
-import { doc, setDoc } from 'firebase/firestore'
-import { useNavigate, Link } from 'react-router-dom'
+import { doc, setDoc, addDoc, collection, serverTimestamp, updateDoc, increment, getDoc } from 'firebase/firestore'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { User, Mail, Lock, Store, UserPlus, Truck, ChefHat, Users, MapPin, CheckSquare, Square } from 'lucide-react'
 import { SAUDI_CITIES } from '@/utils/cities'
 
 export const Register: React.FC = () => {
+  const [searchParams] = useSearchParams()
+  const referralRestaurantId = searchParams.get('ref_restaurant') // رابط الإحالة من الأسرة
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -17,6 +19,13 @@ export const Register: React.FC = () => {
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [loading, setLoading] = useState(false)
   const nav = useNavigate()
+
+  // إذا جاء العميل من رابط إحالة، نحدد دوره تلقائياً كعميل
+  useEffect(() => {
+    if (referralRestaurantId) {
+      setRole('customer')
+    }
+  }, [referralRestaurantId])
 
   // هل يتطلب هذا الدور الموافقة على الشروط؟
   const requiresTerms = role === 'owner' || role === 'courier'
@@ -40,7 +49,9 @@ export const Register: React.FC = () => {
         name,
         email,
         role,
-        restaurantName: role === 'owner' ? restaurantName : null
+        restaurantName: role === 'owner' ? restaurantName : null,
+        referredBy: referralRestaurantId || null, // حفظ رابط الإحالة
+        createdAt: serverTimestamp()
       })
 
       if (role === 'owner') {
@@ -54,6 +65,56 @@ export const Register: React.FC = () => {
           logoUrl: '',
         }, { merge: true })
       }
+
+      // إذا كان التسجيل عبر رابط إحالة، نسجل ذلك ونرسل إشعار للأسرة
+      if (referralRestaurantId && role === 'customer') {
+        try {
+          // تسجيل في جدول تسجيلات العملاء
+          await addDoc(collection(db, 'customerRegistrations'), {
+            customerId: cred.user.uid,
+            customerName: name,
+            customerEmail: email,
+            restaurantId: referralRestaurantId,
+            registrationType: 'website',
+            createdAt: serverTimestamp()
+          })
+
+          // تحديث إحصائيات المطعم
+          const statsRef = doc(db, 'restaurantStats', referralRestaurantId)
+          const statsSnap = await getDoc(statsRef)
+          if (statsSnap.exists()) {
+            await updateDoc(statsRef, {
+              registeredCustomers: increment(1),
+              updatedAt: serverTimestamp()
+            })
+          } else {
+            await setDoc(statsRef, {
+              totalProfileViews: 0,
+              totalMenuViews: 0,
+              totalItemViews: 0,
+              totalShareClicks: 0,
+              whatsappShareCount: 0,
+              registeredCustomers: 1,
+              appDownloads: 0,
+              dailyViews: {},
+              updatedAt: serverTimestamp()
+            })
+          }
+
+          // إرسال إشعار للأسرة المنتجة
+          await addDoc(collection(db, 'notifications'), {
+            recipientId: referralRestaurantId,
+            title: '🎉 عميل جديد سجل عبر رابطك!',
+            message: `العميل "${name}" سجل في التطبيق عبر رابط الإحالة الخاص بك`,
+            type: 'new_customer_registration',
+            read: false,
+            createdAt: serverTimestamp()
+          })
+        } catch (err) {
+          console.warn('خطأ في تسجيل الإحالة:', err)
+        }
+      }
+
       nav('/')
     } catch (e: any) {
       alert(e.message)

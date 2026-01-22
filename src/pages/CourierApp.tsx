@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { collection, doc, onSnapshot, orderBy, query, updateDoc, where, serverTimestamp } from 'firebase/firestore'
+import { collection, doc, onSnapshot, orderBy, query, updateDoc, where, serverTimestamp, limit } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useAuth } from '@/auth'
 import { Order } from '@/types'
@@ -16,11 +16,26 @@ export const CourierApp: React.FC = () => {
   const [mine, setMine] = useState<Order[]>([])
 
   useEffect(() => {
-    const q1 = query(collection(db, 'orders'), where('status','in',['ready']), orderBy('createdAt','desc'))
+    if (!user?.uid) return
+    
+    // ✅ إضافة limit لتحسين الأداء
+    const q1 = query(
+      collection(db, 'orders'), 
+      where('status', 'in', ['ready']), 
+      orderBy('createdAt', 'desc'),
+      limit(20) // أحدث 20 طلب جاهز
+    )
     const u1 = onSnapshot(q1, (snap) => setReady(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order))))
-    const q2 = query(collection(db, 'orders'), where('courierId','==', user?.uid || ''), orderBy('createdAt','desc'))
+    
+    const q2 = query(
+      collection(db, 'orders'), 
+      where('courierId', '==', user.uid), 
+      orderBy('createdAt', 'desc'),
+      limit(20) // أحدث 20 طلب للمندوب
+    )
     const u2 = onSnapshot(q2, (snap) => setMine(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order))))
-    return () => { u1(); u2(); }
+    
+    return () => { u1(); u2() }
   }, [user?.uid])
 
   const take = async (id: string) => {
