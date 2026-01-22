@@ -282,6 +282,7 @@ export interface RestaurantStats {
   // إحصائيات التسجيل
   registeredCustomers: number; // عدد العملاء المسجلين عبر رابط الأسرة
   appDownloads: number; // عدد تحميلات التطبيق عبر رابط الأسرة
+  followersCount: number; // عدد متابعي المتجر
   // تفاصيل الزيارات
   dailyViews: Record<string, number>; // عدد الزيارات اليومية { "2024-01-22": 50 }
   // آخر تحديث
@@ -312,5 +313,16 @@ export interface CustomerRegistration {
   restaurantId: string; // معرف الأسرة التي سجل عبرها
   registrationType: 'website' | 'app';
   referralCode?: string;
+  createdAt?: Date;
+}
+
+/**
+ * StoreFollower - متابع للمتجر
+ */
+export interface StoreFollower {
+  id: string;
+  followerId: string; // معرف العميل المتابع
+  followerName?: string; // اسم المتابع
+  restaurantId: string; // معرف المتجر المتابَع
   createdAt?: Date;
 }

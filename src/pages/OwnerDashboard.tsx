@@ -91,6 +91,7 @@ type Stats = {
   whatsappShares: number
   registeredViaLink: number
   todayViews: number
+  followersCount: number
 }
 
 type RestaurantStats = {
@@ -101,6 +102,7 @@ type RestaurantStats = {
   whatsappShareCount: number
   registeredCustomers: number
   appDownloads: number
+  followersCount: number
   dailyViews: Record<string, number>
 }
 
@@ -125,7 +127,7 @@ export const OwnerDashboard: React.FC = () => {
     // إحصائيات الزيارات الجديدة
     profileViews: 0, menuViews: 0, itemViews: 0,
     shareClicks: 0, whatsappShares: 0,
-    registeredViaLink: 0, todayViews: 0
+    registeredViaLink: 0, todayViews: 0, followersCount: 0
   })
   const [copied, setCopied] = useState(false)
   const [restaurantStats, setRestaurantStats] = useState<RestaurantStats | null>(null)
@@ -298,7 +300,7 @@ export const OwnerDashboard: React.FC = () => {
       
       // جلب إحصائيات الزيارات
       let profileViews = 0, menuViews = 0, itemViews = 0
-      let shareClicks = 0, whatsappShares = 0, registeredViaLink = 0, todayViewsCount = 0
+      let shareClicks = 0, whatsappShares = 0, registeredViaLink = 0, todayViewsCount = 0, followersCount = 0
       try {
         const statsDoc = await getDoc(doc(db, 'restaurantStats', user.uid))
         if (statsDoc.exists()) {
@@ -310,6 +312,7 @@ export const OwnerDashboard: React.FC = () => {
           shareClicks = statsData.totalShareClicks || 0
           whatsappShares = statsData.whatsappShareCount || 0
           registeredViaLink = statsData.registeredCustomers || 0
+          followersCount = statsData.followersCount || 0
           
           // حساب زيارات اليوم
           const todayKey = new Date().toISOString().split('T')[0]
@@ -327,6 +330,16 @@ export const OwnerDashboard: React.FC = () => {
         )
         const registrationsSnap = await getDocs(registrationsQuery)
         registeredViaLink = registrationsSnap.size
+      } catch (e) {}
+
+      // جلب عدد المتابعين
+      try {
+        const followersQuery = query(
+          collection(db, 'storeFollowers'),
+          where('restaurantId', '==', user.uid)
+        )
+        const followersSnap = await getDocs(followersQuery)
+        followersCount = followersSnap.size
       } catch (e) {}
       
       setStats({
@@ -356,7 +369,8 @@ export const OwnerDashboard: React.FC = () => {
         shareClicks,
         whatsappShares,
         registeredViaLink,
-        todayViews: todayViewsCount
+        todayViews: todayViewsCount,
+        followersCount
       })
 
     } catch (err) {
@@ -775,7 +789,11 @@ export const OwnerDashboard: React.FC = () => {
             </div>
 
             {/* إحصائيات المشاركة والزيارات */}
-            <div className="grid grid-cols-4 gap-2 mt-4 pt-4 border-t border-white/20">
+            <div className="grid grid-cols-5 gap-2 mt-4 pt-4 border-t border-white/20">
+              <div className="text-center">
+                <p className="text-xl font-bold">{stats.followersCount}</p>
+                <p className="text-white/70 text-[10px]">متابع 💜</p>
+              </div>
               <div className="text-center">
                 <p className="text-xl font-bold">{stats.todayViews}</p>
                 <p className="text-white/70 text-[10px]">زيارات اليوم</p>

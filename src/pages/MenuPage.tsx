@@ -1,7 +1,7 @@
 // src/pages/MenuPage.tsx
 import React, { useEffect, useState } from 'react'
 import { db } from '@/firebase'
-import { collection, getDocs, query, where, doc, getDoc, updateDoc, increment, documentId } from 'firebase/firestore'
+import { collection, getDocs, query, where, doc, getDoc, updateDoc, increment, documentId, addDoc, serverTimestamp, deleteDoc } from 'firebase/firestore'
 import { useCart } from '@/hooks/useCart'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/auth'
@@ -10,7 +10,7 @@ import { MenuItem, Restaurant, Promotion } from '@/types'
 import { 
   Megaphone, X, MapPin, Phone, Star, ShoppingBag, ArrowRight, 
   CheckCircle, Building2, Copy, Package, Clock,
-  Utensils, Share2, Users, Briefcase, MessageCircle
+  Utensils, Share2, Users, Briefcase, MessageCircle, Heart
 } from 'lucide-react'
 
 type MenuItemWithRestaurant = MenuItem & { restaurant?: Restaurant }
@@ -29,6 +29,9 @@ export const MenuPage: React.FC = () => {
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null)
   const [activePromotion, setActivePromotion] = useState<Promotion | null>(null)
   const [showPromotion, setShowPromotion] = useState(true)
+  const [isFollowing, setIsFollowing] = useState(false)
+  const [followDocId, setFollowDocId] = useState<string | null>(null)
+  const [followersCount, setFollowersCount] = useState(0)
   const { add, subtotal, items: cartItems } = useCart()
   const { user, role } = useAuth()
   const toast = useToast()
@@ -51,6 +54,108 @@ export const MenuPage: React.FC = () => {
       })
     } else {
       copyToClipboard(window.location.href)
+    }
+  }
+
+  // التحقق من حالة المتابعة وجلب عدد المتابعين
+  useEffect(() => {
+    if (!restaurantId) return
+    
+    const checkFollowStatus = async () => {
+      // جلب عدد المتابعين
+      try {
+        const followersQuery = query(
+          collection(db, 'storeFollowers'),
+          where('restaurantId', '==', restaurantId)
+        )
+        const followersSnap = await getDocs(followersQuery)
+        setFollowersCount(followersSnap.size)
+        
+        // التحقق إذا كان المستخدم متابع
+        if (user) {
+          const userFollowQuery = query(
+            collection(db, 'storeFollowers'),
+            where('restaurantId', '==', restaurantId),
+            where('followerId', '==', user.uid)
+          )
+          const userFollowSnap = await getDocs(userFollowQuery)
+          if (!userFollowSnap.empty) {
+            setIsFollowing(true)
+            setFollowDocId(userFollowSnap.docs[0].id)
+          }
+        }
+      } catch (err) {
+        console.warn('خطأ في جلب بيانات المتابعة:', err)
+      }
+    }
+    
+    checkFollowStatus()
+  }, [restaurantId, user])
+
+  // متابعة/إلغاء متابعة المتجر
+  const toggleFollow = async () => {
+    if (!user) {
+      toast.warning('سجّل دخولك أولاً للمتابعة')
+      return
+    }
+    if (!restaurantId) return
+    
+    try {
+      if (isFollowing && followDocId) {
+        // إلغاء المتابعة
+        await deleteDoc(doc(db, 'storeFollowers', followDocId))
+        setIsFollowing(false)
+        setFollowDocId(null)
+        setFollowersCount(prev => Math.max(0, prev - 1))
+        
+        // تحديث إحصائيات المتجر
+        const statsRef = doc(db, 'restaurantStats', restaurantId)
+        await updateDoc(statsRef, {
+          followersCount: increment(-1)
+        }).catch(() => {})
+        
+        toast.info('تم إلغاء المتابعة')
+      } else {
+        // متابعة جديدة
+        const newFollow = await addDoc(collection(db, 'storeFollowers'), {
+          followerId: user.uid,
+          followerName: user.displayName || user.email?.split('@')[0] || 'عميل',
+          restaurantId,
+          createdAt: serverTimestamp()
+        })
+        setIsFollowing(true)
+        setFollowDocId(newFollow.id)
+        setFollowersCount(prev => prev + 1)
+        
+        // تحديث إحصائيات المتجر
+        const statsRef = doc(db, 'restaurantStats', restaurantId)
+        const statsSnap = await getDoc(statsRef)
+        if (statsSnap.exists()) {
+          await updateDoc(statsRef, {
+            followersCount: increment(1)
+          })
+        } else {
+          // إنشاء سجل إحصائيات جديد
+          await addDoc(collection(db, 'restaurantStats'), {
+            restaurantId,
+            totalProfileViews: 0,
+            totalMenuViews: 0,
+            totalItemViews: 0,
+            totalShareClicks: 0,
+            whatsappShareCount: 0,
+            registeredCustomers: 0,
+            appDownloads: 0,
+            followersCount: 1,
+            dailyViews: {},
+            updatedAt: serverTimestamp()
+          })
+        }
+        
+        toast.success('أنت الآن تتابع هذا المتجر! 💜')
+      }
+    } catch (err) {
+      console.error('خطأ في المتابعة:', err)
+      toast.error('حدث خطأ، حاول مرة أخرى')
     }
   }
 
@@ -208,13 +313,31 @@ export const MenuPage: React.FC = () => {
             رجوع
           </Link>
           
-          {/* زر المشاركة */}
-          <button 
-            onClick={shareProfile}
-            className="absolute top-4 left-4 p-3 bg-black/30 backdrop-blur-sm rounded-full text-white hover:bg-black/50 transition"
-          >
-            <Share2 className="w-5 h-5" />
-          </button>
+          {/* أزرار المشاركة والمتابعة */}
+          <div className="absolute top-4 left-4 flex items-center gap-2">
+            {/* زر المتابعة */}
+            {!isOwnStore && (
+              <button 
+                onClick={toggleFollow}
+                className={`flex items-center gap-2 px-4 py-2 backdrop-blur-sm rounded-full font-bold transition ${
+                  isFollowing 
+                    ? 'bg-pink-500 text-white hover:bg-pink-600' 
+                    : 'bg-black/30 text-white hover:bg-black/50'
+                }`}
+              >
+                <Heart className={`w-5 h-5 ${isFollowing ? 'fill-white' : ''}`} />
+                <span className="text-sm">{isFollowing ? 'متابَع' : 'متابعة'}</span>
+              </button>
+            )}
+            
+            {/* زر المشاركة */}
+            <button 
+              onClick={shareProfile}
+              className="p-3 bg-black/30 backdrop-blur-sm rounded-full text-white hover:bg-black/50 transition"
+            >
+              <Share2 className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* بطاقة المعلومات الرئيسية */}
@@ -271,25 +394,30 @@ export const MenuPage: React.FC = () => {
               </div>
 
               {/* الإحصائيات */}
-              <div className="grid grid-cols-4 border-t border-gray-800">
-                <div className="p-4 text-center border-l border-gray-800">
+              <div className="grid grid-cols-5 border-t border-gray-800">
+                <div className="p-3 text-center border-l border-gray-800">
+                  <Heart className="w-5 h-5 text-pink-400 mx-auto mb-1" />
+                  <p className="text-lg font-black text-white">{followersCount}</p>
+                  <p className="text-[10px] text-gray-500">متابع</p>
+                </div>
+                <div className="p-3 text-center border-l border-gray-800">
                   <Utensils className="w-5 h-5 text-amber-400 mx-auto mb-1" />
-                  <p className="text-xl font-black text-white">{items.length}</p>
+                  <p className="text-lg font-black text-white">{items.length}</p>
                   <p className="text-[10px] text-gray-500">صنف</p>
                 </div>
-                <div className="p-4 text-center border-l border-gray-800">
+                <div className="p-3 text-center border-l border-gray-800">
                   <Package className="w-5 h-5 text-green-400 mx-auto mb-1" />
-                  <p className="text-xl font-black text-white">{restaurant.totalOrders || 0}</p>
+                  <p className="text-lg font-black text-white">{restaurant.totalOrders || 0}</p>
                   <p className="text-[10px] text-gray-500">طلب</p>
                 </div>
-                <div className="p-4 text-center border-l border-gray-800">
+                <div className="p-3 text-center border-l border-gray-800">
                   <Star className="w-5 h-5 text-yellow-400 mx-auto mb-1" />
-                  <p className="text-xl font-black text-white">{restaurant.averageRating?.toFixed(1) || '0'}</p>
+                  <p className="text-lg font-black text-white">{restaurant.averageRating?.toFixed(1) || '0'}</p>
                   <p className="text-[10px] text-gray-500">تقييم</p>
                 </div>
-                <div className="p-4 text-center">
+                <div className="p-3 text-center">
                   <Clock className="w-5 h-5 text-sky-400 mx-auto mb-1" />
-                  <p className="text-xl font-black text-white">{restaurant.onTimeDeliveryRate ? `${Math.round(restaurant.onTimeDeliveryRate)}%` : '—'}</p>
+                  <p className="text-lg font-black text-white">{restaurant.onTimeDeliveryRate ? `${Math.round(restaurant.onTimeDeliveryRate)}%` : '—'}</p>
                   <p className="text-[10px] text-gray-500">التزام</p>
                 </div>
               </div>

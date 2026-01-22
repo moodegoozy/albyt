@@ -252,6 +252,23 @@ service cloud.firestore {
       // لا يسمح بالتعديل أو الحذف إلا للمطور
       allow update, delete: if isDeveloper();
     }
+
+    /* ===== storeFollowers (متابعو المتاجر) ===== */
+    match /storeFollowers/{followId} {
+      // القراءة: صاحب المطعم (متابعيه فقط) أو المتابع نفسه أو المطور
+      allow read: if isDeveloper() 
+                  || (isOwner() && resource.data.restaurantId == request.auth.uid)
+                  || (signedIn() && resource.data.followerId == request.auth.uid);
+      
+      // الإنشاء: أي مستخدم مسجل
+      allow create: if signedIn() && request.resource.data.followerId == request.auth.uid;
+      
+      // الحذف: المتابع نفسه أو المطور (إلغاء المتابعة)
+      allow delete: if isDeveloper() || (signedIn() && resource.data.followerId == request.auth.uid);
+      
+      // لا يسمح بالتعديل إلا للمطور
+      allow update: if isDeveloper();
+    }
   }
 }
 
