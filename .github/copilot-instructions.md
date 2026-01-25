@@ -2,33 +2,45 @@
 
 ## Stack & Commands
 - **Stack**: React 18 + Vite + TypeScript + Firebase (Auth/Firestore/Storage) + TailwindCSS
-- **Commands**: `npm run dev` | `npm run build` | `npm run preview`
+- **Commands**: `npm run dev` (port 5173) | `npm run build` (runs tsc first) | `npm run preview`
 - **Language**: All UI in Arabic RTL. Loading text: `"جارِ التحميل..."`
 - **Imports**: Always use `@/` alias (maps to `src/` via vite.config.ts)
+- **Firebase Project**: `albayt-sofra` (config in `src/firebase.ts`)
 
 ## Architecture
-```
-src/
-├── auth.tsx          # AuthContext: user, role, userLocation, locationRequired, refreshUserData()
-├── firebase.ts       # Firebase init: exports { app, auth, db, storage }
-├── App.tsx           # Routes with ProtectedRoute + RoleGate wrappers
-├── pages/            # One component per route (30+ pages)
-├── components/ui/    # Toast, ConfirmDialog (context-based providers)
-├── hooks/useCart.ts  # localStorage cart with ownerId tracking
-├── routes/           # ProtectedRoute, RoleGate components
-└── types/index.ts    # Centralized TypeScript interfaces (MenuItem, Restaurant, Order, etc.)
-```
-> ⚠️ `context/CartContext.tsx` is DEPRECATED — use `hooks/useCart.ts`
+| Path | Purpose |
+|------|---------|
+| `src/auth.tsx` | AuthContext: `user`, `role`, `userLocation`, `locationRequired`, `refreshUserData()` |
+| `src/firebase.ts` | Firebase exports: `{ app, auth, db, storage }`. Auth uses IndexedDB persistence for mobile. |
+| `src/App.tsx` | All routes with `ProtectedRoute` + `RoleGate` wrappers |
+| `src/pages/` | One component per route (30+ pages) |
+| `src/hooks/useCart.ts` | localStorage cart (key: `broast_cart`). **⚠️ NOT** `context/CartContext.tsx` (deprecated) |
+| `src/types/index.ts` | All TypeScript interfaces (MenuItem, Restaurant, Order, User, Wallet, etc.) |
+| `src/components/ui/` | `ToastProvider` (useToast), `ConfirmDialog` - context-based feedback |
+| `src/routes/` | `ProtectedRoute.tsx` (auth check), `RoleGate.tsx` (role-based access) |
+| `firestore.rules` | Security rules with helper functions: `myRole()`, `isOwner()`, `isCourier()`, etc. |
 
-## Role-Based Access
-Roles: `customer | courier | owner | admin | developer`
-| Role | Capabilities |
-|------|--------------|
-| `developer` | Full access, delete ops, user management, system config |
-| `admin` | Add restaurants (earns 0.5 SAR commission), can order like customer |
-| `owner` | Manage menu, process orders, restaurant settings, hire couriers |
-| `courier` | Claim ready orders, update delivery status, chat with customers |
-| `customer` | Browse, order, track, chat |
+## Roles: `customer | courier | owner | admin | developer`
+- `developer`: Full access, delete ops, user/system management
+- `admin`: Add restaurants (earns 0.75 SAR commission per item), can order like `customer`
+- `owner`: Manage menu, orders, hire couriers, restaurant settings
+- `courier`: Accept `ready` orders, delivery workflow (pays 3.75 SAR platform fee)
+- `customer`: Browse, order, track deliveries
+
+## Critical Firestore Patterns
+```tsx
+// ⚠️ RESTAURANT DOC ID = OWNER UID (not auto-generated!)
+doc(db, 'restaurants', ownerId)          // ✅ Correct
+where('ownerId', '==', ownerId)          // ❌ Wrong for restaurant lookup
+
+// Menu items link to restaurant via ownerId
+where('ownerId', '==', restaurantId)     // ✅ For menuItems queries
+
+// Order status flow
+'pending' → 'accepted' → 'preparing' → 'ready' → 'out_for_delivery' → 'delivered' | 'cancelled'
+```
+
+**Collections**: `users/{uid}`, `restaurants/{ownerId}`, `restaurants/{ownerId}/private/bankInfo`, `menuItems/{auto}`, `orders/{auto}`, `orders/{orderId}/messages/{auto}`, `wallets/{adminId}`, `settings/{doc}`, `packageRequests/{auto}`, `tasks/{auto}`, `restaurantStats/{restaurantId}`, `promotions/{auto}`
 
 ## Route Protection Pattern
 ```tsx
@@ -39,100 +51,101 @@ Roles: `customer | courier | owner | admin | developer`
 </ProtectedRoute>
 ```
 
-## Firestore Collections & Rules
-| Collection | Doc ID | Key Fields |
-|------------|--------|------------|
-| `users` | `{uid}` | `role`, `location`, `savedLocation` (customer) |
-| `restaurants` | `{ownerId}` | **⚠️ Doc ID = owner's UID** → `doc(db, 'restaurants', ownerId)` |
-| `menuItems` | auto | `ownerId` links to restaurant, `available`, `price` |
-| `orders` | auto | `status`, `customerId`, `courierId?`, `restaurantId` |
-| `orders/{id}/messages` | auto | Chat subcollection |
-| `wallets` | `{adminId}` | Commission tracking for admins |
-| `settings` | `{doc}` | Global config (delivery fees, hours) |
-| `hiringRequests` | auto | Courier hiring: `courierId`, `restaurantId`, `status` |
-| `notifications` | auto | System notifications: `recipientId`, `read` |
-| `promotions` | auto | Restaurant ads: `ownerId`, `viewsCount` |
-| `packageRequests` | auto | Package subscription requests |
-| `restaurantStats` | `{restaurantId}` | Visit tracking: `totalProfileViews`, `dailyViews`, `whatsappShareCount` |
-| `visitLogs` | auto | Visit records: `restaurantId`, `source`, `visitorType` |
-| `customerRegistrations` | auto | Referral registrations: `restaurantId`, `customerId` |
-
-**⚠️ Update `firestore.rules` FIRST when adding collections.** Helper functions in rules: `isOwner()`, `isAdmin()`, `isDeveloper()`, `isCourier()`, `isCustomer()`
-
-## Order Status Flow
-`pending → accepted → preparing → ready → out_for_delivery → delivered`
-(can also be `cancelled`)
-
-## Key Patterns
-
-### Visit Tracking (Premium Analytics)
+## Key Code Patterns
 ```tsx
-// Track visits when customer opens restaurant page
-await addDoc(collection(db, 'visitLogs'), {
-  restaurantId, visitorId: userId || null,
-  source: 'whatsapp' | 'direct' | 'social', page: 'menu',
-  createdAt: serverTimestamp()
-})
-// Update restaurant stats
-await updateDoc(doc(db, 'restaurantStats', restaurantId), {
-  totalProfileViews: increment(1)
-})
-```
+// Firebase imports - always use @/ alias
+import { db, auth, storage } from '@/firebase'
+import { collection, doc, getDoc, onSnapshot, serverTimestamp } from 'firebase/firestore'
+import { useAuth } from '@/auth'
 
-### WhatsApp Share with Tracking
-```tsx
-const link = `${origin}/menu?restaurant=${uid}&ref=whatsapp`
-const text = encodeURIComponent(`🍽️ تفضل بزيارة ${name}!\n\n${link}`)
-window.open(`https://wa.me/?text=${text}`, '_blank')
-// Update whatsappShareCount in restaurantStats
-```
-
-### Cart (localStorage with ownerId)
-```tsx
-import { useCart } from '@/hooks/useCart'
+// Cart hook (localStorage-based, with useCallback/useMemo optimization)
 const { items, add, remove, changeQty, clear, subtotal } = useCart()
-// CartItem: { id, name, price, qty, ownerId }
-```
 
-### UI Feedback (Context-based)
-```tsx
-import { useToast } from '@/components/ui/Toast'
-import { useDialog } from '@/components/ui/ConfirmDialog'
-
+// Toast feedback (must be inside ToastProvider tree in main.tsx)
 const toast = useToast()
-toast.success('تم!')  // .success | .error | .info | .warning
+toast.success('تم!')
+toast.error('حدث خطأ')
 
-const dialog = useDialog()
-const confirmed = await dialog.confirm('متأكد؟')  // Promise<boolean>
-```
-
-### Realtime Subscriptions (Always cleanup!)
-```tsx
+// ⚠️ ALWAYS cleanup Firestore subscriptions
 useEffect(() => {
   const unsub = onSnapshot(query(collection(db, 'orders'), where(...)), snap => {...})
   return () => unsub()
 }, [deps])
 ```
 
-### Firebase Imports
+## Adding Features Checklist
+1. **New page**: Create in `src/pages/`, add route in `App.tsx` with `ProtectedRoute` + `RoleGate`
+2. **New collection**: Update `firestore.rules` FIRST (add helper functions if needed), then add types to `types/index.ts`
+3. **Icons**: Use `lucide-react` exclusively
+4. **Timestamps**: Always use `serverTimestamp()` for `createdAt`/`updatedAt`
+5. **Real-time data**: Prefer `onSnapshot()` with cleanup over `getDocs()` for live updates
+
+## Gotchas & Conventions
+- `admin` can order like `customer` → include both in checkout/orders `RoleGate` allow lists
+- Owner restaurant doc auto-created on first login via `auth.tsx` (see `onAuthStateChanged` handler)
+- Customer location handling:
+  - Stored in `sessionStorage` key: `broast_session_location`
+  - Persisted to `users/{uid}.savedLocation` (for customers) or `users/{uid}.location` (for others)
+  - Customer/admin uses `savedLocation`, owner/courier uses `location`
+  - Auto geolocation attempted first, then `LocationRequired` modal triggered by `locationRequired`
+- Commission system (per item):
+  - Platform fee: 1.0 SAR per item (`PLATFORM_FEE_PER_ITEM` in CheckoutPage.tsx)
+  - Admin referral: 0.75 SAR per item if restaurant was added by admin (`ADMIN_COMMISSION_PER_ITEM`)
+  - Courier platform fee: 3.75 SAR per delivery order (`COURIER_PLATFORM_FEE`)
+  - Service fee shown to customer = 1.75 SAR/item (platform + admin combined)
+- Restaurant packages: `free | premium` with `packageExpiresAt`, subscription requests via `PackageSubscriptionRequest` collection
+- Bank info: Stored in subcollection `restaurants/{ownerId}/private/bankInfo` for security
+- Delivery types: `'delivery' | 'pickup'` on `Order.deliveryType`
+- Seller tiers: `'bronze' | 'silver' | 'gold'` based on `averageRating`, `onTimeDeliveryRate`, `complaintsCount`
+- Multi-restaurant cart: CartItem includes `ownerId` to support multiple restaurants in one cart (future feature)
+
+## 🔒 Privacy: Phone Number Visibility Rules
+**أرقام جوال الأسر المنتجة مخفية عن العملاء بالكامل!**
+
 ```tsx
-import { db, auth, storage } from '@/firebase'
-import { collection, doc, getDoc, setDoc, updateDoc, onSnapshot, query, where, orderBy, serverTimestamp, increment } from 'firebase/firestore'
+// ✅ إظهار رقم الجوال فقط للإدارة وصاحبة الحساب
+{(role === 'admin' || role === 'developer' || (role === 'owner' && user?.uid === restaurantId)) && restaurant.phone && (
+  <PhoneDisplay phone={restaurant.phone} />
+)}
+
+// ❌ لا يوجد زر تواصل بديل في صفحة المنتجات
+// المحادثة متاحة فقط أثناء الطلب النشط (من إنشاء الطلب حتى استلامه)
 ```
 
-## Adding Features Checklist
-1. **New Page**: Create in `src/pages/`, add route in `App.tsx` with `ProtectedRoute`/`RoleGate`
-2. **New Collection**: Update `firestore.rules` FIRST, add types to `types/index.ts`
-3. **New Types**: Add to `src/types/index.ts` for consistency
-4. **Icons**: Use `lucide-react` exclusively
+**القاعدة تنطبق على:**
+- `restaurant.phone` (رقم الأسرة الأساسي)
+- `restaurant.hiringContact` (رقم التوظيف)
+- أي حقل يحتوي على رقم جوال للمطعم/الأسرة
 
-## Critical Gotchas
-- **Restaurant lookup**: `doc(db, 'restaurants', ownerId)` NOT `where('ownerId', '==', ...)`
-- **Admin ordering**: `admin` can order like `customer` → include both in checkout `RoleGate`
-- **Auto-create restaurant**: Owner's restaurant doc created on first login in `auth.tsx` (lines 106-117)
-- **Location session**: Customer location stored in `sessionStorage` key `broast_session_location`
-- **Location required**: App shows `LocationRequired` component if `locationRequired` is true in auth context
-- **Timestamps**: Use `serverTimestamp()` for `createdAt`/`updatedAt` fields
-- **Commission system**: Platform fee 1.5 SAR/order + 0.5 SAR admin referral commission
-- **Package system**: Restaurants have `packageType: 'free' | 'premium'` with subscription dates
-- **Seller tiers**: `bronze | silver | gold` based on ratings and delivery performance
+**نظام المحادثة:**
+- المحادثة تفتح فقط عند وجود طلب نشط (`ChatPage` مع `orderId`)
+- Messages stored in subcollection: `orders/{orderId}/messages/{auto}`
+- تغلق تلقائياً عند استلام الطلب (`status === 'delivered'`)
+
+**الهدف:** جميع التعاملات تتم داخل المنصة عبر نظام المحادثة أثناء الطلبات فقط
+
+## Analytics & Tracking
+- **RestaurantStats**: Track profile/menu/item views, shares (WhatsApp), registered customers, followers
+- **VisitLog**: Record visitor activity (anonymous, customer, or registered via referral link)
+- **Promotions**: Paid ads system for restaurants (text/image/video), 24h duration default, track `viewsCount`
+
+## Fixed Header Layout Pattern
+```tsx
+// App.tsx structure:
+<div className="fixed top-0 left-0 right-0 z-50">
+  <BetaBanner />
+  <TopBar />
+  <Header />
+</div>
+<div className="h-[130px] sm:h-[150px]" /> {/* Spacer matching header height */}
+<main className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
+  {/* Routes here */}
+</main>
+```
+
+## Authentication & Session Management
+- Firebase Auth persistence: `indexedDBLocalPersistence` → `browserLocalPersistence` fallback
+- Session tracking via `onAuthStateChanged` in `auth.tsx`
+- User role loaded from `users/{uid}` on auth state change
+- Location flow: sessionStorage → Firestore `savedLocation` (customers) or `location` (others)
+- Auto geolocation: If no saved location, app tries `navigator.geolocation` before prompting user
