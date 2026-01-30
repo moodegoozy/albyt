@@ -120,8 +120,23 @@ type Task = {
   notes?: string
 }
 
+// نوع سجل العمليات
+type ActivityLog = {
+  id: string
+  action: 'activate' | 'deactivate' | 'delete' | 'update' | 'create' | 'package_activate' | 'package_cancel' | 'role_change'
+  targetType: 'user' | 'restaurant' | 'order' | 'package' | 'settings'
+  targetId: string
+  targetName?: string
+  performedBy: string
+  performedByName?: string
+  details?: string
+  oldValue?: any
+  newValue?: any
+  createdAt?: any
+}
+
 // تبويبات اللوحة
-type Tab = 'overview' | 'restaurants' | 'orders' | 'users' | 'couriers' | 'admins' | 'settings' | 'finance' | 'tools' | 'tasks' | 'licenses' | 'packages' | 'storeAnalytics' | 'packageSettings'
+type Tab = 'overview' | 'restaurants' | 'orders' | 'users' | 'couriers' | 'admins' | 'settings' | 'finance' | 'tools' | 'tasks' | 'licenses' | 'packages' | 'storeAnalytics' | 'packageSettings' | 'activityLog'
 
 // نوع طلب الباقة
 type PackageRequest = {
@@ -229,8 +244,162 @@ export const Developer: React.FC = () => {
   const [subscriptionAmount, setSubscriptionAmount] = useState<number>(99)
   const [subscriptionDuration, setSubscriptionDuration] = useState<number>(30)
   
+  // سجل العمليات
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([])
+  const [loadingLogs, setLoadingLogs] = useState(false)
+  const [logFilter, setLogFilter] = useState<string>('all')
+  
   // حفظ بيانات المطور الحالي لإعادة تسجيل الدخول
   const currentDeveloperEmail = user?.email || ''
+
+  // ===== تسجيل عملية في السجل =====
+  const logActivity = async (
+    action: ActivityLog['action'],
+    targetType: ActivityLog['targetType'],
+    targetId: string,
+    targetName: string,
+    details?: string,
+    oldValue?: any,
+    newValue?: any
+  ) => {
+    try {
+      await addDoc(collection(db, 'activityLogs'), {
+        action,
+        targetType,
+        targetId,
+        targetName,
+        performedBy: user?.uid || '',
+        performedByName: user?.email || 'مطور',
+        details,
+        oldValue,
+        newValue,
+        createdAt: serverTimestamp(),
+      })
+    } catch (err) {
+      console.warn('فشل تسجيل العملية:', err)
+    }
+  }
+
+  // ===== تفعيل/إيقاف حساب =====
+  const handleToggleUserStatus = async (targetUser: User, isActive: boolean) => {
+    const action = isActive ? 'تعليق' : 'تفعيل'
+    const confirmed = await dialog.confirm(
+      `هل أنت متأكد من ${action} حساب "${targetUser.name || targetUser.email}"؟`,
+      { title: `${action} الحساب`, dangerous: !isActive }
+    )
+    if (!confirmed) return
+
+    try {
+      await updateDoc(doc(db, 'users', targetUser.uid), {
+        isActive: !isActive,
+        updatedAt: serverTimestamp(),
+      })
+      
+      await logActivity(
+        isActive ? 'deactivate' : 'activate',
+        'user',
+        targetUser.uid,
+        targetUser.name || targetUser.email,
+        `تم ${action} الحساب`
+      )
+      
+      toast.success(`تم ${action} الحساب بنجاح ✅`)
+      loadData()
+    } catch (err) {
+      console.error('خطأ:', err)
+      toast.error(`فشل ${action} الحساب`)
+    }
+  }
+
+  // ===== تفعيل باقة التميز يدوياً =====
+  const handleActivatePremium = async (restaurant: Restaurant, days: number = 30) => {
+    const confirmed = await dialog.confirm(
+      `سيتم تفعيل باقة التميز لـ "${restaurant.name}" لمدة ${days} يوم`,
+      { title: '✨ تفعيل باقة التميز' }
+    )
+    if (!confirmed) return
+
+    try {
+      const expiresAt = new Date()
+      expiresAt.setDate(expiresAt.getDate() + days)
+
+      await updateDoc(doc(db, 'restaurants', restaurant.id), {
+        packageType: 'premium',
+        packageSubscribedAt: serverTimestamp(),
+        packageExpiresAt: expiresAt,
+        packageRequest: null,
+        updatedAt: serverTimestamp(),
+      })
+
+      await logActivity(
+        'package_activate',
+        'restaurant',
+        restaurant.id,
+        restaurant.name,
+        `تفعيل باقة التميز لمدة ${days} يوم`
+      )
+
+      toast.success(`تم تفعيل باقة التميز لـ ${restaurant.name} ✨`)
+      loadData()
+    } catch (err) {
+      console.error('خطأ:', err)
+      toast.error('فشل تفعيل الباقة')
+    }
+  }
+
+  // ===== إلغاء باقة التميز =====
+  const handleCancelPremium = async (restaurant: Restaurant) => {
+    const confirmed = await dialog.confirm(
+      `هل أنت متأكد من إلغاء باقة التميز لـ "${restaurant.name}"؟`,
+      { title: '⚠️ إلغاء باقة التميز', dangerous: true }
+    )
+    if (!confirmed) return
+
+    try {
+      await updateDoc(doc(db, 'restaurants', restaurant.id), {
+        packageType: 'free',
+        packageExpiresAt: null,
+        updatedAt: serverTimestamp(),
+      })
+
+      await logActivity(
+        'package_cancel',
+        'restaurant',
+        restaurant.id,
+        restaurant.name,
+        'إلغاء باقة التميز'
+      )
+
+      toast.success(`تم إلغاء باقة التميز لـ ${restaurant.name}`)
+      loadData()
+    } catch (err) {
+      console.error('خطأ:', err)
+      toast.error('فشل إلغاء الباقة')
+    }
+  }
+
+  // ===== تحميل سجل العمليات =====
+  const loadActivityLogs = async () => {
+    setLoadingLogs(true)
+    try {
+      const q = query(
+        collection(db, 'activityLogs'),
+        orderBy('createdAt', 'desc'),
+        limit(100)
+      )
+      const snap = await getDocs(q)
+      const logs = snap.docs.map(d => ({
+        id: d.id,
+        ...d.data(),
+        createdAt: d.data().createdAt?.toDate?.() || null,
+      })) as ActivityLog[]
+      setActivityLogs(logs)
+    } catch (err) {
+      console.warn('فشل تحميل سجل العمليات:', err)
+    } finally {
+      setLoadingLogs(false)
+    }
+  }
 
   // ===== إنشاء مشرف جديد =====
   const handleCreateNewAdmin = async () => {
@@ -794,12 +963,16 @@ export const Developer: React.FC = () => {
             { id: 'couriers', label: '🚗 المناديب' },
             { id: 'admins', label: '👑 المشرفين' },
             { id: 'tasks', label: '📋 المهام' },
+            { id: 'activityLog', label: '📜 سجل العمليات' },
             { id: 'settings', label: '⚙️ الإعدادات' },
             { id: 'tools', label: '🛠️ الأدوات' },
           ].map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as Tab)}
+              onClick={() => {
+                setActiveTab(tab.id as Tab)
+                if (tab.id === 'activityLog') loadActivityLogs()
+              }}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold transition ${
                 activeTab === tab.id 
                   ? 'bg-primary text-white' 
@@ -870,6 +1043,46 @@ export const Developer: React.FC = () => {
               <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-4 text-white text-center">
                 <p className="text-3xl font-bold">{stats.totalAppEarnings.toFixed(2)}</p>
                 <p className="text-sm opacity-90">💰 أرباح التطبيق</p>
+              </div>
+            </div>
+
+            {/* إحصائيات الباقات والحسابات */}
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl p-4 text-white">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-2xl">✨</span>
+                  <span className="text-3xl font-bold">
+                    {restaurants.filter((r: any) => r.packageType === 'premium').length}
+                  </span>
+                </div>
+                <p className="text-sm opacity-90">مشتركين باقة التميز</p>
+              </div>
+              <div className="bg-gradient-to-br from-gray-400 to-gray-500 rounded-2xl p-4 text-white">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-2xl">📦</span>
+                  <span className="text-3xl font-bold">
+                    {restaurants.filter((r: any) => !r.packageType || r.packageType === 'free').length}
+                  </span>
+                </div>
+                <p className="text-sm opacity-90">الباقة المجانية</p>
+              </div>
+              <div className="bg-gradient-to-br from-green-400 to-emerald-500 rounded-2xl p-4 text-white">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-2xl">✅</span>
+                  <span className="text-3xl font-bold">
+                    {users.filter((u: any) => u.isActive !== false).length}
+                  </span>
+                </div>
+                <p className="text-sm opacity-90">حسابات نشطة</p>
+              </div>
+              <div className="bg-gradient-to-br from-red-400 to-red-500 rounded-2xl p-4 text-white">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-2xl">⏸️</span>
+                  <span className="text-3xl font-bold">
+                    {users.filter((u: any) => u.isActive === false).length}
+                  </span>
+                </div>
+                <p className="text-sm opacity-90">حسابات موقوفة</p>
               </div>
             </div>
 
@@ -1371,6 +1584,29 @@ export const Developer: React.FC = () => {
                             <Trash2 className="w-5 h-5" />
                           </button>
                         </div>
+                        {/* أزرار الباقة */}
+                        <div className="flex gap-2 items-center">
+                          {(restaurant as any).packageType === 'premium' ? (
+                            <>
+                              <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full flex items-center gap-1">
+                                ✨ باقة التميز
+                              </span>
+                              <button
+                                onClick={() => handleCancelPremium(restaurant)}
+                                className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1 rounded-lg"
+                              >
+                                إلغاء الباقة
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => handleActivatePremium(restaurant)}
+                              className="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 px-3 py-1 rounded-lg flex items-center gap-1"
+                            >
+                              ✨ تفعيل باقة التميز
+                            </button>
+                          )}
+                        </div>
                         {/* ربط سريع بمشرف */}
                         <select
                           value={restaurant.referredBy || ''}
@@ -1563,11 +1799,32 @@ export const Developer: React.FC = () => {
                       <>
                         <div className="flex items-start justify-between">
                           <div>
-                            <h3 className="font-bold">{u.name || 'بدون اسم'}</h3>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-bold">{u.name || 'بدون اسم'}</h3>
+                              {(u as any).isActive === false && (
+                                <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">موقوف</span>
+                              )}
+                            </div>
                             <p className="text-sm text-gray-600">{u.email}</p>
                             <p className="text-xs mt-1">{roleLabel(u.role)}</p>
                           </div>
                           <div className="flex gap-1">
+                            {/* زر تفعيل/إيقاف */}
+                            <button
+                              onClick={() => handleToggleUserStatus(u, (u as any).isActive !== false)}
+                              className={`p-1.5 rounded-lg ${
+                                (u as any).isActive === false 
+                                  ? 'bg-green-100 text-green-600' 
+                                  : 'bg-orange-100 text-orange-600'
+                              }`}
+                              title={(u as any).isActive === false ? 'تفعيل الحساب' : 'تعليق الحساب'}
+                            >
+                              {(u as any).isActive === false ? (
+                                <CheckCircle className="w-4 h-4" />
+                              ) : (
+                                <AlertCircle className="w-4 h-4" />
+                              )}
+                            </button>
                             <button
                               onClick={() => {
                                 setEditingUser(u.uid)
@@ -2726,6 +2983,117 @@ export const Developer: React.FC = () => {
             orders={orders}
             toast={toast}
           />
+        )}
+
+        {/* ===== سجل العمليات ===== */}
+        {activeTab === 'activityLog' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <h2 className="text-xl font-bold flex items-center gap-2">
+                📜 سجل العمليات
+                <span className="text-sm bg-gray-200 px-3 py-1 rounded-full">
+                  {activityLogs.length} عملية
+                </span>
+              </h2>
+              <div className="flex gap-2">
+                <select
+                  value={logFilter}
+                  onChange={e => setLogFilter(e.target.value)}
+                  className="border rounded-xl px-4 py-2"
+                >
+                  <option value="all">جميع العمليات</option>
+                  <option value="activate">تفعيل</option>
+                  <option value="deactivate">إيقاف</option>
+                  <option value="create">إنشاء</option>
+                  <option value="update">تحديث</option>
+                  <option value="delete">حذف</option>
+                  <option value="package_activate">تفعيل باقة</option>
+                  <option value="package_cancel">إلغاء باقة</option>
+                  <option value="role_change">تغيير دور</option>
+                </select>
+                <button
+                  onClick={loadActivityLogs}
+                  disabled={loadingLogs}
+                  className="bg-primary hover:bg-sky-600 text-white px-4 py-2 rounded-xl"
+                >
+                  {loadingLogs ? '⏳' : '🔄'} تحديث
+                </button>
+              </div>
+            </div>
+
+            {loadingLogs ? (
+              <div className="text-center py-12">
+                <div className="w-10 h-10 border-4 border-sky-200 border-t-sky-500 rounded-full animate-spin mx-auto mb-4" />
+                <p className="text-gray-500">جارِ تحميل السجل...</p>
+              </div>
+            ) : activityLogs.length === 0 ? (
+              <div className="text-center py-12 bg-gray-50 rounded-2xl">
+                <p className="text-gray-500 text-lg">📭 لا توجد عمليات مسجلة بعد</p>
+                <p className="text-gray-400 text-sm mt-2">سيتم تسجيل جميع عمليات التفعيل والإيقاف والتعديل هنا</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {activityLogs
+                  .filter(log => logFilter === 'all' || log.action === logFilter)
+                  .map(log => (
+                    <div key={log.id} className={`bg-white rounded-xl shadow p-4 border-r-4 ${
+                      log.action === 'activate' || log.action === 'package_activate' ? 'border-green-500' :
+                      log.action === 'deactivate' || log.action === 'package_cancel' || log.action === 'delete' ? 'border-red-500' :
+                      log.action === 'create' ? 'border-blue-500' :
+                      'border-gray-300'
+                    }`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                              log.action === 'activate' ? 'bg-green-100 text-green-700' :
+                              log.action === 'deactivate' ? 'bg-red-100 text-red-700' :
+                              log.action === 'create' ? 'bg-blue-100 text-blue-700' :
+                              log.action === 'update' ? 'bg-yellow-100 text-yellow-700' :
+                              log.action === 'delete' ? 'bg-red-100 text-red-700' :
+                              log.action === 'package_activate' ? 'bg-amber-100 text-amber-700' :
+                              log.action === 'package_cancel' ? 'bg-orange-100 text-orange-700' :
+                              log.action === 'role_change' ? 'bg-purple-100 text-purple-700' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>
+                              {log.action === 'activate' && '✅ تفعيل'}
+                              {log.action === 'deactivate' && '⏸️ إيقاف'}
+                              {log.action === 'create' && '➕ إنشاء'}
+                              {log.action === 'update' && '✏️ تحديث'}
+                              {log.action === 'delete' && '🗑️ حذف'}
+                              {log.action === 'package_activate' && '✨ تفعيل باقة'}
+                              {log.action === 'package_cancel' && '📦 إلغاء باقة'}
+                              {log.action === 'role_change' && '🔄 تغيير دور'}
+                            </span>
+                            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
+                              {log.targetType === 'user' && '👤 مستخدم'}
+                              {log.targetType === 'restaurant' && '🏪 مطعم'}
+                              {log.targetType === 'order' && '📦 طلب'}
+                              {log.targetType === 'package' && '💎 باقة'}
+                              {log.targetType === 'settings' && '⚙️ إعدادات'}
+                            </span>
+                          </div>
+                          <p className="font-bold text-gray-800">{log.targetName || log.targetId}</p>
+                          {log.details && <p className="text-sm text-gray-600 mt-1">{log.details}</p>}
+                          <p className="text-xs text-gray-400 mt-2">
+                            بواسطة: {log.performedByName || 'غير معروف'}
+                          </p>
+                        </div>
+                        <div className="text-left text-xs text-gray-400 whitespace-nowrap">
+                          {log.createdAt ? new Date(log.createdAt).toLocaleDateString('ar-SA', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          }) : '-'}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* معلومات النظام */}
