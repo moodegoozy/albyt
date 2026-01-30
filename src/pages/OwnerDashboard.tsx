@@ -26,6 +26,7 @@ type Restaurant = {
   description?: string
   packageType?: 'free' | 'premium'
   packageExpiresAt?: any
+  packageSubscribedAt?: any
   isVerified?: boolean
   rating?: number
   deliveryRate?: number
@@ -37,6 +38,10 @@ type Restaurant = {
   hiringDescription?: string
   hiringContact?: string
   sellerTier?: string
+  commercialLicenseUrl?: string
+  licenseStatus?: 'pending' | 'approved' | 'rejected'
+  licenseNotes?: string
+  isOpen?: boolean
 }
 
 type Order = {
@@ -427,10 +432,127 @@ export const OwnerDashboard: React.FC = () => {
   const isPremium = restaurant?.packageType === 'premium'
   const tier = getTierInfo(restaurant?.sellerTier)
 
+  // حساب الأيام المتبقية للاشتراك
+  const getDaysRemaining = () => {
+    if (!restaurant?.packageExpiresAt) return null
+    const expiresAt = restaurant.packageExpiresAt?.toDate?.() || new Date(restaurant.packageExpiresAt)
+    const now = new Date()
+    const diff = expiresAt.getTime() - now.getTime()
+    return Math.ceil(diff / (1000 * 60 * 60 * 24))
+  }
+  const daysRemaining = getDaysRemaining()
+  const isExpiringSoon = daysRemaining !== null && daysRemaining <= 7 && daysRemaining > 0
+  const isExpired = daysRemaining !== null && daysRemaining <= 0
+
+  // حساب صافي الأرباح
+  const calculateNetProfit = () => {
+    const grossRevenue = stats.totalRevenue
+    const platformFee = stats.deliveredOrders * 3.75 // رسوم المنصة الثابتة
+    return grossRevenue - platformFee
+  }
+  const netProfit = calculateNetProfit()
+
   // ===== صفحة الباقة المجانية (البسيطة) =====
   if (!isPremium) {
     return (
       <div className="space-y-6 pb-20">
+        {/* ========== بطاقة حالة الاشتراك ========== */}
+        <div className="bg-gradient-to-br from-gray-100 to-gray-50 rounded-2xl p-4 border-2 border-gray-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-gray-300 rounded-xl flex items-center justify-center">
+                <Package className="w-6 h-6 text-gray-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-700">📦 الباقة المجانية</h3>
+                <p className="text-sm text-gray-500">المميزات الأساسية</p>
+              </div>
+            </div>
+            <Link
+              to="/owner/packages"
+              className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-4 py-2 rounded-xl text-sm font-bold hover:shadow-lg transition"
+            >
+              ترقية ✨
+            </Link>
+          </div>
+        </div>
+
+        {/* ========== بطاقة حالة الترخيص ========== */}
+        {restaurant?.commercialLicenseUrl ? (
+          <div className={`rounded-2xl p-4 border-2 ${
+            restaurant.licenseStatus === 'approved' ? 'bg-green-50 border-green-200' :
+            restaurant.licenseStatus === 'rejected' ? 'bg-red-50 border-red-200' :
+            'bg-yellow-50 border-yellow-200'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                restaurant.licenseStatus === 'approved' ? 'bg-green-500' :
+                restaurant.licenseStatus === 'rejected' ? 'bg-red-500' :
+                'bg-yellow-500'
+              }`}>
+                <Shield className="w-6 h-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className={`font-bold ${
+                  restaurant.licenseStatus === 'approved' ? 'text-green-700' :
+                  restaurant.licenseStatus === 'rejected' ? 'text-red-700' :
+                  'text-yellow-700'
+                }`}>
+                  {restaurant.licenseStatus === 'approved' && '✅ الترخيص مُعتمد'}
+                  {restaurant.licenseStatus === 'rejected' && '❌ الترخيص مرفوض'}
+                  {(!restaurant.licenseStatus || restaurant.licenseStatus === 'pending') && '⏳ الترخيص قيد المراجعة'}
+                </h3>
+                {restaurant.licenseStatus === 'rejected' && restaurant.licenseNotes && (
+                  <p className="text-sm text-red-600">{restaurant.licenseNotes}</p>
+                )}
+              </div>
+              {restaurant.licenseStatus === 'rejected' && (
+                <Link to="/owner/edit" className="text-red-600 text-sm font-bold underline">
+                  إعادة الرفع
+                </Link>
+              )}
+            </div>
+          </div>
+        ) : (
+          <Link 
+            to="/owner/edit"
+            className="block bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-200 rounded-2xl p-4 hover:shadow-lg transition"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Shield className="w-6 h-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-orange-700">📄 ارفع ترخيصك التجاري</h3>
+                <p className="text-sm text-orange-600">لتفعيل متجرك بالكامل</p>
+              </div>
+            </div>
+          </Link>
+        )}
+
+        {/* ========== ملخص الأرباح ========== */}
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-4 border-2 border-green-200">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center">
+              <Wallet className="w-5 h-5 text-white" />
+            </div>
+            <h3 className="font-bold text-green-700">💰 ملخص الأرباح</h3>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-green-600">{stats.totalRevenue.toFixed(0)}</p>
+              <p className="text-xs text-gray-500">إجمالي المبيعات (ر.س)</p>
+            </div>
+            <div className="bg-white rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-emerald-600">{netProfit.toFixed(0)}</p>
+              <p className="text-xs text-gray-500">صافي الأرباح (ر.س)</p>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 text-center mt-2">
+            * بعد خصم رسوم المنصة (3.75 ر.س لكل طلب)
+          </p>
+        </div>
+
         {/* دعوة للاشتراك في الباقة */}
         <div className="bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 rounded-3xl shadow-2xl p-6 text-white relative overflow-hidden">
           <div className="absolute inset-0 opacity-10">
@@ -687,6 +809,73 @@ export const OwnerDashboard: React.FC = () => {
 
       {/* ========== التنبيهات ========== */}
       <div className="px-4 space-y-3">
+        {/* تنبيه انتهاء الاشتراك */}
+        {(isExpired || isExpiringSoon) && (
+          <Link 
+            to="/owner/packages"
+            className={`block rounded-2xl p-4 shadow-lg ${
+              isExpired 
+                ? 'bg-gradient-to-r from-red-600 to-red-500 text-white' 
+                : 'bg-gradient-to-r from-amber-500 to-orange-500 text-white'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                <Crown className="w-6 h-6" />
+              </div>
+              <div className="flex-1">
+                {isExpired ? (
+                  <>
+                    <h3 className="font-bold text-lg">⚠️ انتهت صلاحية اشتراكك!</h3>
+                    <p className="text-white/80 text-sm">جدّد الآن للحفاظ على المزايا</p>
+                  </>
+                ) : (
+                  <>
+                    <h3 className="font-bold text-lg">⏰ باقي {daysRemaining} يوم على انتهاء اشتراكك</h3>
+                    <p className="text-white/80 text-sm">جدّد مبكراً واستمتع بالمزايا</p>
+                  </>
+                )}
+              </div>
+              <ArrowRight className="w-6 h-6" />
+            </div>
+          </Link>
+        )}
+
+        {/* حالة الترخيص */}
+        {restaurant?.commercialLicenseUrl && restaurant.licenseStatus !== 'approved' && (
+          <div className={`rounded-2xl p-4 ${
+            restaurant.licenseStatus === 'rejected' 
+              ? 'bg-red-50 border border-red-200' 
+              : 'bg-yellow-50 border border-yellow-200'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                restaurant.licenseStatus === 'rejected' ? 'bg-red-500' : 'bg-yellow-500'
+              }`}>
+                <Shield className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1">
+                {restaurant.licenseStatus === 'rejected' ? (
+                  <>
+                    <h3 className="font-bold text-red-700">❌ تم رفض الترخيص</h3>
+                    <p className="text-sm text-red-600">{restaurant.licenseNotes || 'يرجى رفع ترخيص صالح'}</p>
+                  </>
+                ) : (
+                  <>
+                    <h3 className="font-bold text-yellow-700">⏳ الترخيص قيد المراجعة</h3>
+                    <p className="text-sm text-yellow-600">سيتم إشعارك بالنتيجة قريباً</p>
+                  </>
+                )}
+              </div>
+              {restaurant.licenseStatus === 'rejected' && (
+                <Link to="/owner/edit" className="text-red-600 text-sm font-bold underline">
+                  إعادة الرفع
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* تنبيه الطلبات الجديدة */}
         {stats.pendingOrders > 0 && (
           <Link 
@@ -864,6 +1053,60 @@ export const OwnerDashboard: React.FC = () => {
               <p className="text-white/70 text-sm mb-1">الإجمالي</p>
               <p className="text-2xl font-bold">{stats.totalRevenue.toFixed(0)} <span className="text-sm">ر.س</span></p>
               <p className="text-white/60 text-xs mt-1">{stats.deliveredOrders} مكتمل</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ========== تقرير صافي الأرباح ========== */}
+      <div className="px-4">
+        <div className="bg-white rounded-2xl shadow-xl p-5 border border-gray-100">
+          <div className="flex items-center gap-2 mb-4">
+            <TrendingUp className="w-6 h-6 text-green-600" />
+            <h2 className="text-lg font-bold text-gray-900">📊 تقرير صافي الأرباح</h2>
+          </div>
+
+          <div className="space-y-3">
+            {/* إجمالي المبيعات */}
+            <div className="flex items-center justify-between py-2 border-b border-gray-100">
+              <span className="text-gray-600">إجمالي المبيعات</span>
+              <span className="font-bold text-gray-900">{stats.totalRevenue.toFixed(2)} ر.س</span>
+            </div>
+
+            {/* رسوم المنصة */}
+            <div className="flex items-center justify-between py-2 border-b border-gray-100">
+              <div>
+                <span className="text-gray-600">رسوم المنصة</span>
+                <p className="text-xs text-gray-400">({stats.deliveredOrders} طلب × 3.75 ر.س)</p>
+              </div>
+              <span className="font-bold text-red-600">- {(stats.deliveredOrders * 3.75).toFixed(2)} ر.س</span>
+            </div>
+
+            {/* صافي الأرباح */}
+            <div className="flex items-center justify-between py-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl px-3">
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center">
+                  <Wallet className="w-5 h-5 text-white" />
+                </div>
+                <span className="font-bold text-green-800">صافي الأرباح</span>
+              </div>
+              <span className="text-2xl font-bold text-green-600">{netProfit.toFixed(2)} ر.س</span>
+            </div>
+          </div>
+
+          {/* نسبة الربح */}
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-500">نسبة صافي الربح</span>
+              <span className={`font-bold ${netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {stats.totalRevenue > 0 ? ((netProfit / stats.totalRevenue) * 100).toFixed(1) : 0}%
+              </span>
+            </div>
+            <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all duration-500"
+                style={{ width: `${stats.totalRevenue > 0 ? Math.max(0, (netProfit / stats.totalRevenue) * 100) : 0}%` }}
+              />
             </div>
           </div>
         </div>
@@ -1084,7 +1327,18 @@ export const OwnerDashboard: React.FC = () => {
             </div>
             <div className="flex-1">
               <p className="font-semibold text-amber-700">باقتك الحالية</p>
-              <p className="text-xs text-amber-600">👑 الباقة المميزة</p>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-amber-600">👑 الباقة المميزة</span>
+                {daysRemaining !== null && (
+                  <span className={`px-2 py-0.5 rounded-full ${
+                    isExpired ? 'bg-red-100 text-red-600' :
+                    isExpiringSoon ? 'bg-yellow-100 text-yellow-600' :
+                    'bg-green-100 text-green-600'
+                  }`}>
+                    {isExpired ? 'منتهية' : `${daysRemaining} يوم`}
+                  </span>
+                )}
+              </div>
             </div>
           </Link>
 
@@ -1101,6 +1355,71 @@ export const OwnerDashboard: React.FC = () => {
               <p className="text-xs text-gray-500">شاهد متجرك كما يراه العملاء</p>
             </div>
           </Link>
+        </div>
+      </div>
+
+      {/* ========== حالة الاشتراك التفصيلية ========== */}
+      <div className="px-4">
+        <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Package className="w-5 h-5 text-amber-600" />
+            <h3 className="font-bold text-amber-800">📋 تفاصيل الاشتراك</h3>
+          </div>
+          
+          <div className="bg-white rounded-xl p-4 space-y-3">
+            {/* نوع الباقة */}
+            <div className="flex items-center justify-between">
+              <span className="text-gray-600">نوع الباقة</span>
+              <span className="bg-amber-500 text-white px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1">
+                <Crown className="w-4 h-4" />
+                مميزة
+              </span>
+            </div>
+
+            {/* تاريخ الاشتراك */}
+            {restaurant?.packageSubscribedAt && (
+              <div className="flex items-center justify-between">
+                <span className="text-gray-600">تاريخ الاشتراك</span>
+                <span className="text-gray-900 font-medium">
+                  {restaurant.packageSubscribedAt?.toDate?.()?.toLocaleDateString('ar-SA') || '-'}
+                </span>
+              </div>
+            )}
+
+            {/* تاريخ الانتهاء */}
+            {restaurant?.packageExpiresAt && (
+              <div className="flex items-center justify-between">
+                <span className="text-gray-600">تاريخ الانتهاء</span>
+                <span className={`font-medium ${isExpired ? 'text-red-600' : isExpiringSoon ? 'text-yellow-600' : 'text-gray-900'}`}>
+                  {restaurant.packageExpiresAt?.toDate?.()?.toLocaleDateString('ar-SA') || '-'}
+                </span>
+              </div>
+            )}
+
+            {/* الأيام المتبقية */}
+            {daysRemaining !== null && (
+              <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                <span className="text-gray-600">الأيام المتبقية</span>
+                <span className={`text-lg font-bold ${
+                  isExpired ? 'text-red-600' :
+                  isExpiringSoon ? 'text-yellow-600' :
+                  'text-green-600'
+                }`}>
+                  {isExpired ? 'منتهية' : `${daysRemaining} يوم`}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* زر التجديد */}
+          {(isExpired || isExpiringSoon) && (
+            <Link 
+              to="/owner/packages"
+              className="mt-4 block w-full text-center bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold py-3 rounded-xl hover:from-amber-600 hover:to-orange-600 transition"
+            >
+              🔄 تجديد الاشتراك الآن
+            </Link>
+          )}
         </div>
       </div>
 
