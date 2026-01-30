@@ -33,6 +33,14 @@ export default {
         'gradient-luxury': 'linear-gradient(135deg, #0EA5E9 0%, #38BDF8 50%, #7DD3FC 100%)',
         'gradient-white': 'linear-gradient(180deg, #FFFFFF 0%, #F0F9FF 100%)',
       },
+      screens: {
+        'xs': '375px',      // iPhone SE
+        'sm': '640px',      // موبايلات كبيرة
+        'md': '768px',      // آيباد
+        'lg': '1024px',     // آيباد برو / لابتوب
+        'xl': '1280px',     // شاشات كبيرة
+        '2xl': '1536px',    // شاشات عريضة
+      },
     },
   },
   plugins: [],

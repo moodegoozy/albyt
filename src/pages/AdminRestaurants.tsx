@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react'
-import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, serverTimestamp, query, where } from 'firebase/firestore'
 import { ref, uploadBytesResumable, getDownloadURL, getStorage } from 'firebase/storage'
 import { db, app } from '@/firebase'
 import { useAuth } from '@/auth'
@@ -32,16 +32,39 @@ export const AdminRestaurants: React.FC = () => {
 
   // تحميل المطاعم
   useEffect(() => {
-    loadRestaurants()
-  }, [])
+    if (user) {
+      loadRestaurants()
+    }
+  }, [user])
 
   const loadRestaurants = async () => {
+    if (!user) return
+    
     try {
-      const snap = await getDocs(collection(db, 'restaurants'))
-      const data = snap.docs.map(d => ({
-        id: d.id,
-        ...d.data(),
-      } as Restaurant))
+      // المشرف يرى فقط المطاعم المسجلة بواسطته
+      // المطور يرى كل المطاعم
+      let data: Restaurant[] = []
+      
+      if (role === 'developer') {
+        // المطور يرى كل المطاعم
+        const snap = await getDocs(collection(db, 'restaurants'))
+        data = snap.docs.map(d => ({
+          id: d.id,
+          ...d.data(),
+        } as Restaurant))
+      } else {
+        // المشرف يرى فقط المطاعم التابعة له
+        const myRestaurantsQuery = query(
+          collection(db, 'restaurants'),
+          where('referredBy', '==', user.uid)
+        )
+        const snap = await getDocs(myRestaurantsQuery)
+        data = snap.docs.map(d => ({
+          id: d.id,
+          ...d.data(),
+        } as Restaurant))
+      }
+      
       setRestaurants(data)
     } catch (err) {
       toast.error('خطأ في تحميل المطاعم')

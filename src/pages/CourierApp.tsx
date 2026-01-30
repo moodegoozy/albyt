@@ -4,16 +4,23 @@ import { db } from '@/firebase'
 import { useAuth } from '@/auth'
 import { Order } from '@/types'
 import { useNavigate } from 'react-router-dom'
+import { useToast } from '@/components/ui/Toast'
 import { 
   MessageCircle, Package, MapPin, Truck, CheckCircle, 
-  Clock, Navigation, Phone, DollarSign, Sparkles 
+  Clock, Navigation, Phone, DollarSign, Sparkles, AlertCircle 
 } from 'lucide-react'
+
+// رسوم المنصة على كل طلب توصيل (تُخصم من المندوب)
+const COURIER_PLATFORM_FEE = 3.75
 
 export const CourierApp: React.FC = () => {
   const { user } = useAuth()
   const nav = useNavigate()
+  const toast = useToast()
   const [ready, setReady] = useState<Order[]>([])
   const [mine, setMine] = useState<Order[]>([])
+  const [deliveryFees, setDeliveryFees] = useState<Record<string, string>>({})
+  const [savingFee, setSavingFee] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user?.uid) return
@@ -38,9 +45,46 @@ export const CourierApp: React.FC = () => {
     return () => { u1(); u2() }
   }, [user?.uid])
 
-  const take = async (id: string) => {
+  const take = async (id: string, order: Order) => {
     if (!user) return
-    await updateDoc(doc(db, 'orders', id), { courierId: user!.uid, status: 'out_for_delivery', updatedAt: serverTimestamp() })
+    
+    // التحقق من تحديد رسوم التوصيل
+    if (!order.deliveryFeeSetBy) {
+      const feeStr = deliveryFees[id]
+      const fee = parseFloat(feeStr)
+      
+      if (isNaN(fee) || fee < 0) {
+        toast.error('حدد رسوم التوصيل أولاً')
+        return
+      }
+
+      setSavingFee(id)
+      const newTotal = order.subtotal + fee
+
+      // تحديد رسوم التوصيل واستلام الطلب معاً
+      await updateDoc(doc(db, 'orders', id), { 
+        courierId: user.uid, 
+        status: 'out_for_delivery',
+        deliveryFee: fee,
+        deliveryFeeSetBy: 'courier',
+        deliveryFeeSetAt: serverTimestamp(),
+        total: newTotal,
+        courierPlatformFee: COURIER_PLATFORM_FEE, // رسوم المنصة على المندوب
+        updatedAt: serverTimestamp() 
+      })
+      
+      setSavingFee(null)
+      toast.success(`تم استلام الطلب! رسوم التوصيل: ${fee} ر.س (- ${COURIER_PLATFORM_FEE} رسوم منصة)`)
+    } else {
+      // رسوم التوصيل محددة مسبقاً من الأسرة
+      await updateDoc(doc(db, 'orders', id), { 
+        courierId: user.uid, 
+        status: 'out_for_delivery',
+        courierPlatformFee: COURIER_PLATFORM_FEE,
+        updatedAt: serverTimestamp() 
+      })
+      toast.success('تم استلام الطلب!')
+    }
   }
 
   const delivered = async (id: string) => {
@@ -88,18 +132,71 @@ export const CourierApp: React.FC = () => {
                     <MapPin className="w-4 h-4" />
                     <span className="truncate">{o.address}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-green-600 font-bold text-lg mb-3">
-                    <DollarSign className="w-5 h-5" />
-                    <span>{o.total?.toFixed?.(2)} ر.س</span>
+                  
+                  {/* عرض الأسعار */}
+                  <div className="bg-gray-50 rounded-xl p-3 mb-3 space-y-1">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">سعر المنتجات</span>
+                      <span className="font-semibold">{o.subtotal?.toFixed(2)} ر.س</span>
+                    </div>
+                    {o.deliveryFeeSetBy ? (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">رسوم التوصيل</span>
+                        <span className="font-semibold text-green-600">{o.deliveryFee?.toFixed(2)} ر.س</span>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">رسوم التوصيل</span>
+                        <span className="text-amber-600 text-xs">تحددها أنت</span>
+                      </div>
+                    )}
+                    <div className="h-px bg-gray-200 my-1"></div>
+                    <div className="flex justify-between">
+                      <span className="font-bold text-gray-800">الإجمالي</span>
+                      <span className="font-bold text-green-600">{o.total?.toFixed(2)} ر.س</span>
+                    </div>
                   </div>
+
+                  {/* تحديد رسوم التوصيل إذا لم تُحدد */}
+                  {!o.deliveryFeeSetBy && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertCircle className="w-4 h-4 text-amber-600" />
+                        <span className="font-semibold text-amber-800 text-sm">حدد رسوم التوصيل</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          placeholder="مثال: 10"
+                          value={deliveryFees[o.id] || ''}
+                          onChange={(e) => setDeliveryFees(prev => ({ ...prev, [o.id]: e.target.value }))}
+                          className="flex-1 px-3 py-2 rounded-lg border border-amber-200 focus:border-amber-400 focus:outline-none text-gray-800 text-sm"
+                        />
+                        <span className="flex items-center text-gray-500 text-sm">ر.س</span>
+                      </div>
+                      <p className="text-xs text-amber-700 mt-2">
+                        ⚠️ سيُخصم {COURIER_PLATFORM_FEE} ر.س رسوم منصة من أرباحك
+                      </p>
+                    </div>
+                  )}
+
                   <button 
-                    onClick={() => take(o.id)} 
+                    onClick={() => take(o.id, o)}
+                    disabled={savingFee === o.id}
                     className="w-full py-3 rounded-xl bg-gradient-to-r from-gray-800 to-gray-900 
                                text-white font-bold flex items-center justify-center gap-2
-                               hover:from-gray-900 hover:to-black transition-all shadow-lg hover:shadow-xl"
+                               hover:from-gray-900 hover:to-black transition-all shadow-lg hover:shadow-xl disabled:opacity-50"
                   >
-                    <Truck className="w-5 h-5" />
-                    <span>استلام الطلب 🚗</span>
+                    {savingFee === o.id ? (
+                      <span>جارِ الحفظ...</span>
+                    ) : (
+                      <>
+                        <Truck className="w-5 h-5" />
+                        <span>استلام الطلب 🚗</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/firebase'
+import { useAuth } from '@/auth'
 import { RoleGate } from '@/routes/RoleGate'
 import { useToast } from '@/components/ui/Toast'
-import { Order, OrderStatus } from '@/types'
+import { Order, OrderStatus, Restaurant } from '@/types'
 
 const statusLabels: Record<OrderStatus, string> = {
   pending: '⏳ قيد المراجعة',
@@ -16,15 +17,42 @@ const statusLabels: Record<OrderStatus, string> = {
 }
 
 export const AdminOrders: React.FC = () => {
+  const { user, role } = useAuth()
   const toast = useToast()
   const [orders, setOrders] = useState<Order[]>([])
+  const [allOrders, setAllOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all')
+  const [myRestaurantIds, setMyRestaurantIds] = useState<string[]>([])
+
+  // تحميل المطاعم التابعة للمشرف أولاً
+  useEffect(() => {
+    if (!user) return
+    
+    const loadMyRestaurants = async () => {
+      if (role === 'developer') {
+        // المطور يرى كل الطلبات
+        setMyRestaurantIds([])
+      } else {
+        // المشرف يحصل على معرفات مطاعمه
+        const myRestaurantsQuery = query(
+          collection(db, 'restaurants'),
+          where('referredBy', '==', user.uid)
+        )
+        const snap = await getDocs(myRestaurantsQuery)
+        const ids = snap.docs.map(d => d.id)
+        setMyRestaurantIds(ids)
+      }
+    }
+    
+    loadMyRestaurants()
+  }, [user, role])
 
   // تحميل الطلبات
   useEffect(() => {
+    if (!user) return
     loadOrders()
-  }, [statusFilter])
+  }, [statusFilter, user, role, myRestaurantIds])
 
   const loadOrders = async () => {
     try {
@@ -40,7 +68,17 @@ export const AdminOrders: React.FC = () => {
       }
 
       const snap = await getDocs(q)
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Order))
+      let data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Order))
+      
+      // فلترة الطلبات للمشرف (فقط طلبات مطاعمه)
+      if (role !== 'developer' && myRestaurantIds.length > 0) {
+        data = data.filter(order => myRestaurantIds.includes(order.restaurantId || ''))
+      } else if (role !== 'developer' && myRestaurantIds.length === 0) {
+        // المشرف ليس لديه مطاعم
+        data = []
+      }
+      
+      setAllOrders(data)
       setOrders(data)
     } catch (err) {
       toast.error('خطأ في تحميل الطلبات')

@@ -53,6 +53,9 @@ type Item = {
   categoryId?: string
   ownerId?: string
   file?: File | null
+  // الخصومات
+  discountPercent?: number // نسبة الخصم (0-100)
+  discountExpiresAt?: Date | string // تاريخ انتهاء الخصم
 
   // للواجهة المتفائلة
   _tempId?: string
@@ -66,6 +69,8 @@ const emptyItem = (): Item => ({
   price: 0,
   available: true,
   file: null,
+  discountPercent: 0,
+  discountExpiresAt: '',
 })
 
 /** ضغط خفيف للصورة قبل الرفع (اختياري) */
@@ -200,6 +205,9 @@ export const ManageMenu: React.FC = () => {
         available: optimistic.available,
         ownerId: user.uid,
         ...(optimistic.categoryId ? { categoryId: optimistic.categoryId } : {}),
+        // حقول الخصم
+        ...(form.discountPercent && form.discountPercent > 0 ? { discountPercent: form.discountPercent } : {}),
+        ...(form.discountExpiresAt ? { discountExpiresAt: new Date(form.discountExpiresAt) } : {}),
       }
       const created = await addDoc(collection(db, 'menuItems'), payload)
 
@@ -323,6 +331,9 @@ export const ManageMenu: React.FC = () => {
         price,
         available: editForm.available,
         ...(imageUrl ? { imageUrl } : {}),
+        // تحديث حقول الخصم
+        discountPercent: editForm.discountPercent || 0,
+        ...(editForm.discountExpiresAt ? { discountExpiresAt: new Date(editForm.discountExpiresAt) } : { discountExpiresAt: null }),
       })
 
       // تحديث الـ UI بالصورة الجديدة
@@ -401,6 +412,42 @@ export const ManageMenu: React.FC = () => {
             onChange={e => setForm({ ...form, price: Number(e.target.value) })}
           />
 
+          {/* قسم الخصم */}
+          <div className="border border-dashed border-amber-300 rounded-xl p-4 bg-amber-50/50 space-y-3">
+            <h3 className="text-sm font-bold text-amber-700 flex items-center gap-2">
+              🏷️ إضافة خصم (اختياري)
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">نسبة الخصم %</label>
+                <input
+                  className="w-full border rounded-xl p-3"
+                  placeholder="مثال: 20"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={form.discountPercent || ''}
+                  onChange={e => setForm({ ...form, discountPercent: Number(e.target.value) || 0 })}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">ينتهي في</label>
+                <input
+                  className="w-full border rounded-xl p-3"
+                  type="date"
+                  value={form.discountExpiresAt ? (typeof form.discountExpiresAt === 'string' ? form.discountExpiresAt : new Date(form.discountExpiresAt).toISOString().split('T')[0]) : ''}
+                  onChange={e => setForm({ ...form, discountExpiresAt: e.target.value })}
+                />
+              </div>
+            </div>
+            {form.discountPercent && form.discountPercent > 0 && (
+              <div className="text-sm bg-green-100 text-green-700 p-2 rounded-lg">
+                السعر بعد الخصم: <strong>{(form.price - (form.price * (form.discountPercent / 100))).toFixed(2)} ر.س</strong>
+                <span className="line-through text-gray-400 mr-2">{form.price.toFixed(2)} ر.س</span>
+              </div>
+            )}
+          </div>
+
           <input
             ref={fileRef}
             className="w-full border rounded-xl p-3"
@@ -476,6 +523,51 @@ export const ManageMenu: React.FC = () => {
                     onChange={e => setEditForm({ ...editForm, price: Number(e.target.value) })}
                   />
 
+                  {/* قسم الخصم في التعديل */}
+                  <div className="border border-dashed border-amber-300 rounded-xl p-4 bg-amber-50/50 space-y-3">
+                    <h3 className="text-sm font-bold text-amber-700 flex items-center gap-2">
+                      🏷️ الخصم
+                    </h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-gray-600 mb-1 block">نسبة الخصم %</label>
+                        <input
+                          className="w-full border rounded-xl p-3"
+                          placeholder="مثال: 20"
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={editForm.discountPercent || ''}
+                          onChange={e => setEditForm({ ...editForm, discountPercent: Number(e.target.value) || 0 })}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-600 mb-1 block">ينتهي في</label>
+                        <input
+                          className="w-full border rounded-xl p-3"
+                          type="date"
+                          value={editForm.discountExpiresAt ? (typeof editForm.discountExpiresAt === 'string' ? editForm.discountExpiresAt : new Date(editForm.discountExpiresAt).toISOString().split('T')[0]) : ''}
+                          onChange={e => setEditForm({ ...editForm, discountExpiresAt: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    {editForm.discountPercent && editForm.discountPercent > 0 && (
+                      <div className="text-sm bg-green-100 text-green-700 p-2 rounded-lg">
+                        السعر بعد الخصم: <strong>{(editForm.price - (editForm.price * (editForm.discountPercent / 100))).toFixed(2)} ر.س</strong>
+                        <span className="line-through text-gray-400 mr-2">{editForm.price.toFixed(2)} ر.س</span>
+                      </div>
+                    )}
+                    {editForm.discountPercent && editForm.discountPercent > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setEditForm({ ...editForm, discountPercent: 0, discountExpiresAt: '' })}
+                        className="text-xs text-red-500 hover:text-red-700"
+                      >
+                        ❌ إزالة الخصم
+                      </button>
+                    )}
+                  </div>
+
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
@@ -527,7 +619,23 @@ export const ManageMenu: React.FC = () => {
                   <div className="flex-1">
                     <div className="font-bold">{it.name}</div>
                     {it.desc && <div className="text-sm text-gray-600">{it.desc}</div>}
-                    <div className="font-semibold mt-1">{it.price?.toFixed?.(2)} ر.س</div>
+                    {/* عرض السعر مع الخصم */}
+                    {(() => {
+                      const hasDiscount = it.discountPercent && it.discountPercent > 0
+                      const expiryDate = (it.discountExpiresAt as any)?.toDate?.() || (it.discountExpiresAt ? new Date(it.discountExpiresAt as string) : null)
+                      const isValid = !expiryDate || expiryDate > new Date()
+                      
+                      if (hasDiscount && isValid) {
+                        return (
+                          <div className="mt-1 flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-green-600">{(it.price - (it.price * ((it.discountPercent || 0) / 100))).toFixed(2)} ر.س</span>
+                            <span className="text-sm text-gray-400 line-through">{it.price?.toFixed?.(2)} ر.س</span>
+                            <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">خصم {it.discountPercent}%</span>
+                          </div>
+                        )
+                      }
+                      return <div className="font-semibold mt-1">{it.price?.toFixed?.(2)} ر.س</div>
+                    })()}
                     {it._optimistic && <div className="text-xs text-yellow-600 mt-1">يتم الحفظ…</div>}
                   </div>
 

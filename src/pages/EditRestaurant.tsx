@@ -14,6 +14,8 @@ type RestaurantForm = {
   city: string
   location: string
   logoUrl?: string
+  isOpen?: boolean // هل المتجر مفتوح للطلبات
+  allowDelivery?: boolean // السماح بالتوصيل
   allowPickup?: boolean // السماح بالاستلام من المطعم
   commercialLicenseUrl?: string
   licenseStatus?: 'pending' | 'approved' | 'rejected'
@@ -38,6 +40,8 @@ export const EditRestaurant: React.FC = () => {
     city: "",
     location: "",
     logoUrl: "",
+    isOpen: true, // المتجر مفتوح افتراضياً
+    allowDelivery: true, // التوصيل مفعل افتراضياً
     allowPickup: false,
     commercialLicenseUrl: "",
     licenseStatus: undefined,
@@ -89,6 +93,8 @@ export const EditRestaurant: React.FC = () => {
             city: data.city ?? "",
             location: data.location ?? "",
             logoUrl: data.logoUrl ?? "",
+            isOpen: (data as any).isOpen ?? true,
+            allowDelivery: (data as any).allowDelivery ?? true,
             allowPickup: (data as any).allowPickup ?? false,
             commercialLicenseUrl: (data as any).commercialLicenseUrl ?? "",
             licenseStatus: (data as any).licenseStatus,
@@ -227,8 +233,8 @@ export const EditRestaurant: React.FC = () => {
         }
       }
 
-      // حفظ بيانات المطعم الأساسية (بدون بيانات البنك)
-      const { bankName, bankAccountName, bankAccountNumber, ...publicData } = form
+      // حفظ بيانات المطعم الأساسية (اسم البنك فقط للعرض، باقي البيانات الحساسة في subcollection)
+      const { bankAccountName, bankAccountNumber, ...publicData } = form
       
       await setDoc(
         doc(db, "restaurants", user.uid),
@@ -242,11 +248,11 @@ export const EditRestaurant: React.FC = () => {
       )
 
       // حفظ بيانات البنك في subcollection محمي منفصل
-      if (bankName || bankAccountName || bankAccountNumber) {
+      if (form.bankName || bankAccountName || bankAccountNumber) {
         await setDoc(
           doc(db, "restaurants", user.uid, "private", "bankInfo"),
           {
-            bankName: bankName || "",
+            bankName: form.bankName || "",
             bankAccountName: bankAccountName || "",
             bankAccountNumber: bankAccountNumber || "",
           },
@@ -347,6 +353,64 @@ export const EditRestaurant: React.FC = () => {
             <Store className="w-5 h-5 text-green-500" />
             خيارات الطلب
           </h2>
+          
+          {/* زر حالة المتجر: متاح/مغلق */}
+          <div className={`flex items-center justify-between p-4 rounded-xl mb-3 ${form.isOpen ? 'bg-green-50 border-2 border-green-200' : 'bg-red-50 border-2 border-red-200'}`}>
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${form.isOpen ? 'bg-green-500' : 'bg-red-500'}`}>
+                {form.isOpen ? (
+                  <Store className="w-5 h-5 text-white" />
+                ) : (
+                  <Lock className="w-5 h-5 text-white" />
+                )}
+              </div>
+              <div>
+                <p className={`font-semibold ${form.isOpen ? 'text-green-800' : 'text-red-800'}`}>
+                  {form.isOpen ? '✓ المتجر متاح' : '✕ المتجر مغلق'}
+                </p>
+                <p className="text-sm text-gray-500">
+                  {form.isOpen ? 'العملاء يمكنهم الطلب الآن' : 'الطلبات معطلة مؤقتاً'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setForm(p => ({ ...p, isOpen: !p.isOpen }))}
+              className={`relative w-14 h-8 rounded-full transition-colors ${form.isOpen ? 'bg-green-500' : 'bg-red-400'}`}
+            >
+              <span className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow transition-transform ${form.isOpen ? 'right-1' : 'left-1'}`} />
+            </button>
+          </div>
+          {!form.isOpen && (
+            <p className="mb-3 text-sm text-red-600 bg-red-50 p-2 rounded-lg">
+              ⚠️ المتجر مغلق - العملاء لن يتمكنوا من إضافة أصناف للسلة
+            </p>
+          )}
+
+          {/* زر تفعيل التوصيل */}
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl mb-3">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${form.allowDelivery ? 'bg-sky-500' : 'bg-gray-300'}`}>
+                <MapPin className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-800">التوصيل للعملاء</p>
+                <p className="text-sm text-gray-500">توصيل الطلبات لموقع العميل</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setForm(p => ({ ...p, allowDelivery: !p.allowDelivery }))}
+              className={`relative w-14 h-8 rounded-full transition-colors ${form.allowDelivery ? 'bg-sky-500' : 'bg-gray-300'}`}
+            >
+              <span className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow transition-transform ${form.allowDelivery ? 'right-1' : 'left-1'}`} />
+            </button>
+          </div>
+          {form.allowDelivery && (
+            <p className="mb-3 text-sm text-sky-600 bg-sky-50 p-2 rounded-lg">
+              🚗 التوصيل مفعّل - ستظهر علامة "توصيل" بجانب مطعمك للعملاء
+            </p>
+          )}
           
           {/* زر تفعيل الاستلام من المطعم */}
           <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">

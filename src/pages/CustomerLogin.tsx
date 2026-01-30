@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from 'firebase/auth'
 import { auth, db } from '@/firebase'
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { Link, useNavigate } from 'react-router-dom'
 import { Phone, KeyRound, LogIn, ArrowRight, RefreshCw } from 'lucide-react'
 import { useDialog } from '@/components/ui/ConfirmDialog'
@@ -136,7 +136,9 @@ export const CustomerLogin: React.FC = () => {
       // التحقق من وجود المستخدم
       const userDoc = await getDoc(doc(db, 'users', uid))
       
+      let isNewUser = false
       if (!userDoc.exists()) {
+        isNewUser = true
         // إنشاء حساب جديد للعميل
         await setDoc(doc(db, 'users', uid), {
           phone: userPhone,
@@ -149,8 +151,41 @@ export const CustomerLogin: React.FC = () => {
         dialog.success('أهلاً بعودتك! 👋')
       }
 
-      // التوجيه حسب الدور
+      // 📍 تحديد الموقع تلقائياً وحفظه
       const userData = userDoc.exists() ? userDoc.data() : { role: 'customer' }
+      const hasLocation = userData?.savedLocation || userData?.location
+      
+      // إذا لم يكن عنده موقع محفوظ، نحاول تحديده تلقائياً
+      if (!hasLocation && (userData.role === 'customer' || isNewUser)) {
+        try {
+          if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+              async (pos) => {
+                const autoLocation = {
+                  lat: pos.coords.latitude,
+                  lng: pos.coords.longitude,
+                  address: 'موقعي الحالي'
+                }
+                // حفظ الموقع في الحساب
+                await updateDoc(doc(db, 'users', uid), {
+                  savedLocation: autoLocation,
+                  location: { lat: autoLocation.lat, lng: autoLocation.lng }
+                })
+                // حفظ في sessionStorage
+                sessionStorage.setItem('broast_session_location', JSON.stringify({ lat: autoLocation.lat, lng: autoLocation.lng }))
+              },
+              (err) => {
+                console.warn('تعذر تحديد الموقع تلقائياً:', err)
+              },
+              { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            )
+          }
+        } catch (locErr) {
+          console.warn('خطأ في تحديد الموقع:', locErr)
+        }
+      }
+
+      // التوجيه حسب الدور
       if (userData.role === 'owner') {
         nav('/owner')
       } else if (userData.role === 'admin') {

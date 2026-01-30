@@ -17,9 +17,9 @@ const SectionCard: React.FC<{
 }> = ({ to, icon, label, color, emoji }) => (
   <Link
     to={to}
-    className={`flex flex-col items-center justify-center gap-2 p-4 sm:p-5 rounded-2xl bg-gradient-to-br ${color} text-white shadow-lg active:scale-95 transition-all duration-200`}
+    className={`flex flex-col items-center justify-center gap-2 p-4 sm:p-5 rounded-2xl bg-gradient-to-br ${color} text-white shadow-lg shadow-sky-200/30 active:scale-95 transition-all duration-200 backdrop-blur-sm`}
   >
-    <div className="w-12 h-12 sm:w-14 sm:h-14 bg-white/20 rounded-xl flex items-center justify-center">
+    <div className="w-12 h-12 sm:w-14 sm:h-14 bg-white/25 backdrop-blur rounded-xl flex items-center justify-center">
       {emoji ? <span className="text-2xl sm:text-3xl">{emoji}</span> : icon}
     </div>
     <span className="font-bold text-sm sm:text-base text-center leading-tight">{label}</span>
@@ -134,7 +134,7 @@ export const Landing: React.FC = () => {
           </div>
           <button
             onClick={logout}
-            className="w-full py-3 rounded-xl bg-white border border-gray-200 text-gray-500 font-semibold text-sm active:bg-gray-100 transition"
+            className="w-full py-3 rounded-xl glass-light text-sky-600 font-semibold text-sm active:bg-white/70 transition"
           >
             🚪 خروج
           </button>
@@ -190,7 +190,7 @@ export const Landing: React.FC = () => {
           </div>
           <button
             onClick={logout}
-            className="w-full py-3 rounded-xl bg-white border border-gray-200 text-gray-500 font-semibold text-sm active:bg-gray-100 transition"
+            className="w-full py-3 rounded-xl glass-light text-sky-600 font-semibold text-sm active:bg-white/70 transition"
           >
             🚪 خروج
           </button>
@@ -225,7 +225,7 @@ export const Landing: React.FC = () => {
           </div>
           <button
             onClick={logout}
-            className="w-full py-3 rounded-xl bg-white border border-gray-200 text-gray-500 font-semibold text-sm active:bg-gray-100 transition"
+            className="w-full py-3 rounded-xl glass-light text-sky-600 font-semibold text-sm active:bg-white/70 transition"
           >
             🚪 خروج
           </button>
@@ -274,7 +274,7 @@ export const Landing: React.FC = () => {
           </div>
           <button
             onClick={logout}
-            className="w-full py-3 rounded-xl bg-white border border-gray-200 text-gray-500 font-semibold text-sm active:bg-gray-100 transition"
+            className="w-full py-3 rounded-xl glass-light text-sky-600 font-semibold text-sm active:bg-white/70 transition"
           >
             🚪 خروج
           </button>
@@ -316,7 +316,7 @@ export const Landing: React.FC = () => {
           </div>
           <button
             onClick={logout}
-            className="w-full py-3 rounded-xl bg-white border border-gray-200 text-gray-500 font-semibold text-sm active:bg-gray-100 transition"
+            className="w-full py-3 rounded-xl glass-light text-sky-600 font-semibold text-sm active:bg-white/70 transition"
           >
             🚪 خروج
           </button>

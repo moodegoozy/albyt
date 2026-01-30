@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Building2, ShoppingCart, Wallet, BarChart3, User as UserIcon, ClipboardList, CheckCircle } from 'lucide-react'
+import { Building2, ShoppingCart, Wallet, BarChart3, User as UserIcon, ClipboardList, CheckCircle, Store, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAuth } from '@/auth'
 import { RoleGate } from '@/routes/RoleGate'
 import { collection, getDocs, doc, getDoc, query, where, updateDoc, serverTimestamp, limit, getCountFromServer } from 'firebase/firestore'
@@ -31,7 +31,7 @@ type AdminStats = {
   pendingOrders: number
 }
 
-type TabType = 'dashboard' | 'profile' | 'tasks'
+type TabType = 'dashboard' | 'profile' | 'tasks' | 'myRestaurants'
 
 export const AdminDashboard: React.FC = () => {
   const { user, role } = useAuth()
@@ -48,6 +48,9 @@ export const AdminDashboard: React.FC = () => {
   const [adminData, setAdminData] = useState<User | null>(null)
   const [myTasks, setMyTasks] = useState<Task[]>([])
   const [taskFilter, setTaskFilter] = useState<'all' | 'pending' | 'in_progress' | 'completed'>('all')
+  // قائمة المطاعم التابعة للمشرف
+  const [myRestaurants, setMyRestaurants] = useState<Restaurant[]>([])
+  const [expandedRestaurant, setExpandedRestaurant] = useState<string | null>(null)
 
   // تحميل الإحصائيات
   useEffect(() => {
@@ -55,27 +58,41 @@ export const AdminDashboard: React.FC = () => {
 
     (async () => {
       try {
-        // ✅ استخدام getCountFromServer للعد بدلاً من جلب كل الوثائق
-        const restaurantsCount = await getCountFromServer(collection(db, 'restaurants'))
-        const totalRestaurants = restaurantsCount.data().count
-
-        // ✅ جلب الطلبات المعلقة فقط مع limit
-        const pendingQuery = query(
-          collection(db, 'orders'), 
-          where('status', '==', 'pending'),
-          limit(100)
+        // ✅ جلب المطاعم التابعة للمشرف فقط (referredBy = user.uid)
+        const myRestaurantsQuery = query(
+          collection(db, 'restaurants'),
+          where('referredBy', '==', user.uid)
         )
-        const pendingSnap = await getDocs(pendingQuery)
-        const pendingOrders = pendingSnap.size
-        
-        // جلب عدد الطلبات الكلي باستخدام count
-        const ordersCount = await getCountFromServer(collection(db, 'orders'))
-        const totalOrders = ordersCount.data().count
-        
-        // حساب الإيرادات من آخر 100 طلب فقط (للسرعة)
-        const recentOrdersQuery = query(collection(db, 'orders'), limit(100))
-        const recentSnap = await getDocs(recentOrdersQuery)
-        const totalEarnings = recentSnap.docs.reduce((sum, d) => sum + (d.data().deliveryFee || 0), 0)
+        const myRestaurantsSnap = await getDocs(myRestaurantsQuery)
+        const myRestaurantsData = myRestaurantsSnap.docs.map(d => ({
+          id: d.id,
+          ...d.data()
+        } as Restaurant))
+        setMyRestaurants(myRestaurantsData)
+        const totalRestaurants = myRestaurantsData.length
+
+        // ✅ جلب الطلبات للمطاعم التابعة للمشرف فقط
+        const restaurantIds = myRestaurantsData.map(r => r.id)
+        let pendingOrders = 0
+        let totalOrders = 0
+        let totalEarnings = 0
+
+        if (restaurantIds.length > 0) {
+          // جلب الطلبات المعلقة للمطاعم التابعة
+          const pendingQuery = query(
+            collection(db, 'orders'),
+            where('status', '==', 'pending'),
+            limit(100)
+          )
+          const pendingSnap = await getDocs(pendingQuery)
+          pendingOrders = pendingSnap.docs.filter(d => restaurantIds.includes(d.data().restaurantId)).length
+
+          // جلب كل الطلبات للمطاعم التابعة
+          const ordersSnap = await getDocs(collection(db, 'orders'))
+          const myOrders = ordersSnap.docs.filter(d => restaurantIds.includes(d.data().restaurantId))
+          totalOrders = myOrders.length
+          totalEarnings = myOrders.reduce((sum, d) => sum + (d.data().deliveryFee || 0), 0)
+        }
 
         // جلب محفظة الإدمن
         try {
@@ -170,7 +187,7 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         {/* التبويبات */}
-        <div className="flex justify-center gap-4 mb-6">
+        <div className="flex justify-center gap-4 mb-6 flex-wrap">
           <button
             onClick={() => setActiveTab('dashboard')}
             className={`px-6 py-3 rounded-xl font-bold transition flex items-center gap-2 ${
@@ -181,6 +198,20 @@ export const AdminDashboard: React.FC = () => {
           >
             <BarChart3 className="w-5 h-5" />
             لوحة التحكم
+          </button>
+          <button
+            onClick={() => setActiveTab('myRestaurants')}
+            className={`px-6 py-3 rounded-xl font-bold transition flex items-center gap-2 relative ${
+              activeTab === 'myRestaurants'
+                ? 'bg-primary text-white shadow-lg'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            <Store className="w-5 h-5" />
+            مطاعمي
+            <span className="bg-white/20 text-xs px-2 py-0.5 rounded-full">
+              {myRestaurants.length}
+            </span>
           </button>
           <button
             onClick={() => setActiveTab('profile')}
@@ -210,6 +241,136 @@ export const AdminDashboard: React.FC = () => {
             )}
           </button>
         </div>
+
+        {/* محتوى التبويب: مطاعمي */}
+        {activeTab === 'myRestaurants' && (
+          <div className="space-y-6">
+            {/* إحصائيات سريعة */}
+            <div className="bg-gradient-to-r from-primary to-sky-700 rounded-2xl shadow-lg p-6 text-white">
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div>
+                  <p className="text-sm opacity-90">إجمالي مطاعمي المسجلة</p>
+                  <h2 className="text-4xl font-bold">{myRestaurants.length}</h2>
+                  <p className="text-sm opacity-75 mt-2">💰 ستحصلين على عمولة من كل طلب لهذه المطاعم</p>
+                </div>
+                <Store className="w-16 h-16 opacity-80" />
+              </div>
+            </div>
+
+            {/* قائمة المطاعم */}
+            <div className="bg-white rounded-2xl shadow-lg p-6">
+              <h2 className="text-2xl font-bold text-primary mb-6 flex items-center gap-2">
+                <Store className="w-6 h-6" />
+                المطاعم المسجلة بواسطتي
+              </h2>
+
+              {myRestaurants.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <p className="text-5xl mb-4">🏪</p>
+                  <p className="text-lg font-semibold">لم تقومي بتسجيل أي مطعم بعد</p>
+                  <p className="text-sm mt-2">اضغطي على "إضافة مطعم جديد" لبدء تسجيل المطاعم</p>
+                  <Link
+                    to="/admin/add-restaurant"
+                    className="inline-block mt-4 bg-primary hover:bg-red-900 text-white px-6 py-3 rounded-xl font-semibold transition"
+                  >
+                    ➕ إضافة مطعم جديد
+                  </Link>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {myRestaurants.map(restaurant => (
+                    <div 
+                      key={restaurant.id} 
+                      className="border-2 rounded-2xl overflow-hidden hover:border-primary transition"
+                    >
+                      {/* رأس المطعم */}
+                      <div 
+                        className="p-4 cursor-pointer hover:bg-gray-50 flex items-center justify-between"
+                        onClick={() => setExpandedRestaurant(expandedRestaurant === restaurant.id ? null : restaurant.id)}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-14 h-14 rounded-xl bg-gray-100 overflow-hidden flex-shrink-0">
+                            {restaurant.logoUrl ? (
+                              <img src={restaurant.logoUrl} alt={restaurant.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-2xl">🍽️</div>
+                            )}
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-lg text-gray-800">{restaurant.name}</h3>
+                            <p className="text-sm text-gray-500">
+                              {restaurant.city || 'غير محدد'} • {restaurant.phone || 'بدون رقم'}
+                            </p>
+                            <div className="flex items-center gap-2 mt-1">
+                              {restaurant.isVerified ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
+                                  ✅ موثق
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 text-xs font-semibold rounded-full">
+                                  ⏳ غير موثق
+                                </span>
+                              )}
+                              {restaurant.packageType === 'premium' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-semibold rounded-full">
+                                  ⭐ مميز
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          {expandedRestaurant === restaurant.id ? (
+                            <ChevronUp className="w-5 h-5 text-gray-400" />
+                          ) : (
+                            <ChevronDown className="w-5 h-5 text-gray-400" />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* تفاصيل المطعم */}
+                      {expandedRestaurant === restaurant.id && (
+                        <div className="border-t bg-gray-50 p-4">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div className="bg-white rounded-xl p-3 text-center">
+                              <p className="text-xs text-gray-500">المعرّف</p>
+                              <p className="font-mono text-xs text-gray-700 truncate">{restaurant.id}</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-3 text-center">
+                              <p className="text-xs text-gray-500">البريد</p>
+                              <p className="text-sm text-gray-700 truncate">{restaurant.email || '-'}</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-3 text-center">
+                              <p className="text-xs text-gray-500">الموقع</p>
+                              <p className="text-sm text-gray-700 truncate">{restaurant.location || '-'}</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-3 text-center">
+                              <p className="text-xs text-gray-500">تاريخ التسجيل</p>
+                              <p className="text-sm text-gray-700">
+                                {(restaurant.createdAt as any)?.toDate?.()?.toLocaleDateString('ar-SA') || 
+                                 (restaurant.createdAt instanceof Date ? restaurant.createdAt.toLocaleDateString('ar-SA') : '-')}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {myRestaurants.length > 0 && (
+                <Link
+                  to="/admin/add-restaurant"
+                  className="block mt-6 w-full bg-primary hover:bg-red-900 text-white rounded-xl p-3 text-center font-semibold transition"
+                >
+                  ➕ إضافة مطعم جديد
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* محتوى التبويب: بياناتي */}
         {activeTab === 'profile' && (

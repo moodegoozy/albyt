@@ -6,6 +6,7 @@ import { doc, getDoc, updateDoc, serverTimestamp, addDoc, collection, query, whe
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { useToast } from '@/components/ui/Toast'
 import { useDialog } from '@/components/ui/ConfirmDialog'
+import { PackageSettings, PackageConfig, PackageDiscount } from '@/types'
 import { 
   Crown, 
   Star, 
@@ -24,7 +25,8 @@ import {
   Upload,
   ExternalLink,
   Clock,
-  CreditCard
+  CreditCard,
+  X
 } from 'lucide-react'
 
 type PackageType = 'free' | 'premium'
@@ -41,6 +43,55 @@ type PackageRequest = {
   expiresAt?: any
 }
 
+// إعدادات الباقات الافتراضية
+const defaultPackageSettings: PackageSettings = {
+  premium: {
+    displayName: 'باقة التميز',
+    description: 'احصل على مزايا حصرية وإحصائيات متقدمة',
+    isEnabled: true,
+    originalPrice: 99,
+    currentPrice: 99,
+    durationDays: 30,
+  },
+  free: {
+    displayName: 'الباقة المجانية',
+    description: 'المميزات الأساسية مجاناً',
+    isEnabled: true,
+    originalPrice: 0,
+    currentPrice: 0,
+    durationDays: 0,
+  },
+  defaultPackage: 'free',
+}
+
+// دالة للتحقق من صلاحية الخصم
+const isDiscountValid = (discount?: PackageDiscount): boolean => {
+  if (!discount?.isActive) return false
+  
+  const now = new Date()
+  const startDate = discount.startDate?.toDate?.() || (discount.startDate ? new Date(discount.startDate) : null)
+  const endDate = discount.endDate?.toDate?.() || (discount.endDate ? new Date(discount.endDate) : null)
+  
+  if (startDate && now < startDate) return false
+  if (endDate && now > endDate) return false
+  
+  return true
+}
+
+// دالة لحساب السعر الفعلي بعد الخصم
+const calculateCurrentPrice = (config: PackageConfig): number => {
+  if (!isDiscountValid(config.discount)) {
+    return config.originalPrice
+  }
+  
+  const discount = config.discount!
+  if (discount.type === 'percentage') {
+    return config.originalPrice - (config.originalPrice * discount.value / 100)
+  } else {
+    return Math.max(0, config.originalPrice - discount.value)
+  }
+}
+
 export const PackagesPage: React.FC = () => {
   const { user } = useAuth()
   const toast = useToast()
@@ -50,17 +101,57 @@ export const PackagesPage: React.FC = () => {
   const [subscribing, setSubscribing] = useState(false)
   const [selectingFree, setSelectingFree] = useState(false)
   
+  // إعدادات الباقات الديناميكية
+  const [pkgSettings, setPkgSettings] = useState<PackageSettings>(defaultPackageSettings)
+  
   // حالة طلب الاشتراك
   const [activeRequest, setActiveRequest] = useState<PackageRequest | null>(null)
   const [uploadingProof, setUploadingProof] = useState(false)
   const [proofFile, setProofFile] = useState<File | null>(null)
   const proofFileRef = useRef<HTMLInputElement>(null)
 
+  // حساب السعر الحالي لباقة التميز
+  const premiumPrice = calculateCurrentPrice(pkgSettings.premium)
+  const hasDiscount = isDiscountValid(pkgSettings.premium.discount)
+
+  // Debug logging
+  useEffect(() => {
+    console.log('💰 حالة الباقة:', {
+      pkgSettings: pkgSettings.premium,
+      discount: pkgSettings.premium.discount,
+      hasDiscount,
+      premiumPrice,
+      originalPrice: pkgSettings.premium.originalPrice,
+    })
+  }, [pkgSettings, hasDiscount, premiumPrice])
+
   useEffect(() => {
     if (!user) return
     
     const loadData = async () => {
       try {
+        // تحميل إعدادات الباقات
+        const pkgSnap = await getDoc(doc(db, 'settings', 'packages'))
+        if (pkgSnap.exists()) {
+          const data = pkgSnap.data() as PackageSettings
+          console.log('📦 إعدادات الباقات من Firestore:', data)
+          setPkgSettings({
+            ...defaultPackageSettings,
+            ...data,
+            premium: { 
+              ...defaultPackageSettings.premium, 
+              ...data.premium,
+              discount: data.premium?.discount ? {
+                ...data.premium.discount,
+                isActive: data.premium.discount.isActive ?? false,
+              } : undefined,
+            },
+            free: { ...defaultPackageSettings.free, ...data.free },
+          })
+        } else {
+          console.log('⚠️ لا توجد إعدادات باقات في Firestore، يتم استخدام الافتراضي')
+        }
+        
         // تحميل بيانات المطعم
         const restSnap = await getDoc(doc(db, 'restaurants', user.uid))
         if (restSnap.exists()) {
@@ -158,9 +249,48 @@ export const PackagesPage: React.FC = () => {
       toast.info('لديك طلب اشتراك قيد المعالجة')
       return
     }
-    
+
+    // ✅ إذا كانت الباقة مجانية، يتم التفعيل مباشرة بدون طلب
+    if (premiumPrice === 0) {
+      const confirmed = await dialog.confirm(
+        'باقة التميز متاحة مجاناً حالياً! هل تريد تفعيلها الآن؟',
+        {
+          title: '🎁 عرض خاص - باقة مجانية!',
+          confirmText: 'نعم، فعّل الباقة الآن',
+          cancelText: 'لاحقاً',
+        }
+      )
+      
+      if (!confirmed) return
+
+      setSubscribing(true)
+      try {
+        const expiresAt = new Date()
+        expiresAt.setDate(expiresAt.getDate() + (pkgSettings.premium.durationDays || 30))
+
+        // تفعيل الباقة مباشرة
+        await updateDoc(doc(db, 'restaurants', user.uid), {
+          packageType: 'premium',
+          packageSubscribedAt: serverTimestamp(),
+          packageExpiresAt: expiresAt,
+          packageRequest: null,
+          updatedAt: serverTimestamp(),
+        })
+
+        setCurrentPackage('premium')
+        toast.success('🎉 مبروك! تم تفعيل باقة التميز مجاناً!')
+      } catch (err) {
+        console.error('خطأ:', err)
+        toast.error('حدث خطأ، حاول مرة أخرى')
+      } finally {
+        setSubscribing(false)
+      }
+      return
+    }
+
+    // الباقة ليست مجانية - إرسال طلب الاشتراك كالمعتاد
     const confirmed = await dialog.confirm(
-      'سيتم إرسال طلبك للمطور وسيتواصل معك لإتمام الاشتراك في باقة التميز. هل تريد المتابعة؟',
+      `سيتم إرسال طلبك للاشتراك في باقة التميز بمبلغ ${premiumPrice.toFixed(0)} ريال. هل تريد المتابعة؟`,
       {
         title: '✨ الاشتراك في باقة التميز',
         confirmText: 'نعم، أريد الاشتراك',
@@ -176,15 +306,15 @@ export const PackagesPage: React.FC = () => {
       const restSnap = await getDoc(doc(db, 'restaurants', user.uid))
       const restData = restSnap.data()
       
-      // إنشاء طلب اشتراك جديد
+      // إنشاء طلب اشتراك جديد مع السعر الديناميكي
       const requestRef = await addDoc(collection(db, 'packageRequests'), {
         restaurantId: user.uid,
         restaurantName: restData?.name || 'أسرة منتجة',
         ownerName: restData?.ownerName || '',
         ownerPhone: restData?.phone || '',
         status: 'pending',
-        subscriptionAmount: 99, // سيحدده المطور
-        subscriptionDuration: 30, // 30 يوم
+        subscriptionAmount: premiumPrice, // السعر الديناميكي من الإعدادات
+        subscriptionDuration: pkgSettings.premium.durationDays, // المدة من الإعدادات
         requestedAt: serverTimestamp(),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -236,7 +366,7 @@ export const PackagesPage: React.FC = () => {
         console.warn('فشل إرسال الإشعار:', notifErr)
       }
       
-      toast.success('تم إرسال طلب الاشتراك! سنتواصل معك قريباً ✨')
+      toast.success('تم تسجيل طلبك! يرجى رفع إيصال التحويل أدناه 💳')
     } catch (err) {
       console.error('خطأ في إرسال الطلب:', err)
       toast.error('حدث خطأ، حاول مرة أخرى')
@@ -356,38 +486,27 @@ export const PackagesPage: React.FC = () => {
             <div>
               <h3 className="text-xl font-bold text-amber-800">طلب اشتراك قيد المعالجة</h3>
               <p className="text-amber-600 text-sm">
-                {activeRequest.status === 'pending' && '⏳ بانتظار إرسال بيانات الحساب البنكي'}
-                {activeRequest.status === 'bank_sent' && '🏦 تم إرسال بيانات البنك - يرجى التحويل ورفع الإثبات'}
+                {activeRequest.status === 'pending' && '⏳ يرجى رفع إيصال التحويل'}
                 {activeRequest.status === 'payment_sent' && '💳 تم إرسال إثبات التحويل - بانتظار التأكيد'}
               </p>
             </div>
           </div>
 
-          {/* === حالة: المطور أرسل صورة البنك === */}
-          {activeRequest.status === 'bank_sent' && (
+          {/* === حالة: بانتظار رفع الإيصال === */}
+          {activeRequest.status === 'pending' && (
             <div className="space-y-4">
-              {/* عرض صورة الحساب البنكي */}
-              {activeRequest.bankAccountImageUrl && (
-                <div className="bg-white rounded-xl p-4">
-                  <p className="font-semibold text-gray-700 mb-2">📋 بيانات الحساب البنكي للتحويل:</p>
-                  <a
-                    href={activeRequest.bankAccountImageUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 bg-blue-100 hover:bg-blue-200 text-blue-700 px-4 py-2 rounded-lg transition"
-                  >
-                    <ExternalLink className="w-5 h-5" />
-                    عرض صورة الحساب البنكي
-                  </a>
-                  <p className="text-green-600 font-bold mt-2">
-                    💰 المبلغ المطلوب: {activeRequest.subscriptionAmount || 99} ريال
-                  </p>
-                </div>
-              )}
+              <div className="bg-white rounded-xl p-4">
+                <p className="text-green-600 font-bold text-lg mb-2">
+                  💰 المبلغ المطلوب: {activeRequest.subscriptionAmount || premiumPrice} ريال
+                </p>
+                <p className="text-gray-600 text-sm">
+                  يرجى تحويل المبلغ أعلاه ثم رفع صورة إيصال التحويل
+                </p>
+              </div>
 
-              {/* رفع إثبات التحويل */}
+              {/* رفع إيصال التحويل */}
               <div className="bg-white rounded-xl p-4 space-y-3">
-                <p className="font-semibold text-gray-700">📤 بعد التحويل، ارفع صورة إثبات التحويل:</p>
+                <p className="font-semibold text-gray-700">📤 ارفع صورة إيصال التحويل:</p>
                 <input
                   ref={proofFileRef}
                   type="file"
@@ -411,7 +530,7 @@ export const PackagesPage: React.FC = () => {
                   ) : (
                     <>
                       <Upload className="w-5 h-5" />
-                      إرسال إثبات التحويل
+                      إرسال إيصال التحويل
                     </>
                   )}
                 </button>
@@ -424,19 +543,8 @@ export const PackagesPage: React.FC = () => {
             <div className="bg-purple-100 rounded-xl p-4 flex items-center gap-3">
               <Clock className="w-8 h-8 text-purple-600 animate-pulse" />
               <div>
-                <p className="font-bold text-purple-800">تم إرسال إثبات التحويل بنجاح ✅</p>
-                <p className="text-purple-600 text-sm">جارِ مراجعة الإثبات وتفعيل الباقة... سيتم إشعارك قريباً</p>
-              </div>
-            </div>
-          )}
-
-          {/* === حالة: طلب جديد بانتظار المطور === */}
-          {activeRequest.status === 'pending' && (
-            <div className="bg-yellow-100 rounded-xl p-4 flex items-center gap-3">
-              <Clock className="w-8 h-8 text-yellow-600 animate-pulse" />
-              <div>
-                <p className="font-bold text-yellow-800">تم إرسال طلبك بنجاح ✅</p>
-                <p className="text-yellow-600 text-sm">جارِ مراجعة الطلب وإرسال بيانات الحساب البنكي للتحويل...</p>
+                <p className="font-bold text-purple-800">تم إرسال إيصال التحويل بنجاح ✅</p>
+                <p className="text-purple-600 text-sm">جارِ مراجعة الإيصال وتفعيل الباقة... سيتم إشعارك قريباً</p>
               </div>
             </div>
           )}
@@ -585,11 +693,28 @@ export const PackagesPage: React.FC = () => {
             <div className="bg-white/70 backdrop-blur rounded-2xl p-4 mb-6 text-center relative overflow-hidden">
               <div className="absolute inset-0 bg-gradient-to-r from-amber-400/10 via-yellow-400/10 to-orange-400/10" />
               <div className="relative">
+                {/* عرض الخصم إن وجد */}
+                {hasDiscount && (
+                  <div className="mb-2">
+                    <span className="bg-red-500 text-white text-sm px-3 py-1 rounded-full font-bold">
+                      {pkgSettings.premium.discount?.label || 'خصم خاص!'}
+                    </span>
+                    {pkgSettings.premium.originalPrice > premiumPrice && (
+                      <p className="text-gray-400 line-through text-lg mt-1">
+                        {pkgSettings.premium.originalPrice.toFixed(0)} ر.س
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="flex items-baseline justify-center gap-1">
-                  <span className="text-5xl font-black bg-gradient-to-r from-amber-600 to-orange-500 bg-clip-text text-transparent">99</span>
-                  <span className="text-xl text-gray-600">ر.س</span>
+                  <span className="text-5xl font-black bg-gradient-to-r from-amber-600 to-orange-500 bg-clip-text text-transparent">
+                    {premiumPrice === 0 ? 'مجاناً' : premiumPrice.toFixed(0)}
+                  </span>
+                  {premiumPrice > 0 && <span className="text-xl text-gray-600">ر.س</span>}
                 </div>
-                <p className="text-amber-600 font-medium mt-1">شهرياً</p>
+                <p className="text-amber-600 font-medium mt-1">
+                  {premiumPrice === 0 ? 'عرض خاص!' : `لمدة ${pkgSettings.premium.durationDays} يوم`}
+                </p>
               </div>
             </div>
 
@@ -633,12 +758,32 @@ export const PackagesPage: React.FC = () => {
             </div>
 
             {/* زر الاشتراك */}
-            <div className="mt-6">
+            <div className="mt-6 space-y-3">
               {currentPackage === 'premium' ? (
-                <div className="bg-amber-100 text-amber-700 py-4 px-6 rounded-2xl text-center font-bold flex items-center justify-center gap-2">
-                  <Crown className="w-5 h-5" />
-                  أنت مشترك في باقة التميز
-                </div>
+                <>
+                  <div className="bg-amber-100 text-amber-700 py-4 px-6 rounded-2xl text-center font-bold flex items-center justify-center gap-2">
+                    <Crown className="w-5 h-5" />
+                    أنت مشترك في باقة التميز
+                  </div>
+                  {/* زر إلغاء الاشتراك */}
+                  <button
+                    onClick={handleSelectFree}
+                    disabled={selectingFree}
+                    className="w-full py-3 px-6 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 font-semibold text-sm border border-red-200 transition-all duration-300 flex items-center justify-center gap-2"
+                  >
+                    {selectingFree ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-red-300 border-t-red-600 rounded-full animate-spin" />
+                        جارِ الإلغاء...
+                      </>
+                    ) : (
+                      <>
+                        <X className="w-4 h-4" />
+                        إلغاء الاشتراك
+                      </>
+                    )}
+                  </button>
+                </>
               ) : (
                 <button
                   onClick={handleSubscribePremium}

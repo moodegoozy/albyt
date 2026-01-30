@@ -8,13 +8,16 @@ import { RoleGate } from '@/routes/RoleGate'
 import { useDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
 import { LocationPicker } from '@/components/LocationPicker'
-import { MapPin, Check, ShoppingBag, Truck, CreditCard, ChevronLeft, Store, XCircle } from 'lucide-react'
+import { MapPin, Check, ShoppingBag, Truck, CreditCard, ChevronLeft, Store, XCircle, Info } from 'lucide-react'
 
 const PLATFORM_FEE_PER_ITEM = 1.0
 const ADMIN_COMMISSION_PER_ITEM = 0.75
 
-// ❌ التوصيل غير متوفر حالياً - الاستلام من المطعم فقط
-const DELIVERY_AVAILABLE = false
+// رسوم المنصة على كل طلب توصيل (تُخصم من المندوب)
+const COURIER_PLATFORM_FEE = 3.75
+
+// ✅ التوصيل متوفر - رسوم التوصيل يحددها المندوب/الأسرة
+const DELIVERY_AVAILABLE = true
 
 export const CheckoutPage: React.FC = () => {
   const { items, subtotal, clear } = useCart()
@@ -29,9 +32,10 @@ export const CheckoutPage: React.FC = () => {
   const [showLocationPicker, setShowLocationPicker] = useState(false)
   const [deliveryType, setDeliveryType] = useState<'pickup' | 'delivery'>('pickup') // الاستلام افتراضي
 
-  const deliveryFee = deliveryType === 'delivery' ? 7 : 0
+  // رسوم التوصيل تبدأ بـ 0 - يحددها المندوب أو الأسرة عند قبول الطلب
+  const deliveryFee = 0 // سيتم تحديدها لاحقاً
   const totalItemsCount = items.reduce((sum, item) => sum + item.qty, 0)
-  const total = subtotal + deliveryFee
+  const total = subtotal // بدون رسوم توصيل مبدئياً
 
   // ✅ تحميل بيانات المطعم
   useEffect(() => {
@@ -126,8 +130,10 @@ export const CheckoutPage: React.FC = () => {
         ownerId: i.ownerId ?? restId,
       })),
       subtotal,
-      deliveryFee,
-      total,
+      deliveryFee: 0, // يحددها المندوب أو الأسرة لاحقاً
+      deliveryFeeSetBy: null, // من حدد رسوم التوصيل
+      deliveryFeeSetAt: null, // متى تم تحديدها
+      total: subtotal, // الإجمالي بدون رسوم توصيل مبدئياً
       status: 'pending',
       deliveryType, // نوع التسليم: pickup أو delivery
       address: deliveryType === 'pickup' ? 'استلام من المطعم' : address,
@@ -144,6 +150,8 @@ export const CheckoutPage: React.FC = () => {
       appEarnings: appEarnings,
       totalItemsCount: totalItemsCount,
       referredBy: restaurant?.referredBy || null,
+      // 💰 رسوم المنصة على المندوب (3.75 ريال)
+      courierPlatformFee: deliveryType === 'delivery' ? COURIER_PLATFORM_FEE : 0,
     })
 
     // 💰 تحديث محفظة المطعم
@@ -305,24 +313,30 @@ export const CheckoutPage: React.FC = () => {
               )}
             </button>
 
-            {/* خيار التوصيل - غير متوفر */}
-            <div
-              className="w-full p-4 rounded-xl border-2 border-gray-200 bg-gray-50 flex items-center gap-4 opacity-60 cursor-not-allowed"
+            {/* خيار التوصيل */}
+            <button
+              onClick={() => setDeliveryType('delivery')}
+              className={`w-full p-4 rounded-xl border-2 transition flex items-center gap-4 ${
+                deliveryType === 'delivery'
+                  ? 'border-sky-500 bg-sky-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
             >
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-gray-200">
-                <Truck className="w-6 h-6 text-gray-400" />
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                deliveryType === 'delivery' ? 'bg-sky-500' : 'bg-gray-100'
+              }`}>
+                <Truck className={`w-6 h-6 ${deliveryType === 'delivery' ? 'text-white' : 'text-gray-500'}`} />
               </div>
               <div className="flex-1 text-right">
-                <p className="font-bold text-gray-500">
+                <p className={`font-bold ${deliveryType === 'delivery' ? 'text-sky-700' : 'text-gray-800'}`}>
                   توصيل للمنزل
                 </p>
-                <p className="text-sm text-gray-400">رسوم التوصيل: 7 ر.س</p>
+                <p className="text-sm text-amber-600">رسوم التوصيل يحددها المندوب/الأسرة</p>
               </div>
-              <div className="flex items-center gap-2 bg-red-100 text-red-600 px-3 py-1.5 rounded-lg">
-                <XCircle className="w-4 h-4" />
-                <span className="text-sm font-semibold">غير متوفر</span>
-              </div>
-            </div>
+              {deliveryType === 'delivery' && (
+                <Check className="w-6 h-6 text-sky-500" />
+              )}
+            </button>
           </div>
         </div>
 
@@ -387,12 +401,12 @@ export const CheckoutPage: React.FC = () => {
               <span className="font-semibold">{subtotal.toFixed(2)} ر.س</span>
             </div>
             {deliveryType === 'delivery' && (
-            <div className="flex items-center justify-between text-gray-600">
+            <div className="flex items-center justify-between text-amber-600">
               <div className="flex items-center gap-2">
                 <Truck className="w-4 h-4" />
                 <span>رسوم التوصيل</span>
               </div>
-              <span className="font-semibold">{deliveryFee.toFixed(2)} ر.س</span>
+              <span className="font-semibold text-sm">تُحدد لاحقاً</span>
             </div>
             )}
             {deliveryType === 'pickup' && (

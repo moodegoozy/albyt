@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { onAuthStateChanged, signOut, User } from 'firebase/auth'
 import { auth, db } from './firebase'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
 
 type Role = 'owner' | 'courier' | 'customer' | 'admin' | 'developer'
 type GeoLocation = { lat: number; lng: number }
@@ -99,7 +99,41 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
         if (r === 'customer' || r === 'admin') {
           // العميل/المشرف: لا يُطلب الموقع إذا كان محفوظاً في حسابه أو في الجلسة
           const hasLocation = !!customerSavedLoc || !!sessionLoc
-          setLocationRequired(!hasLocation)
+          
+          // 📍 إذا لم يكن هناك موقع، نحاول تحديده تلقائياً
+          if (!hasLocation && navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+              async (pos) => {
+                const autoLocation = {
+                  lat: pos.coords.latitude,
+                  lng: pos.coords.longitude,
+                  address: 'موقعي الحالي (تلقائي)'
+                }
+                // حفظ الموقع في الحساب
+                try {
+                  await updateDoc(doc(db, 'users', u.uid), {
+                    savedLocation: autoLocation,
+                    location: { lat: autoLocation.lat, lng: autoLocation.lng }
+                  })
+                  // تحديث الحالة المحلية
+                  setUserLocation({ lat: autoLocation.lat, lng: autoLocation.lng })
+                  sessionStorage.setItem(SESSION_LOCATION_KEY, JSON.stringify({ lat: autoLocation.lat, lng: autoLocation.lng }))
+                  setLocationRequired(false)
+                } catch (err) {
+                  console.warn('تعذر حفظ الموقع التلقائي:', err)
+                }
+              },
+              (err) => {
+                console.warn('تعذر تحديد الموقع تلقائياً:', err)
+                // لم نتمكن من تحديد الموقع، نطلبه يدوياً
+                setLocationRequired(true)
+              },
+              { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            )
+          } else {
+            setLocationRequired(!hasLocation)
+          }
+          
           // إذا كان عنده موقع محفوظ، نحفظه في sessionStorage للاستخدام السريع
           if (customerSavedLoc && !sessionLoc) {
             sessionStorage.setItem(SESSION_LOCATION_KEY, JSON.stringify({ lat: customerSavedLoc.lat, lng: customerSavedLoc.lng }))

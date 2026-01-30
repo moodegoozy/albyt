@@ -9,15 +9,15 @@ export const CartPage: React.FC = () => {
 
   if (items.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 px-4">
-        <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6">
-          <ShoppingBag className="w-12 h-12 text-gray-400" />
+      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-100 flex flex-col items-center justify-center py-20 px-4">
+        <div className="w-24 h-24 bg-white/80 backdrop-blur rounded-full flex items-center justify-center mb-6 shadow-lg">
+          <ShoppingBag className="w-12 h-12 text-sky-400" />
         </div>
-        <h2 className="text-xl font-bold text-gray-700 mb-2">السلة فارغة</h2>
-        <p className="text-gray-500 mb-6">أضف بعض الأصناف اللذيذة!</p>
+        <h2 className="text-xl font-bold text-sky-800 mb-2">السلة فارغة</h2>
+        <p className="text-sky-600/70 mb-6">أضف بعض الأصناف اللذيذة!</p>
         <Link 
           to="/restaurants" 
-          className="flex items-center gap-2 bg-primary text-white px-6 py-3 rounded-xl font-bold hover:bg-sky-600 transition"
+          className="flex items-center gap-2 bg-gradient-to-r from-sky-500 to-sky-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-sky-200/50 hover:shadow-xl transition"
         >
           <ArrowLeft className="w-5 h-5" />
           تصفح المطاعم
@@ -27,7 +27,8 @@ export const CartPage: React.FC = () => {
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-4 px-2 sm:px-4">
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-100 py-6">
+      <div className="max-w-3xl mx-auto space-y-4 px-2 sm:px-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
           <ShoppingBag className="w-6 h-6 text-primary" />
@@ -41,7 +42,7 @@ export const CartPage: React.FC = () => {
         {items.map((i) => (
           <div
             key={i.id}
-            className="flex items-center gap-3 bg-white text-gray-900 p-3 sm:p-4 rounded-xl shadow-sm border border-gray-100"
+            className="flex items-center gap-3 glass-card p-3 sm:p-4 rounded-xl"
           >
             {/* صورة الصنف (افتراضية) */}
             <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0">
@@ -86,37 +87,41 @@ export const CartPage: React.FC = () => {
       </div>
 
       {/* ملخص السلة */}
-      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 space-y-3">
-        <div className="flex justify-between text-gray-600">
+      <div className="glass-card rounded-xl p-4 space-y-3">
+        <div className="flex justify-between text-sky-700">
           <span>المجموع الفرعي</span>
           <span className="font-bold">{subtotal.toFixed(2)} ر.س</span>
         </div>
-        <div className="flex justify-between text-gray-600">
+        <div className="flex justify-between text-amber-600">
           <span>رسوم التوصيل</span>
-          <span className="font-bold">7.00 ر.س</span>
+          <span className="font-semibold text-sm">تُحدد عند قبول الطلب</span>
         </div>
-        <div className="h-px bg-gray-200"></div>
+        <div className="h-px bg-sky-200/50"></div>
         <div className="flex justify-between">
-          <span className="font-bold text-lg">الإجمالي</span>
-          <span className="font-bold text-xl text-primary">{(subtotal + 7).toFixed(2)} ر.س</span>
+          <span className="font-bold text-lg text-sky-900">الإجمالي</span>
+          <span className="font-bold text-xl text-sky-600">{subtotal.toFixed(2)} ر.س</span>
         </div>
+        <p className="text-xs text-gray-500 text-center">
+          💡 رسوم التوصيل يحددها المندوب أو الأسرة حسب موقعك
+        </p>
       </div>
 
       {/* أزرار الإجراءات */}
       <div className="flex flex-col sm:flex-row gap-3 pb-6">
         <button
           onClick={clear}
-          className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gray-100 text-gray-700 font-semibold hover:bg-gray-200 transition"
+          className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl glass-light text-sky-700 font-semibold hover:bg-white/70 transition"
         >
           <Trash2 className="w-5 h-5" />
           تفريغ السلة
         </button>
         <Link
           to="/checkout"
-          className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-green-500 to-green-600 text-white font-bold shadow-lg hover:shadow-xl hover:scale-[1.02] transition"
+          className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-green-500 to-green-600 text-white font-bold shadow-lg shadow-green-200/50 hover:shadow-xl hover:scale-[1.02] transition"
         >
           ✅ إتمام الطلب
         </Link>
+      </div>
       </div>
     </div>
   )

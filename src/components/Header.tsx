@@ -80,7 +80,7 @@ export const Header: React.FC = () => {
   }, [user?.uid]); // ✅ استخدم user.uid بدلاً من user object
 
   return (
-    <header className="bg-gradient-to-r from-sky-600 via-sky-500 to-sky-600 shadow-xl shadow-sky-200/30">
+    <header className="bg-gradient-to-r from-sky-600/95 via-sky-500/95 to-sky-600/95 backdrop-blur-lg shadow-xl shadow-sky-200/30">
       <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 sm:py-4 flex items-center justify-between">
         {/* زر الرجوع + شعار */}
         <div className="flex items-center gap-2">

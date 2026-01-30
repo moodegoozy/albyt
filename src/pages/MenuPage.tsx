@@ -10,7 +10,7 @@ import { MenuItem, Restaurant, Promotion } from '@/types'
 import { 
   Megaphone, X, MapPin, Phone, Star, ShoppingBag, ArrowRight, 
   CheckCircle, Building2, Copy, Package, Clock,
-  Utensils, Share2, Users, Briefcase, MessageCircle, Heart
+  Utensils, Share2, Users, Briefcase, MessageCircle, Heart, Lock
 } from 'lucide-react'
 
 type MenuItemWithRestaurant = MenuItem & { restaurant?: Restaurant }
@@ -242,10 +242,20 @@ export const MenuPage: React.FC = () => {
       return
     }
 
+    // حساب السعر مع الخصم إن وجد
+    const hasDiscount = it.discountPercent && it.discountPercent > 0
+    const expiryDate = (it.discountExpiresAt as any)?.toDate?.() || (it.discountExpiresAt ? new Date(it.discountExpiresAt) : null)
+    const isDiscountValid = hasDiscount && (!expiryDate || expiryDate > new Date())
+    
+    const basePrice = it.price + SERVICE_FEE_PER_ITEM
+    const finalPrice = isDiscountValid 
+      ? basePrice - (basePrice * ((it.discountPercent || 0) / 100))
+      : basePrice
+
     add({ 
       id: it.id, 
       name: it.name, 
-      price: it.price + SERVICE_FEE_PER_ITEM, 
+      price: finalPrice, 
       ownerId: it.ownerId 
     })
     toast.success('تمت الإضافة ✅')
@@ -262,6 +272,9 @@ export const MenuPage: React.FC = () => {
 
   const canOrder = user && (role === 'customer' || role === 'admin' || role === 'developer' || !role)
   
+  // هل المتجر مفتوح للطلبات؟ (افتراضي: مفتوح إذا لم تُحدد القيمة)
+  const isStoreOpen = restaurant?.isOpen !== false
+  
   // هل هذا المتجر هو متجر المستخدم الحالي؟
   const isOwnStore = user && restaurantId === user.uid
 
@@ -277,6 +290,14 @@ export const MenuPage: React.FC = () => {
 
   return (
     <div className="min-h-screen pb-32 -mx-4 -mt-4">
+      
+      {/* ========== بانر المتجر مغلق ========== */}
+      {!isStoreOpen && !isOwnStore && (
+        <div className="bg-gradient-to-l from-red-500 to-rose-600 text-white p-4 flex items-center justify-center gap-3">
+          <Lock className="w-6 h-6" />
+          <span className="font-bold text-lg">🚫 المتجر مغلق حالياً - لا يمكن الطلب</span>
+        </div>
+      )}
       
       {/* ========== بانر للصاحب ========== */}
       {isOwnStore && (
@@ -362,9 +383,13 @@ export const MenuPage: React.FC = () => {
                   </div>
                   
                   {/* شارة التوثيق */}
-                  {restaurant.isVerified && (
-                    <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-green-500 rounded-full flex items-center justify-center border-4 border-gray-900 shadow-lg">
+                  {(restaurant.isVerified || restaurant.licenseStatus === 'approved') ? (
+                    <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-green-500 rounded-full flex items-center justify-center border-4 border-gray-900 shadow-lg" title="أسرة موثقة">
                       <CheckCircle className="w-5 h-5 text-white" />
+                    </div>
+                  ) : (
+                    <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-amber-500 rounded-full flex items-center justify-center border-4 border-gray-900 shadow-lg" title="بانتظار التوثيق">
+                      <Clock className="w-5 h-5 text-white" />
                     </div>
                   )}
                 </div>
@@ -382,12 +407,26 @@ export const MenuPage: React.FC = () => {
 
                 {/* الشارات */}
                 <div className="flex items-center justify-center gap-2 flex-wrap">
+                  {/* شارة حالة المتجر */}
+                  {isStoreOpen ? (
+                    <span className="bg-green-500 text-white text-xs font-bold px-3 py-1.5 rounded-full animate-pulse">
+                      ✓ متاح الآن
+                    </span>
+                  ) : (
+                    <span className="bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-full">
+                      🚫 مغلق
+                    </span>
+                  )}
                   <span className={`${tier.bg} text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg`}>
                     {tier.icon} {tier.label}
                   </span>
-                  {restaurant.isVerified && (
+                  {(restaurant.isVerified || restaurant.licenseStatus === 'approved') ? (
                     <span className="bg-green-500 text-white text-xs font-bold px-3 py-1.5 rounded-full">
-                      ✓ موثّق
+                      ✓ أسرة موثقة
+                    </span>
+                  ) : (
+                    <span className="bg-amber-500 text-white text-xs font-bold px-3 py-1.5 rounded-full">
+                      بانتظار التوثيق
                     </span>
                   )}
                 </div>
@@ -424,7 +463,9 @@ export const MenuPage: React.FC = () => {
 
               {/* معلومات التواصل */}
               <div className="p-4 border-t border-gray-800 space-y-3">
-                {restaurant.phone && (
+                {/* 🔒 رقم الجوال مخفي عن العملاء - التواصل فقط عبر المحادثة داخل التطبيق أثناء الطلب */}
+                {/* الرقم يظهر فقط للإدارة (admin/developer) وصاحبة الحساب */}
+                {(role === 'admin' || role === 'developer' || (role === 'owner' && user?.uid === restaurantId)) && restaurant.phone && (
                   <a 
                     href={`tel:${restaurant.phone}`}
                     className="flex items-center justify-between p-3 bg-green-500/10 hover:bg-green-500/20 rounded-xl transition"
@@ -472,7 +513,8 @@ export const MenuPage: React.FC = () => {
                       </p>
                     )}
 
-                    {restaurant.hiringContact && (
+                    {/* 🔒 رقم التوظيف مخفي عن العملاء - يظهر فقط للإدارة وصاحبة الحساب */}
+                    {(role === 'admin' || role === 'developer' || (role === 'owner' && user?.uid === restaurantId)) && restaurant.hiringContact && (
                       <a
                         href={`https://wa.me/${restaurant.hiringContact.replace(/\D/g, '')}`}
                         target="_blank"
@@ -548,22 +590,67 @@ export const MenuPage: React.FC = () => {
                       <span className="text-4xl opacity-30">🍽️</span>
                     </div>
                   )}
-                  <div className="absolute bottom-2 left-2 bg-black/80 px-2 py-1 rounded-full">
-                    <span className="font-black text-amber-400 text-sm">
-                      {(it.price + SERVICE_FEE_PER_ITEM).toFixed(0)} ر.س
-                    </span>
-                  </div>
+                  
+                  {/* شارة الخصم */}
+                  {(() => {
+                    const hasDiscount = it.discountPercent && it.discountPercent > 0;
+                    const expiryDate = it.discountExpiresAt?.toDate?.() || (it.discountExpiresAt ? new Date(it.discountExpiresAt) : null);
+                    const isValid = !expiryDate || expiryDate > new Date();
+                    if (hasDiscount && isValid) {
+                      return (
+                        <div className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg animate-pulse">
+                          خصم {it.discountPercent}%
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                  
+                  {/* السعر */}
+                  {(() => {
+                    const hasDiscount = it.discountPercent && it.discountPercent > 0;
+                    const expiryDate = it.discountExpiresAt?.toDate?.() || (it.discountExpiresAt ? new Date(it.discountExpiresAt) : null);
+                    const isValid = !expiryDate || expiryDate > new Date();
+                    const originalPrice = it.price + SERVICE_FEE_PER_ITEM;
+                    
+                    if (hasDiscount && isValid) {
+                      const discountedPrice = originalPrice - (originalPrice * ((it.discountPercent || 0) / 100));
+                      return (
+                        <div className="absolute bottom-2 left-2 flex items-center gap-1.5">
+                          <span className="bg-green-500 text-white font-black text-sm px-2 py-1 rounded-full shadow">
+                            {discountedPrice.toFixed(0)} ر.س
+                          </span>
+                          <span className="bg-black/60 text-gray-300 text-xs px-1.5 py-0.5 rounded-full line-through">
+                            {originalPrice.toFixed(0)}
+                          </span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="absolute bottom-2 left-2 bg-black/80 px-2 py-1 rounded-full">
+                        <span className="font-black text-amber-400 text-sm">
+                          {originalPrice.toFixed(0)} ر.س
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="p-3">
                   <h3 className="font-bold text-white text-sm mb-2 line-clamp-1">{it.name}</h3>
-                  {canOrder && (
+                  {canOrder && isStoreOpen && (
                     <button 
                       onClick={() => handleAdd(it)}
                       className="w-full py-2 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-500 to-orange-500 text-black"
                     >
                       + أضف
                     </button>
+                  )}
+                  {canOrder && !isStoreOpen && (
+                    <div className="w-full py-2 rounded-xl font-bold text-sm bg-gray-600 text-gray-300 text-center flex items-center justify-center gap-2">
+                      <Lock className="w-4 h-4" />
+                      مغلق
+                    </div>
                   )}
                 </div>
               </div>

@@ -71,43 +71,43 @@ export const CourierHiring: React.FC = () => {
     setSending(null)
   }
 
-  if (loading) return <div className="text-center py-10 text-gray-300">⏳ تحميل المطاعم...</div>
+  if (loading) return <div className="text-center py-10 text-sky-600">⏳ تحميل المطاعم...</div>
 
   return (
-    <div className="py-8">
-      <h1 className="text-3xl font-extrabold text-yellow-400 text-center mb-8 flex items-center justify-center gap-2">
-        <Briefcase className="w-7 h-7 text-yellow-400" />
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-100 py-8 px-4">
+      <h1 className="text-2xl sm:text-3xl font-extrabold text-sky-600 text-center mb-8 flex items-center justify-center gap-2">
+        <Briefcase className="w-7 h-7 text-sky-500" />
         طلبات التوظيف
       </h1>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
         {restaurants.map(r => {
           const req = requests[r.id]
           return (
             <div
               key={r.id}
-              className="bg-gradient-to-br from-gray-800 to-gray-900 text-white rounded-2xl p-6 shadow-lg hover:shadow-2xl transition transform hover:-translate-y-1 flex flex-col items-center"
+              className="glass-card rounded-2xl p-6 hover:shadow-xl transition transform hover:-translate-y-1 flex flex-col items-center"
             >
               {r.logoUrl ? (
                 <img
                   src={r.logoUrl}
-                  className="w-24 h-24 rounded-full mb-4 object-cover border-4 border-yellow-500 shadow"
+                  className="w-24 h-24 rounded-full mb-4 object-cover border-4 border-sky-300 shadow"
                 />
               ) : (
-                <div className="w-24 h-24 rounded-full bg-gray-600 flex items-center justify-center text-3xl mb-4">
+                <div className="w-24 h-24 rounded-full bg-sky-100 flex items-center justify-center text-3xl mb-4">
                   🍴
                 </div>
               )}
-              <h3 className="font-bold text-lg mb-2">{r.name}</h3>
+              <h3 className="font-bold text-lg mb-2 text-sky-900">{r.name}</h3>
 
               {req ? (
                 <span
                   className={`mt-3 px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2 ${
                     req.status === 'pending'
-                      ? 'bg-gray-500 text-white'
+                      ? 'bg-amber-100 text-amber-700 border border-amber-200'
                       : req.status === 'accepted'
-                      ? 'bg-green-500 text-white'
-                      : 'bg-red-500 text-white'
+                      ? 'bg-green-100 text-green-700 border border-green-200'
+                      : 'bg-red-100 text-red-700 border border-red-200'
                   }`}
                 >
                   {req.status === 'pending' && <Clock className="w-4 h-4" />}
@@ -123,7 +123,7 @@ export const CourierHiring: React.FC = () => {
                 <button
                   disabled={sending === r.id}
                   onClick={() => sendRequest(r)}
-                  className="mt-4 w-full px-4 py-2 rounded-xl bg-yellow-500 text-black font-bold shadow hover:bg-yellow-600 hover:scale-105 transition disabled:opacity-50"
+                  className="mt-4 w-full px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-sky-600 text-white font-bold shadow-lg shadow-sky-200/50 hover:shadow-xl hover:scale-105 transition disabled:opacity-50"
                 >
                   {sending === r.id ? '⏳ جاري الإرسال...' : '📩 طلب توظيف'}
                 </button>

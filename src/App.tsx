@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { Header } from './components/Header'
 import { Footer } from './components/Footer'
 import { TopBar } from './components/TopBar'
+import { BetaBanner } from './components/BetaBanner'
 import { LocationRequired } from './components/LocationRequired'
 import { useAuth } from './auth'
 
@@ -65,12 +66,13 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-sky-50 via-white to-sky-50 text-sky-900">
       {/* الشريط العلوي + رأس الصفحة - ثابتين في أعلى الشاشة تماماً */}
       <div className="fixed top-0 left-0 right-0 z-50">
+        <BetaBanner />
         <TopBar />
         <Header />
       </div>
 
       {/* مسافة فارغة بحجم الهيدر */}
-      <div className="h-[100px] sm:h-[120px]" />
+      <div className="h-[130px] sm:h-[150px]" />
 
       {/* المحتوى الرئيسي */}
       <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-8">
@@ -94,7 +96,7 @@ export default function App() {
             path="/chat"
             element={
               <ProtectedRoute>
-                <RoleGate allow={['customer', 'courier', 'owner', 'admin']}>
+                <RoleGate allow={['customer', 'courier', 'owner', 'admin', 'developer']}>
                   <ChatPage />
                 </RoleGate>
               </ProtectedRoute>
@@ -118,7 +120,7 @@ export default function App() {
             path="/checkout"
             element={
               <ProtectedRoute>
-                <RoleGate allow={['customer', 'admin']}>
+                <RoleGate allow={['customer', 'admin', 'developer']}>
                   <CheckoutPage />
                 </RoleGate>
               </ProtectedRoute>
@@ -128,7 +130,7 @@ export default function App() {
             path="/orders"
             element={
               <ProtectedRoute>
-                <RoleGate allow={['customer', 'admin']}>
+                <RoleGate allow={['customer', 'admin', 'developer']}>
                   <TrackOrders />
                 </RoleGate>
               </ProtectedRoute>
@@ -150,7 +152,7 @@ export default function App() {
             path="/owner"
             element={
               <ProtectedRoute>
-                <RoleGate allow={['owner']}>
+                <RoleGate allow={['owner', 'developer']}>
                   <OwnerDashboard />
                 </RoleGate>
               </ProtectedRoute>
@@ -160,7 +162,7 @@ export default function App() {
             path="/owner/menu"
             element={
               <ProtectedRoute>
-                <RoleGate allow={['owner']}>
+                <RoleGate allow={['owner', 'developer']}>
                   <ManageMenu />
                 </RoleGate>
               </ProtectedRoute>
@@ -170,7 +172,7 @@ export default function App() {
             path="/owner/orders"
             element={
               <ProtectedRoute>
-                <RoleGate allow={['owner']}>
+                <RoleGate allow={['owner', 'developer']}>
                   <OrdersAdmin />
                 </RoleGate>
               </ProtectedRoute>
@@ -180,7 +182,7 @@ export default function App() {
             path="/owner/edit"
             element={
               <ProtectedRoute>
-                <RoleGate allow={['owner']}>
+                <RoleGate allow={['owner', 'developer']}>
                   <EditRestaurant />
                 </RoleGate>
               </ProtectedRoute>
@@ -200,7 +202,7 @@ export default function App() {
             path="/owner/packages"
             element={
               <ProtectedRoute>
-                <RoleGate allow={['owner']}>
+                <RoleGate allow={['owner', 'developer']}>
                   <PackagesPage />
                 </RoleGate>
               </ProtectedRoute>
@@ -210,7 +212,7 @@ export default function App() {
             path="/owner/promotion"
             element={
               <ProtectedRoute>
-                <RoleGate allow={['owner']}>
+                <RoleGate allow={['owner', 'developer']}>
                   <PromotionPage />
                 </RoleGate>
               </ProtectedRoute>

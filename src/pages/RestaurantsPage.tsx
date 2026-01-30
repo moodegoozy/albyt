@@ -4,7 +4,7 @@ import { db } from '@/firebase'
 import { collection, getDocs, query, where, updateDoc, doc, increment, setDoc, addDoc, serverTimestamp, getDoc } from 'firebase/firestore'
 import { Link, useSearchParams } from 'react-router-dom'
 import { SAUDI_CITIES } from '@/utils/cities'
-import { MapPin, Filter, X, Navigation, AlertCircle, CheckCircle, Crown, Medal, Award, Megaphone, ChevronLeft, ChevronRight, Play, Eye, Star, ShoppingBag, Utensils } from 'lucide-react'
+import { MapPin, Filter, X, Navigation, AlertCircle, CheckCircle, Crown, Medal, Award, Megaphone, ChevronLeft, ChevronRight, Play, Eye, Star, ShoppingBag, Utensils, Truck, Store, Clock } from 'lucide-react'
 import { useAuth } from '@/auth'
 import { calculateDistance, MAX_DELIVERY_DISTANCE } from '@/utils/distance'
 import { Promotion } from '@/types'
@@ -18,8 +18,11 @@ type Restaurant = {
   city?: string
   geoLocation?: GeoLocation
   isVerified?: boolean
+  licenseStatus?: 'pending' | 'approved' | 'rejected'
   sellerTier?: 'bronze' | 'silver' | 'gold'
   packageType?: 'free' | 'premium'
+  allowDelivery?: boolean
+  allowPickup?: boolean
   // إحصائيات للعرض في الباقة المميزة
   totalOrders?: number
   averageRating?: number
@@ -403,18 +406,18 @@ export const RestaurantsPage: React.FC = () => {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Crown className="w-6 h-6 text-amber-500" />
-              <h2 className="text-xl font-bold text-gray-800">⭐ الأسر المميزة</h2>
+              <h2 className="text-xl font-bold text-amber-400">⭐ الأسر المميزة</h2>
             </div>
-            <span className="text-sm text-gray-500">{filteredRestaurants.filter(r => r.packageType === 'premium').length} أسرة</span>
+            <span className="text-sm text-gray-400">{filteredRestaurants.filter(r => r.packageType === 'premium').length} أسرة</span>
           </div>
           
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 xs:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
             {filteredRestaurants.filter(r => r.packageType === 'premium').map(r => (
               <Link
                 key={r.id}
                 to={`/menu?restaurant=${r.id}${refSource ? `&ref=${refSource}` : ''}`}
                 onClick={() => logVisit(r.id, user?.uid, refSource || 'direct')}
-                className="group bg-gradient-to-br from-amber-50 via-white to-purple-50 border-2 border-amber-200 rounded-2xl shadow-lg hover:shadow-2xl hover:-translate-y-2 transform transition-all duration-300 p-4 flex flex-col items-center text-center relative overflow-hidden"
+                className="group bg-[#1E293B] border border-amber-500/30 rounded-[16px] shadow-lg shadow-amber-500/10 hover:shadow-xl hover:shadow-amber-500/20 hover:-translate-y-2 transform transition-all duration-300 p-3 sm:p-4 flex flex-col items-center text-center relative overflow-hidden active:scale-[0.98]"
               >
                 {/* خلفية متوهجة */}
                 <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -435,40 +438,47 @@ export const RestaurantsPage: React.FC = () => {
                   </div>
                 )}
                 
-                {/* الشعار - مربع صغير مميز */}
-                <div className="relative mt-4 mb-3">
+                {/* الشعار في دائرة */}
+                <div className="relative mt-6 mb-3">
                   {r.logoUrl ? (
                     <img
                       src={r.logoUrl}
                       alt={r.name}
-                      className="w-20 h-20 object-cover rounded-xl border-3 border-amber-300 shadow-lg group-hover:scale-110 transition-transform duration-300"
+                      className="w-20 h-20 object-cover rounded-full border-4 border-amber-400 shadow-lg group-hover:scale-110 transition-transform duration-300"
                     />
                   ) : (
-                    <div className="w-20 h-20 flex items-center justify-center rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 border-3 border-amber-300 shadow-lg group-hover:scale-110 transition-transform duration-300">
-                      <Utensils className="w-8 h-8 text-amber-600" />
-                    </div>
-                  )}
-                  {/* شارة التوثيق */}
-                  {r.isVerified && (
-                    <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center border-2 border-white">
-                      <CheckCircle className="w-3.5 h-3.5 text-white" />
+                    <div className="w-20 h-20 flex items-center justify-center rounded-full bg-slate-700 border-4 border-amber-400 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                      <Utensils className="w-8 h-8 text-amber-400" />
                     </div>
                   )}
                 </div>
                 
                 {/* اسم الأسرة */}
-                <h3 className="font-bold text-sm text-gray-800 line-clamp-1">{r.name}</h3>
+                <h3 className="font-bold text-sm text-white line-clamp-1">{r.name}</h3>
                 
                 {/* المدينة */}
                 {r.city && (
-                  <p className="text-xs text-gray-500 flex items-center gap-0.5 mt-1">
+                  <p className="text-xs text-gray-400 flex items-center gap-0.5 mt-1 mb-2">
                     <MapPin className="w-3 h-3" />
                     {r.city}
                   </p>
                 )}
 
+                {/* شارة التوثيق - كبسولة تحت الاسم */}
+                {(r.isVerified || r.licenseStatus === 'approved') ? (
+                  <div className="bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 text-[11px] font-bold px-3 py-1 rounded-full flex items-center gap-1 mb-2">
+                    <CheckCircle className="w-3 h-3" />
+                    ✔ أسرة موثقة
+                  </div>
+                ) : (
+                  <div className="bg-amber-500/20 border border-amber-500/50 text-amber-400 text-[11px] font-bold px-3 py-1 rounded-full flex items-center gap-1 mb-2">
+                    <Clock className="w-3 h-3" />
+                    ⏳ بانتظار التوثيق
+                  </div>
+                )}
+
                 {/* إحصائيات سريعة */}
-                <div className="flex items-center justify-center gap-3 mt-2 text-[10px] text-gray-400">
+                <div className="flex items-center justify-center gap-3 text-[10px] text-gray-400">
                   {r.averageRating !== undefined && r.averageRating > 0 && (
                     <span className="flex items-center gap-0.5">
                       <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
@@ -492,6 +502,22 @@ export const RestaurantsPage: React.FC = () => {
                     <span className="bg-gradient-to-r from-gray-400 to-gray-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">🥈 Silver</span>
                   )}
                 </div>
+
+                {/* شارات التوصيل والاستلام */}
+                <div className="flex flex-wrap gap-1 mt-1.5 justify-center">
+                  {(r.allowDelivery !== false) && (
+                    <span className="inline-flex items-center gap-0.5 bg-sky-500/20 text-sky-400 text-[9px] font-medium px-1.5 py-0.5 rounded-full">
+                      <Truck className="w-2.5 h-2.5" />
+                      توصيل
+                    </span>
+                  )}
+                  {r.allowPickup && (
+                    <span className="inline-flex items-center gap-0.5 bg-green-500/20 text-green-400 text-[9px] font-medium px-1.5 py-0.5 rounded-full">
+                      <Store className="w-2.5 h-2.5" />
+                      استلام
+                    </span>
+                  )}
+                </div>
               </Link>
             ))}
           </div>
@@ -503,89 +529,109 @@ export const RestaurantsPage: React.FC = () => {
         <div>
           {filteredRestaurants.filter(r => r.packageType === 'premium').length > 0 && (
             <div className="flex items-center gap-2 mb-4">
-              <Utensils className="w-5 h-5 text-gray-500" />
-              <h2 className="text-lg font-bold text-gray-700">جميع الأسر</h2>
+              <Utensils className="w-5 h-5 text-gray-400" />
+              <h2 className="text-lg font-bold text-gray-300">جميع الأسر</h2>
             </div>
           )}
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-4 sm:gap-6">
             {filteredRestaurants.filter(r => r.packageType !== 'premium').map(r => (
               <Link
                 key={r.id}
                 to={`/menu?restaurant=${r.id}${refSource ? `&ref=${refSource}` : ''}`}
                 onClick={() => logVisit(r.id, user?.uid, refSource || 'direct')}
-                className={`bg-white border text-gray-800 rounded-2xl shadow-lg hover:shadow-2xl hover:-translate-y-1 transform transition p-6 flex flex-col items-center text-center relative overflow-hidden ${
-                  r.sellerTier === 'gold' ? 'border-amber-300 ring-2 ring-amber-200' : 'border-gray-200'
-                }`}
+                className="group bg-[#1E293B] rounded-[16px] shadow-lg shadow-black/20 hover:shadow-xl hover:shadow-black/30 hover:-translate-y-1 transform transition-all duration-300 p-4 sm:p-6 flex flex-col items-center text-center relative overflow-hidden active:scale-[0.98]"
               >
-                {/* شارات التميز في الأعلى */}
+                {/* شارة المسافة */}
+                {r.distance !== undefined && (
+                  <div className="absolute top-3 left-3 bg-sky-500/90 backdrop-blur-sm text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
+                    <Navigation className="w-3 h-3" />
+                    {r.distance < 1 ? `${Math.round(r.distance * 1000)} م` : `${r.distance.toFixed(1)} كم`}
+                  </div>
+                )}
+
+                {/* شارات التصنيف في الأعلى */}
                 <div className="absolute top-3 right-3 flex flex-col gap-1.5">
-                  {/* شارة التوثيق */}
-                  {r.isVerified ? (
-                    <div className="bg-green-500 text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow">
-                      <CheckCircle className="w-3 h-3" />
-                      موثقة ✓
-                    </div>
-                  ) : (
-                    <div className="bg-gray-400 text-white text-xs font-medium px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
-                      غير موثقة
-                    </div>
-                  )}
-                  {/* شارة التصنيف */}
                   {r.sellerTier === 'gold' && (
-                    <div className="bg-gradient-to-r from-amber-400 to-yellow-400 text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow">
+                    <div className="bg-gradient-to-r from-amber-400 to-yellow-500 text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow-lg">
                       <Crown className="w-3 h-3" />
                       Gold
                     </div>
                   )}
                   {r.sellerTier === 'silver' && (
-                    <div className="bg-gradient-to-r from-gray-400 to-gray-500 text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow">
+                    <div className="bg-gradient-to-r from-gray-300 to-gray-400 text-gray-800 text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow-lg">
                       <Medal className="w-3 h-3" />
                       Silver
                     </div>
                   )}
                 </div>
                 
-                {/* شارة المسافة */}
-                {r.distance !== undefined && (
-                  <div className="absolute top-3 left-3 bg-sky-500 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
-                    <Navigation className="w-3 h-3" />
-                    {r.distance < 1 ? `${Math.round(r.distance * 1000)} م` : `${r.distance.toFixed(1)} كم`}
-                  </div>
-                )}
-                
-                {/* الشعار مع إطار ذهبي للـ Gold */}
-                {r.logoUrl ? (
-                  <img
-                    src={r.logoUrl}
-                    alt={r.name}
-                    className={`w-28 h-28 object-cover rounded-full mb-4 ${
+                {/* الشعار في دائرة */}
+                <div className="mt-2 mb-4">
+                  {r.logoUrl ? (
+                    <img
+                      src={r.logoUrl}
+                      alt={r.name}
+                      className={`w-24 h-24 object-cover rounded-full border-4 shadow-lg group-hover:scale-105 transition-transform duration-300 ${
+                        r.sellerTier === 'gold' 
+                          ? 'border-amber-400 ring-4 ring-amber-400/30' 
+                          : r.sellerTier === 'silver'
+                          ? 'border-gray-300 ring-4 ring-gray-300/30'
+                          : 'border-slate-500'
+                      }`}
+                    />
+                  ) : (
+                    <div className={`w-24 h-24 flex items-center justify-center rounded-full text-4xl border-4 shadow-lg group-hover:scale-105 transition-transform duration-300 ${
                       r.sellerTier === 'gold' 
-                        ? 'border-4 border-amber-400 ring-4 ring-amber-100' 
+                        ? 'bg-amber-900/50 border-amber-400' 
                         : r.sellerTier === 'silver'
-                        ? 'border-4 border-gray-300'
-                        : 'border-4 border-sky-100'
-                    }`}
-                  />
-                ) : (
-                  <div className={`w-28 h-28 flex items-center justify-center rounded-full text-3xl mb-4 ${
-                    r.sellerTier === 'gold' 
-                      ? 'bg-amber-100 border-4 border-amber-400' 
-                      : r.sellerTier === 'silver'
-                      ? 'bg-gray-100 border-4 border-gray-300'
-                      : 'bg-sky-100 border-4 border-sky-200'
-                  }`}>
-                    🍴
-                  </div>
-                )}
+                        ? 'bg-gray-700 border-gray-300'
+                        : 'bg-slate-700 border-slate-500'
+                    }`}>
+                      🍴
+                    </div>
+                  )}
+                </div>
                 
-                <h3 className="font-bold text-xl text-gray-800">{r.name}</h3>
+                {/* اسم الأسرة */}
+                <h3 className="font-bold text-xl text-white mb-1">{r.name}</h3>
+                
+                {/* الموقع */}
                 {r.city && (
-                  <p className="text-sm text-gray-500 mt-1 flex items-center justify-center gap-1">
+                  <p className="text-sm text-gray-400 flex items-center justify-center gap-1 mb-3">
                     <MapPin className="w-4 h-4" />
                     {r.city}
                   </p>
                 )}
+
+                {/* شارة التوثيق - كبسولة تحت الاسم */}
+                {(r.isVerified || r.licenseStatus === 'approved') ? (
+                  <div className="bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 text-sm font-bold px-4 py-1.5 rounded-full flex items-center gap-2 mb-3">
+                    <CheckCircle className="w-4 h-4" />
+                    ✔ أسرة موثقة
+                  </div>
+                ) : (
+                  <div className="bg-amber-500/20 border border-amber-500/50 text-amber-400 text-sm font-bold px-4 py-1.5 rounded-full flex items-center gap-2 mb-3">
+                    <Clock className="w-4 h-4" />
+                    ⏳ بانتظار التوثيق
+                  </div>
+                )}
+                
+                {/* شارات التوصيل والاستلام */}
+                <div className="flex items-center justify-center gap-2">
+                  {(r.allowDelivery === undefined || r.allowDelivery === true) && (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 bg-sky-500/20 text-sky-400 text-xs font-semibold rounded-full">
+                      <Truck className="w-3 h-3" />
+                      توصيل
+                    </span>
+                  )}
+                  {r.allowPickup && (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-500/20 text-green-400 text-xs font-semibold rounded-full">
+                      <Store className="w-3 h-3" />
+                      استلام
+                    </span>
+                  )}
+                </div>
               </Link>
             ))}
           </div>

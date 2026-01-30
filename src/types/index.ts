@@ -15,6 +15,9 @@ export interface MenuItem {
   available: boolean;
   categoryId?: string;
   ownerId: string; // Links to restaurants/{ownerId}
+  // نظام الخصومات
+  discountPercent?: number; // نسبة الخصم (مثال: 20 تعني 20%)
+  discountExpiresAt?: Date | any; // تاريخ انتهاء الخصم
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -31,7 +34,10 @@ export interface Restaurant {
   city?: string;
   location?: string; // Address or description
   logoUrl?: string;
+  // حالة المتجر
+  isOpen?: boolean; // هل المتجر مفتوح للطلبات؟ (true = متاح، false = مغلق)
   // خيارات التوصيل والاستلام
+  allowDelivery?: boolean; // السماح بالتوصيل للعملاء
   allowPickup?: boolean; // السماح بالاستلام من موقع المطعم
   // التراخيص
   commercialLicenseUrl?: string; // صورة الرخصة التجارية / السجل التجاري
@@ -83,7 +89,9 @@ export interface Order {
   customerId: string; // Links to users/{customerId}
   items: OrderItem[];
   subtotal: number;
-  deliveryFee: number;
+  deliveryFee: number; // رسوم التوصيل (يحددها المندوب أو الأسرة)
+  deliveryFeeSetBy?: 'owner' | 'courier'; // من حدد رسوم التوصيل
+  deliveryFeeSetAt?: Date; // متى تم تحديد رسوم التوصيل
   total: number;
   status: OrderStatus;
   address: string;
@@ -92,9 +100,10 @@ export interface Order {
   notes?: string;
   restaurantName?: string; // Denormalized for display convenience
   restaurantId?: string; // Links to restaurants/{id}
-  // نظام العمولات
-  platformFee?: number; // رسوم التطبيق (1.5 ريال لكل طلب)
+  // نظام العمولات والرسوم
+  platformFee?: number; // رسوم المنصة الثابتة (3.75 ريال لكل طلب) - على المندوب
   adminCommission?: number; // عمولة المشرف (0.5 ريال إذا المطعم مسجل عن طريقه)
+  courierPlatformFee?: number; // رسوم المنصة المخصومة من المندوب (3.75 ريال)
   referredBy?: string; // UID المشرف الذي أضاف المطعم
   createdAt?: Date;
   updatedAt?: Date;
@@ -325,4 +334,56 @@ export interface StoreFollower {
   followerName?: string; // اسم المتابع
   restaurantId: string; // معرف المتجر المتابَع
   createdAt?: Date;
+}
+
+/**
+ * PackageSettings - إعدادات الباقات (تُخزن في settings/packages)
+ */
+export interface PackageSettings {
+  // إعدادات باقة التميز (Premium)
+  premium: PackageConfig;
+  // إعدادات الباقة المجانية
+  free: PackageConfig;
+  // الباقة النشطة افتراضياً للمطاعم الجديدة
+  defaultPackage: 'free' | 'premium';
+  // آخر تحديث
+  updatedAt?: Date;
+}
+
+/**
+ * PackageConfig - إعدادات باقة واحدة
+ */
+export interface PackageConfig {
+  // الاسم المعروض للباقة
+  displayName: string;
+  // الوصف
+  description?: string;
+  // هل الباقة مفعّلة (يمكن للأسر الاشتراك فيها)
+  isEnabled: boolean;
+  // السعر الأصلي بالريال
+  originalPrice: number;
+  // السعر الحالي بالريال (بعد الخصم إن وجد)
+  currentPrice: number;
+  // مدة الاشتراك بالأيام
+  durationDays: number;
+  // إعدادات الخصم
+  discount?: PackageDiscount;
+}
+
+/**
+ * PackageDiscount - خصم على الباقة
+ */
+export interface PackageDiscount {
+  // هل الخصم مفعّل
+  isActive: boolean;
+  // نوع الخصم: نسبة مئوية أو مبلغ ثابت
+  type: 'percentage' | 'fixed';
+  // قيمة الخصم (نسبة أو مبلغ)
+  value: number;
+  // تاريخ بداية الخصم
+  startDate?: Date | any;
+  // تاريخ نهاية الخصم
+  endDate?: Date | any;
+  // سبب أو وصف الخصم (للعرض)
+  label?: string;
 }
