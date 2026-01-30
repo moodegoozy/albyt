@@ -38,6 +38,21 @@ service cloud.firestore {
       allow delete: if isDeveloper();
     }
 
+    /* ===== couriers (ملفات المناديب الشخصية) ===== */
+    match /couriers/{courierId} {
+      // القراءة: المندوب نفسه أو المطور
+      allow read: if isDeveloper() || (isCourier() && request.auth.uid == courierId);
+      
+      // الإنشاء: المندوب لملفه الشخصي
+      allow create: if isCourier() && request.auth.uid == courierId;
+      
+      // التحديث: المندوب نفسه أو المطور
+      allow update: if isDeveloper() || (isCourier() && request.auth.uid == courierId);
+      
+      // الحذف: المطور فقط
+      allow delete: if isDeveloper();
+    }
+
     /* ===== restaurants ===== */
     match /restaurants/{ownerId} {
       allow read: if true;
