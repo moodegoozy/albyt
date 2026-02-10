@@ -17,6 +17,8 @@ type RestaurantForm = {
   isOpen?: boolean // هل المتجر مفتوح للطلبات
   allowDelivery?: boolean // السماح بالتوصيل
   allowPickup?: boolean // السماح بالاستلام من المطعم
+  cuisineType?: string // نوع المطبخ
+  announcement?: string // ملاحظة قصيرة للعملاء
   commercialLicenseUrl?: string
   licenseStatus?: 'pending' | 'approved' | 'rejected'
   licenseNotes?: string
@@ -29,6 +31,17 @@ type RestaurantForm = {
   hiringDescription?: string
   hiringContact?: string
 }
+
+// أنواع المطابخ
+const CUISINE_TYPES = [
+  { value: '', label: 'اختر نوع المطبخ' },
+  { value: 'traditional', label: '🍚 أكلات شعبية' },
+  { value: 'sweets', label: '🍰 حلويات' },
+  { value: 'pastries', label: '🥧 معجنات' },
+  { value: 'grills', label: '🍖 مشويات' },
+  { value: 'healthy', label: '🥗 أكل صحي' },
+  { value: 'international', label: '🌍 أكلات عالمية' },
+]
 
 export const EditRestaurant: React.FC = () => {
   const { user } = useAuth()
@@ -43,6 +56,8 @@ export const EditRestaurant: React.FC = () => {
     isOpen: true, // المتجر مفتوح افتراضياً
     allowDelivery: true, // التوصيل مفعل افتراضياً
     allowPickup: false,
+    cuisineType: "",
+    announcement: "",
     commercialLicenseUrl: "",
     licenseStatus: undefined,
     licenseNotes: "",
@@ -96,6 +111,8 @@ export const EditRestaurant: React.FC = () => {
             isOpen: (data as any).isOpen ?? true,
             allowDelivery: (data as any).allowDelivery ?? true,
             allowPickup: (data as any).allowPickup ?? false,
+            cuisineType: (data as any).cuisineType ?? "",
+            announcement: (data as any).announcement ?? "",
             commercialLicenseUrl: (data as any).commercialLicenseUrl ?? "",
             licenseStatus: (data as any).licenseStatus,
             licenseNotes: (data as any).licenseNotes ?? "",
@@ -124,7 +141,7 @@ export const EditRestaurant: React.FC = () => {
   }, [preview])
 
   // ====== Handlers ======
-  const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
     setForm((p) => ({ ...p, [name]: value }))
   }
@@ -346,6 +363,44 @@ export const EditRestaurant: React.FC = () => {
           onChange={onChange}
           className="w-full border p-3 rounded-xl"
         />
+
+        {/* نوع المطبخ */}
+        <div className="relative">
+          <select
+            name="cuisineType"
+            value={form.cuisineType || ''}
+            onChange={(e) => setForm(p => ({ ...p, cuisineType: e.target.value }))}
+            className="w-full border p-3 rounded-xl bg-white appearance-none cursor-pointer focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+          >
+            {CUISINE_TYPES.map(cuisine => (
+              <option key={cuisine.value} value={cuisine.value}>{cuisine.label}</option>
+            ))}
+          </select>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
+            نوع المطبخ
+          </span>
+        </div>
+
+        {/* ملاحظة قصيرة للعملاء */}
+        <div className="space-y-2">
+          <label className="block font-semibold text-gray-700 flex items-center gap-2">
+            <FileText className="w-5 h-5 text-sky-500" />
+            ملاحظة قصيرة للعملاء
+          </label>
+          <textarea
+            name="announcement"
+            placeholder="اكتب ملاحظة قصيرة تظهر للعملاء عند زيارة متجرك... مثلاً: نستقبل الطلبات من الساعة 4 عصراً"
+            value={form.announcement || ''}
+            onChange={onChange}
+            maxLength={150}
+            rows={2}
+            className="w-full border p-3 rounded-xl resize-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+          />
+          <p className="text-xs text-gray-500 flex items-center gap-1">
+            <span>{form.announcement?.length || 0}/150</span>
+            حرف
+          </p>
+        </div>
 
         {/* قسم خيارات التوصيل والاستلام */}
         <div className="border-t pt-4 mt-4">

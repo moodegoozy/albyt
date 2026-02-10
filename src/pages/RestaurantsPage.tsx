@@ -4,10 +4,24 @@ import { db } from '@/firebase'
 import { collection, getDocs, query, where, updateDoc, doc, increment, setDoc, addDoc, serverTimestamp, getDoc } from 'firebase/firestore'
 import { Link, useSearchParams } from 'react-router-dom'
 import { SAUDI_CITIES } from '@/utils/cities'
-import { MapPin, Filter, X, Navigation, AlertCircle, CheckCircle, Crown, Medal, Award, Megaphone, ChevronLeft, ChevronRight, Play, Eye, Star, ShoppingBag, Utensils, Truck, Store, Clock } from 'lucide-react'
+import { MapPin, Filter, X, Navigation, AlertCircle, CheckCircle, Crown, Medal, Award, Megaphone, ChevronLeft, ChevronRight, Play, Eye, Star, ShoppingBag, Utensils, Truck, Store, Clock, Search, SlidersHorizontal, StarHalf, Flame, Gift, Percent, Tag, Package, Plus } from 'lucide-react'
 import { useAuth } from '@/auth'
 import { calculateDistance, MAX_DELIVERY_DISTANCE } from '@/utils/distance'
-import { Promotion } from '@/types'
+import { Promotion, MenuItem, SpecialOffer, Story, StoryGroup } from '@/types'
+import { StoryViewer } from '@/components/StoryViewer'
+import { isRamadan, OFFER_TYPE_LABELS, RamadanOfferType } from '@/utils/ramadanConfig'
+import { RamadanBanner, IftarCountdown } from '@/components/RamadanDecorations'
+
+// أنواع المطابخ
+const CUISINE_TYPES = [
+  { value: '', label: 'الكل' },
+  { value: 'traditional', label: '🍚 أكلات شعبية' },
+  { value: 'sweets', label: '🍰 حلويات' },
+  { value: 'pastries', label: '🥧 معجنات' },
+  { value: 'grills', label: '🍖 مشويات' },
+  { value: 'healthy', label: '🥗 أكل صحي' },
+  { value: 'international', label: '🌍 أكلات عالمية' },
+]
 
 type GeoLocation = { lat: number; lng: number }
 
@@ -23,6 +37,7 @@ type Restaurant = {
   packageType?: 'free' | 'premium'
   allowDelivery?: boolean
   allowPickup?: boolean
+  cuisineType?: string // نوع المطبخ
   // إحصائيات للعرض في الباقة المميزة
   totalOrders?: number
   averageRating?: number
@@ -31,6 +46,12 @@ type Restaurant = {
 
 type RestaurantWithDistance = Restaurant & {
   distance?: number
+}
+
+// نوع المنتج الأكثر طلبًا مع معلومات المطعم
+type TopMenuItem = MenuItem & {
+  restaurantName?: string
+  restaurantLogo?: string
 }
 
 // دالة تسجيل الزيارة
@@ -86,16 +107,74 @@ export const RestaurantsPage: React.FC = () => {
   const refSource = searchParams.get('ref') // مصدر الإحالة (whatsapp, social, etc)
   const [restaurants, setRestaurants] = useState<RestaurantWithDistance[]>([])
   const [promotions, setPromotions] = useState<(Promotion & { restaurantName?: string })[]>([])
+  const [topItems, setTopItems] = useState<TopMenuItem[]>([]) // ⭐ الأكثر طلبًا اليوم
+  const [specialOffers, setSpecialOffers] = useState<SpecialOffer[]>([]) // 🎁 العروض الخاصة
+  // 📸 الستوريات
+  const [storyGroups, setStoryGroups] = useState<StoryGroup[]>([])
+  const [showStoryViewer, setShowStoryViewer] = useState(false)
+  const [selectedStoryGroupIndex, setSelectedStoryGroupIndex] = useState(0)
   const [currentPromoIndex, setCurrentPromoIndex] = useState(0)
   const [loading, setLoading] = useState(true)
   const [selectedCity, setSelectedCity] = useState<string>('')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  // 🔍 فلاتر البحث المتقدم
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedCuisine, setSelectedCuisine] = useState('')
+  const [minRating, setMinRating] = useState<number>(0)
+  const [showFilters, setShowFilters] = useState(false)
+  const [sortBy, setSortBy] = useState<'distance' | 'rating' | 'orders'>('distance')
 
   useEffect(() => {
     (async () => {
       // جلب المطاعم
       const snap = await getDocs(collection(db, 'restaurants'))
-      const allRestaurants = snap.docs.map(d => ({ id: d.id, ...d.data() } as Restaurant))
+      const rawRestaurants = snap.docs.map(d => ({ id: d.id, ...d.data() } as Restaurant))
+      
+      // جلب كل المنتجات لفلترة المطاعم المكتملة
+      const menuSnap = await getDocs(collection(db, 'menuItems'))
+      const allMenuItems = menuSnap.docs.map(d => ({ id: d.id, ...d.data() } as MenuItem))
+      
+      // تجميع المنتجات حسب المطعم (ownerId)
+      const menuItemsByRestaurant = new Map<string, number>()
+      allMenuItems.forEach(item => {
+        if (item.available !== false) {
+          const count = menuItemsByRestaurant.get(item.ownerId) || 0
+          menuItemsByRestaurant.set(item.ownerId, count + 1)
+        }
+      })
+      
+      // 🔒 فلترة المطاعم المكتملة فقط (للعملاء والزوار)
+      // الشروط: شعار + موقع + منتج واحد على الأقل
+      const allRestaurants = rawRestaurants.filter(r => {
+        // المطور والمسؤول والمالك يرون كل المطاعم
+        if (role === 'developer' || role === 'admin' || role === 'owner') {
+          return true
+        }
+        // للعملاء والمناديب: يجب أن يكون المطعم مكتمل
+        const hasLogo = !!r.logoUrl
+        const hasLocation = !!r.geoLocation
+        const hasMenuItems = (menuItemsByRestaurant.get(r.id) || 0) > 0
+        return hasLogo && hasLocation && hasMenuItems
+      })
+      
+      // ⭐ جلب المنتجات الأكثر طلبًا اليوم (أعلى 6 منتجات)
+      try {
+        const topMenuItems = allMenuItems
+          .filter(item => item.available !== false && (item.orderCount || 0) > 0)
+          .sort((a, b) => (b.orderCount || 0) - (a.orderCount || 0))
+          .slice(0, 6)
+          .map(item => {
+            const restaurant = allRestaurants.find(r => r.id === item.ownerId)
+            return {
+              ...item,
+              restaurantName: restaurant?.name,
+              restaurantLogo: restaurant?.logoUrl
+            } as TopMenuItem
+          })
+        setTopItems(topMenuItems)
+      } catch (err) {
+        console.warn('Error loading top items:', err)
+      }
       
       // جلب الإعلانات النشطة
       try {
@@ -120,6 +199,70 @@ export const RestaurantsPage: React.FC = () => {
         setPromotions(activePromos)
       } catch (err) {
         console.warn('Error loading promotions:', err)
+      }
+      
+      // 🎁 جلب العروض الخاصة النشطة
+      try {
+        const offersQuery = query(
+          collection(db, 'offers'),
+          where('isActive', '==', true)
+        )
+        const offersSnap = await getDocs(offersQuery)
+        const now = new Date()
+        const activeOffers = offersSnap.docs
+          .map(d => ({
+            id: d.id,
+            ...d.data(),
+            expiresAt: d.data().expiresAt?.toDate?.(),
+          } as SpecialOffer))
+          .filter(o => !o.expiresAt || new Date(o.expiresAt) > now)
+          .slice(0, 8) // أظهر 8 عروض كحد أقصى
+        setSpecialOffers(activeOffers)
+      } catch (err) {
+        console.warn('Error loading special offers:', err)
+      }
+
+      // 📸 جلب الستوريات النشطة (لم تنتهِ بعد)
+      try {
+        const storiesSnap = await getDocs(collection(db, 'stories'))
+        const now = new Date()
+        const activeStories = storiesSnap.docs
+          .map(d => ({
+            id: d.id,
+            ...d.data(),
+            expiresAt: d.data().expiresAt?.toDate?.(),
+            createdAt: d.data().createdAt?.toDate?.(),
+          } as Story))
+          .filter(s => s.expiresAt && new Date(s.expiresAt) > now)
+          .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0))
+
+        // تجميع الستوريات حسب صاحب الأسرة
+        const groupsMap = new Map<string, StoryGroup>()
+        activeStories.forEach(story => {
+          const existing = groupsMap.get(story.ownerId)
+          const restaurant = allRestaurants.find(r => r.id === story.ownerId)
+          const hasUnviewed = !user?.uid || !story.viewedBy?.includes(user.uid)
+          
+          if (existing) {
+            existing.stories.push(story)
+            if (hasUnviewed) existing.hasUnviewed = true
+          } else {
+            groupsMap.set(story.ownerId, {
+              ownerId: story.ownerId,
+              restaurantName: story.restaurantName || restaurant?.name,
+              restaurantLogo: story.restaurantLogo || restaurant?.logoUrl,
+              stories: [story],
+              hasUnviewed
+            })
+          }
+        })
+        
+        // ترتيب المجموعات: الغير مشاهدة أولاً
+        const groups = Array.from(groupsMap.values())
+          .sort((a, b) => (b.hasUnviewed ? 1 : 0) - (a.hasUnviewed ? 1 : 0))
+        setStoryGroups(groups)
+      } catch (err) {
+        console.warn('Error loading stories:', err)
       }
       
       // حساب المسافة وفلترة المطاعم
@@ -191,23 +334,461 @@ export const RestaurantsPage: React.FC = () => {
 
   // المطاعم المفلترة حسب المدينة
   const filteredRestaurants = useMemo(() => {
-    if (!selectedCity) return restaurants
-    return restaurants.filter(r => r.city === selectedCity)
-  }, [restaurants, selectedCity])
+    let result = restaurants
+    
+    // فلتر المدينة
+    if (selectedCity) {
+      result = result.filter(r => r.city === selectedCity)
+    }
+    
+    // فلتر البحث بالاسم
+    if (searchQuery.trim()) {
+      const query = searchQuery.trim().toLowerCase()
+      result = result.filter(r => 
+        r.name.toLowerCase().includes(query) ||
+        r.city?.toLowerCase().includes(query)
+      )
+    }
+    
+    // فلتر نوع المطبخ
+    if (selectedCuisine) {
+      result = result.filter(r => r.cuisineType === selectedCuisine)
+    }
+    
+    // فلتر التقييم الأدنى
+    if (minRating > 0) {
+      result = result.filter(r => (r.averageRating || 0) >= minRating)
+    }
+    
+    // الترتيب
+    if (sortBy === 'rating') {
+      result = [...result].sort((a, b) => (b.averageRating || 0) - (a.averageRating || 0))
+    } else if (sortBy === 'orders') {
+      result = [...result].sort((a, b) => (b.totalOrders || 0) - (a.totalOrders || 0))
+    }
+    // sortBy === 'distance' هو الافتراضي (مرتب مسبقاً)
+    
+    return result
+  }, [restaurants, selectedCity, searchQuery, selectedCuisine, minRating, sortBy])
+
+  // عدد الفلاتر النشطة
+  const activeFiltersCount = [selectedCity, searchQuery, selectedCuisine, minRating > 0].filter(Boolean).length
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96 text-lg text-gray-300">
-        ⏳ جارِ تحميل المطاعم...
+      <div className="flex flex-col items-center justify-center min-h-[60vh]">
+        <div className="w-16 h-16 border-4 border-sky-200 border-t-sky-500 rounded-full animate-spin mb-4"></div>
+        <p className="text-sky-600 font-semibold">جارِ تحميل الأسر المنتجة...</p>
       </div>
     )
   }
 
   return (
-    <div className="py-10">
-      <h1 className="text-3xl font-extrabold text-center mb-8 text-sky-600">
-        🍴 قائمة المطاعم
+    <div className="pb-8">
+      {/* العنوان */}
+      <h1 className="text-2xl font-bold text-center mb-6 text-sky-700">
+        🍴 الأسر المنتجة
       </h1>
+
+      {/* � شريط الستوريات (مثل إنستغرام) */}
+      {storyGroups.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3 px-2">
+            <Play className="w-5 h-5 text-pink-500" />
+            <h2 className="text-lg font-bold text-sky-700">📸 ستوري الأسر</h2>
+          </div>
+          <div className="flex gap-4 overflow-x-auto pb-2 px-2 scrollbar-hide">
+            {storyGroups.map((group, index) => (
+              <button
+                key={group.ownerId}
+                onClick={() => {
+                  setSelectedStoryGroupIndex(index)
+                  setShowStoryViewer(true)
+                }}
+                className="flex-shrink-0 flex flex-col items-center gap-1 group"
+              >
+                {/* الدائرة مع تأثير الجريدينت للستوري غير المشاهد */}
+                <div className={`relative p-[3px] rounded-full ${
+                  group.hasUnviewed 
+                    ? 'bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600' 
+                    : 'bg-gray-300'
+                }`}>
+                  <div className="w-16 h-16 rounded-full bg-white p-[2px]">
+                    {group.restaurantLogo ? (
+                      <img
+                        src={group.restaurantLogo}
+                        alt={group.restaurantName || 'Restaurant'}
+                        className="w-full h-full rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full rounded-full bg-sky-100 flex items-center justify-center">
+                        <Store className="w-7 h-7 text-sky-400" />
+                      </div>
+                    )}
+                  </div>
+                  {/* عدد الستوريات */}
+                  {group.stories.length > 1 && (
+                    <span className="absolute -bottom-1 -left-1 w-5 h-5 bg-pink-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white">
+                      {group.stories.length}
+                    </span>
+                  )}
+                </div>
+                {/* اسم الأسرة */}
+                <span className="text-[11px] text-gray-600 font-medium text-center line-clamp-1 max-w-[70px]">
+                  {group.restaurantName || 'أسرة'}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* عارض الستوريات */}
+      {showStoryViewer && storyGroups.length > 0 && (
+        <StoryViewer
+          storyGroups={storyGroups}
+          initialGroupIndex={selectedStoryGroupIndex}
+          currentUserId={user?.uid}
+          onClose={() => setShowStoryViewer(false)}
+        />
+      )}
+
+      {/* 🔍 شريط البحث */}
+      <div className="mb-5 px-1">
+        <div className="relative">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="ابحث عن أسرة أو منطقة..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-white border-2 border-sky-200 rounded-xl py-3 pr-10 pl-12 text-gray-800 placeholder:text-gray-400 focus:border-sky-500 focus:outline-none shadow-sm transition"
+          />
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition ${
+              showFilters || activeFiltersCount > 0
+                ? 'bg-sky-500 text-white'
+                : 'bg-sky-100 text-sky-600 hover:bg-sky-200'
+            }`}
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+            {activeFiltersCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                {activeFiltersCount}
+              </span>
+            )}
+          </button>
+        </div>
+        
+        {/* 🎚️ الفلاتر المتقدمة */}
+        {showFilters && (
+          <div className="mt-3 bg-white rounded-xl p-4 border border-sky-100 shadow-sm space-y-4">
+            {/* الترتيب */}
+            <div>
+              <label className="text-sm font-semibold text-gray-600 mb-2 block">ترتيب حسب</label>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => setSortBy('distance')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                    sortBy === 'distance' ? 'bg-sky-500 text-white' : 'bg-sky-50 text-sky-700'
+                  }`}
+                >
+                  <Navigation className="w-3 h-3 inline ml-1" />
+                  الأقرب
+                </button>
+                <button
+                  onClick={() => setSortBy('rating')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                    sortBy === 'rating' ? 'bg-sky-500 text-white' : 'bg-sky-50 text-sky-700'
+                  }`}
+                >
+                  <Star className="w-3 h-3 inline ml-1" />
+                  الأعلى تقييماً
+                </button>
+                <button
+                  onClick={() => setSortBy('orders')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                    sortBy === 'orders' ? 'bg-sky-500 text-white' : 'bg-sky-50 text-sky-700'
+                  }`}
+                >
+                  <ShoppingBag className="w-3 h-3 inline ml-1" />
+                  الأكثر طلباً
+                </button>
+              </div>
+            </div>
+
+            {/* نوع المطبخ */}
+            <div>
+              <label className="text-sm font-semibold text-gray-600 mb-2 block">نوع المطبخ</label>
+              <div className="flex gap-2 flex-wrap">
+                {CUISINE_TYPES.map(cuisine => (
+                  <button
+                    key={cuisine.value}
+                    onClick={() => setSelectedCuisine(cuisine.value)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                      selectedCuisine === cuisine.value ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-700'
+                    }`}
+                  >
+                    {cuisine.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* التقييم الأدنى */}
+            <div>
+              <label className="text-sm font-semibold text-gray-600 mb-2 block">
+                الحد الأدنى للتقييم: {minRating > 0 ? `${minRating}+ ⭐` : 'الكل'}
+              </label>
+              <div className="flex gap-2 flex-wrap">
+                {[0, 3, 3.5, 4, 4.5].map(rating => (
+                  <button
+                    key={rating}
+                    onClick={() => setMinRating(rating)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1 ${
+                      minRating === rating ? 'bg-yellow-500 text-white' : 'bg-yellow-50 text-yellow-700'
+                    }`}
+                  >
+                    {rating === 0 ? 'الكل' : (
+                      <>
+                        <Star className="w-3 h-3 fill-current" />
+                        {rating}+
+                      </>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* زر إعادة تعيين الفلاتر */}
+            {activeFiltersCount > 0 && (
+              <button
+                onClick={() => {
+                  setSearchQuery('')
+                  setSelectedCity('')
+                  setSelectedCuisine('')
+                  setMinRating(0)
+                  setSortBy('distance')
+                }}
+                className="w-full py-2 bg-red-50 text-red-500 rounded-lg font-medium hover:bg-red-100 transition flex items-center justify-center gap-2"
+              >
+                <X className="w-4 h-4" />
+                إعادة تعيين ({activeFiltersCount})
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 🌙 قسم عروض رمضان */}
+      {isRamadan() && (
+        <div className="mb-8">
+          {/* بانر رمضان */}
+          <div className="mb-6">
+            <RamadanBanner />
+          </div>
+
+          {/* عداد الإفطار */}
+          <div className="mb-6">
+            <IftarCountdown city="الرياض" />
+          </div>
+
+          {/* عروض رمضان الخاصة */}
+          <div className="bg-gradient-to-r from-purple-900 via-purple-800 to-emerald-900 rounded-3xl p-6 mb-6 relative overflow-hidden">
+            {/* زخارف خلفية */}
+            <div className="absolute top-2 right-4 text-4xl opacity-30 animate-pulse">🌙</div>
+            <div className="absolute bottom-2 left-4 text-3xl opacity-20">✨</div>
+            <div className="absolute top-1/2 right-1/4 text-2xl opacity-20">🏮</div>
+            
+            <div className="relative">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <span className="text-4xl">🏝️</span>
+                  <div>
+                    <h2 className="text-xl font-black text-white">عروض رمضان</h2>
+                    <p className="text-purple-200 text-sm">باقات إفطار وسحور مميزة</p>
+                  </div>
+                </div>
+                <div className="bg-amber-400 text-purple-900 text-xs font-bold px-3 py-1.5 rounded-full">
+                  🌙 عروض حصرية
+                </div>
+              </div>
+              
+              {/* أنواع العروض */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {(['iftar_package', 'suhoor_package', 'family_bundle', 'discount'] as RamadanOfferType[]).map(type => {
+                  const info = OFFER_TYPE_LABELS[type]
+                  return (
+                    <Link
+                      key={type}
+                      to={`/restaurants?offer_type=${type}`}
+                      className="bg-white/10 backdrop-blur rounded-xl p-4 text-center hover:bg-white/20 transition-all group"
+                    >
+                      <span className="text-3xl block mb-2 group-hover:scale-110 transition-transform">{info.emoji}</span>
+                      <span className="text-white font-bold text-sm">{info.label}</span>
+                    </Link>
+                  )
+                })}
+              </div>
+              
+              {/* رسالة للأسر */}
+              <div className="mt-4 bg-amber-400/20 rounded-xl p-3 flex items-center gap-3">
+                <span className="text-2xl">👨‍🍳</span>
+                <p className="text-amber-200 text-sm flex-1">
+                  هل أنت أسرة منتجة؟ أضف عروضك الرمضانية واستقبل طلبات أكثر!
+                </p>
+                <Link to="/owner/offers?type=ramadan" className="bg-amber-400 text-purple-900 px-4 py-2 rounded-xl font-bold text-sm whitespace-nowrap hover:bg-amber-300 transition">
+                  أضف عرضك
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ⭐ المنتجات الأكثر طلبًا اليوم */}
+      {topItems.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Flame className="w-6 h-6 text-orange-500" />
+              <h2 className="text-xl font-bold text-sky-700">🔥 الأكثر طلبًا اليوم</h2>
+            </div>
+            <span className="text-sm text-gray-400">{topItems.length} أصناف</span>
+          </div>
+          
+          <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {topItems.map(item => (
+              <Link
+                key={item.id}
+                to={`/menu?restaurant=${item.ownerId}`}
+                className="group bg-white border border-sky-100 rounded-2xl shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden"
+              >
+                {/* صورة المنتج */}
+                <div className="relative aspect-square bg-sky-50">
+                  {item.imageUrl ? (
+                    <img
+                      src={item.imageUrl}
+                      alt={item.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Utensils className="w-10 h-10 text-sky-300" />
+                    </div>
+                  )}
+                  {/* شارة الأكثر طلبًا */}
+                  <div className="absolute top-2 right-2 bg-gradient-to-r from-orange-500 to-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow flex items-center gap-1">
+                    <Flame className="w-3 h-3" />
+                    {item.orderCount}+ طلب
+                  </div>
+                </div>
+                
+                {/* تفاصيل المنتج */}
+                <div className="p-3">
+                  <h3 className="font-bold text-sm text-gray-800 line-clamp-1">{item.name}</h3>
+                  <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{item.restaurantName}</p>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="font-bold text-sky-600 text-sm">{item.price} ر.س</span>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 🎁 قسم العروض الخاصة */}
+      {specialOffers.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Gift className="w-6 h-6 text-pink-500" />
+              <h2 className="text-xl font-bold text-sky-700">🎁 عروض الأسر</h2>
+            </div>
+            <span className="text-sm text-gray-400">{specialOffers.length} عرض</span>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {specialOffers.map(offer => {
+              const OfferIcon = offer.offerType === 'percent_discount' ? Percent :
+                               offer.offerType === 'fixed_discount' ? Tag :
+                               offer.offerType === 'bundle_meal' ? Package : Gift
+              const bgColor = offer.offerType === 'percent_discount' ? 'from-amber-500 to-orange-500' :
+                             offer.offerType === 'fixed_discount' ? 'from-green-500 to-emerald-500' :
+                             offer.offerType === 'bundle_meal' ? 'from-purple-500 to-violet-500' :
+                             'from-pink-500 to-rose-500'
+              
+              return (
+                <Link
+                  key={offer.id}
+                  to={`/menu?restaurant=${offer.ownerId}`}
+                  onClick={async () => {
+                    // زيادة عداد المشاهدات
+                    try {
+                      await updateDoc(doc(db, 'offers', offer.id), {
+                        viewsCount: increment(1)
+                      })
+                    } catch {}
+                  }}
+                  className="group bg-white rounded-2xl shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden border border-gray-100"
+                >
+                  {/* رأس العرض الملون */}
+                  <div className={`bg-gradient-to-r ${bgColor} p-4 text-white relative`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <OfferIcon className="w-5 h-5" />
+                      <span className="text-xs font-medium opacity-90">
+                        {offer.offerType === 'percent_discount' && 'خصم نسبة'}
+                        {offer.offerType === 'fixed_discount' && 'خصم مبلغ'}
+                        {offer.offerType === 'bundle_meal' && 'وجبة خاصة'}
+                        {offer.offerType === 'buy_x_get_y' && 'اشترِ واحصل'}
+                      </span>
+                    </div>
+                    <h3 className="font-bold text-lg leading-tight line-clamp-1">{offer.title}</h3>
+                    
+                    {/* تفاصيل العرض */}
+                    <div className="mt-2 text-sm font-bold">
+                      {offer.offerType === 'percent_discount' && (
+                        <span className="text-2xl">{offer.discountPercent}% خصم</span>
+                      )}
+                      {offer.offerType === 'fixed_discount' && (
+                        <span className="text-2xl">وفّر {offer.discountAmount} ر.س</span>
+                      )}
+                      {offer.offerType === 'bundle_meal' && (
+                        <div>
+                          <span className="text-2xl">{offer.bundlePrice} ر.س</span>
+                          <span className="text-sm opacity-75 line-through mr-2">{offer.bundleOriginalPrice} ر.س</span>
+                        </div>
+                      )}
+                      {offer.offerType === 'buy_x_get_y' && (
+                        <span className="text-xl">اشترِ {offer.buyQuantity} واحصل على {offer.getQuantity} مجاناً</span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* معلومات الأسرة */}
+                  <div className="p-3 flex items-center gap-3">
+                    {offer.restaurantLogo ? (
+                      <img src={offer.restaurantLogo} alt="" className="w-10 h-10 rounded-full object-cover border-2 border-gray-100" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-sky-100 flex items-center justify-center">
+                        <Store className="w-5 h-5 text-sky-500" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-800 text-sm truncate">{offer.restaurantName || 'أسرة منتجة'}</p>
+                      {offer.description && (
+                        <p className="text-xs text-gray-500 line-clamp-1">{offer.description}</p>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 📢 شريط الإعلانات الممولة */}
       {promotions.length > 0 && (
@@ -451,6 +1032,12 @@ export const RestaurantsPage: React.FC = () => {
                       <Utensils className="w-8 h-8 text-amber-400" />
                     </div>
                   )}
+                  {/* علامة الموثق بجانب الشعار */}
+                  {(r.isVerified || r.licenseStatus === 'approved') && (
+                    <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-sky-500 rounded-full flex items-center justify-center border-2 border-white shadow-lg">
+                      <CheckCircle className="w-4 h-4 text-white" />
+                    </div>
+                  )}
                 </div>
                 
                 {/* اسم الأسرة */}
@@ -464,18 +1051,18 @@ export const RestaurantsPage: React.FC = () => {
                   </p>
                 )}
 
-                {/* شارة التوثيق - كبسولة تحت الاسم */}
+                {/* شارة التوثيق - تظهر فقط للأسر التي لديها تراخيص */}
                 {(r.isVerified || r.licenseStatus === 'approved') ? (
-                  <div className="bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 text-[11px] font-bold px-3 py-1 rounded-full flex items-center gap-1 mb-2">
+                  <div className="bg-sky-500/20 border border-sky-500/50 text-sky-400 text-[11px] font-bold px-3 py-1 rounded-full flex items-center gap-1 mb-2">
                     <CheckCircle className="w-3 h-3" />
-                    ✔ أسرة موثقة
+                    ✔ موثقة
                   </div>
-                ) : (
+                ) : r.licenseStatus === 'pending' ? (
                   <div className="bg-amber-500/20 border border-amber-500/50 text-amber-400 text-[11px] font-bold px-3 py-1 rounded-full flex items-center gap-1 mb-2">
                     <Clock className="w-3 h-3" />
-                    ⏳ بانتظار التوثيق
+                    ⏳ قيد المراجعة
                   </div>
-                )}
+                ) : null}
 
                 {/* إحصائيات سريعة */}
                 <div className="flex items-center justify-center gap-3 text-[10px] text-gray-400">
@@ -567,7 +1154,7 @@ export const RestaurantsPage: React.FC = () => {
                 </div>
                 
                 {/* الشعار في دائرة */}
-                <div className="mt-2 mb-4">
+                <div className="relative mt-2 mb-4">
                   {r.logoUrl ? (
                     <img
                       src={r.logoUrl}
@@ -591,6 +1178,12 @@ export const RestaurantsPage: React.FC = () => {
                       🍴
                     </div>
                   )}
+                  {/* علامة الموثق بجانب الشعار */}
+                  {(r.isVerified || r.licenseStatus === 'approved') && (
+                    <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-sky-500 rounded-full flex items-center justify-center border-2 border-white shadow-lg">
+                      <CheckCircle className="w-5 h-5 text-white" />
+                    </div>
+                  )}
                 </div>
                 
                 {/* اسم الأسرة */}
@@ -604,18 +1197,18 @@ export const RestaurantsPage: React.FC = () => {
                   </p>
                 )}
 
-                {/* شارة التوثيق - كبسولة تحت الاسم */}
+                {/* شارة التوثيق - تظهر فقط للأسر التي لديها تراخيص */}
                 {(r.isVerified || r.licenseStatus === 'approved') ? (
-                  <div className="bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 text-sm font-bold px-4 py-1.5 rounded-full flex items-center gap-2 mb-3">
+                  <div className="bg-sky-500/20 border border-sky-500/50 text-sky-400 text-sm font-bold px-4 py-1.5 rounded-full flex items-center gap-2 mb-3">
                     <CheckCircle className="w-4 h-4" />
-                    ✔ أسرة موثقة
+                    ✔ موثقة
                   </div>
-                ) : (
+                ) : r.licenseStatus === 'pending' ? (
                   <div className="bg-amber-500/20 border border-amber-500/50 text-amber-400 text-sm font-bold px-4 py-1.5 rounded-full flex items-center gap-2 mb-3">
                     <Clock className="w-4 h-4" />
-                    ⏳ بانتظار التوثيق
+                    ⏳ قيد المراجعة
                   </div>
-                )}
+                ) : null}
                 
                 {/* شارات التوصيل والاستلام */}
                 <div className="flex items-center justify-center gap-2">

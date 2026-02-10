@@ -5,13 +5,17 @@ import {
   collection, query, where, orderBy, onSnapshot, 
   updateDoc, deleteDoc, doc, Timestamp 
 } from 'firebase/firestore'
-import { Bell, Check, Trash2, AlertCircle, RefreshCw, ArrowRight } from 'lucide-react'
+import { 
+  Bell, Check, Trash2, AlertCircle, RefreshCw, ArrowRight,
+  Package, Truck, Tag, MapPin, Sparkles, CheckCircle
+} from 'lucide-react'
 import { useToast } from '@/components/ui/Toast'
 import { useNavigate } from 'react-router-dom'
+import { SmartNotificationType } from '@/utils/notificationService'
 
 type Notification = {
   id: string
-  type: string
+  type: SmartNotificationType | string
   recipientId: string
   recipientType: string
   restaurantId?: string
@@ -19,7 +23,54 @@ type Notification = {
   title: string
   message: string
   read: boolean
+  actionUrl?: string
+  actionType?: 'order' | 'restaurant' | 'menu_item'
+  priority?: 'high' | 'normal' | 'low'
   createdAt: Timestamp
+}
+
+// أيقونات وألوان حسب نوع الإشعار
+const notificationStyles: Record<string, { icon: React.ReactNode; bgColor: string; textColor: string }> = {
+  order_ready: { 
+    icon: <Package className="w-5 h-5" />, 
+    bgColor: 'bg-green-100', 
+    textColor: 'text-green-600' 
+  },
+  order_delivered: { 
+    icon: <CheckCircle className="w-5 h-5" />, 
+    bgColor: 'bg-emerald-100', 
+    textColor: 'text-emerald-600' 
+  },
+  order_accepted: { 
+    icon: <Check className="w-5 h-5" />, 
+    bgColor: 'bg-blue-100', 
+    textColor: 'text-blue-600' 
+  },
+  courier_assigned: { 
+    icon: <Truck className="w-5 h-5" />, 
+    bgColor: 'bg-sky-100', 
+    textColor: 'text-sky-600' 
+  },
+  nearby_offer: { 
+    icon: <MapPin className="w-5 h-5" />, 
+    bgColor: 'bg-purple-100', 
+    textColor: 'text-purple-600' 
+  },
+  discount: { 
+    icon: <Tag className="w-5 h-5" />, 
+    bgColor: 'bg-rose-100', 
+    textColor: 'text-rose-600' 
+  },
+  new_menu_item: { 
+    icon: <Sparkles className="w-5 h-5" />, 
+    bgColor: 'bg-amber-100', 
+    textColor: 'text-amber-600' 
+  },
+  default: { 
+    icon: <Bell className="w-5 h-5" />, 
+    bgColor: 'bg-gray-100', 
+    textColor: 'text-gray-600' 
+  },
 }
 
 export const NotificationsPage: React.FC = () => {
@@ -148,63 +199,66 @@ export const NotificationsPage: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-3">
-            {notifications.map(notif => (
-              <div
-                key={notif.id}
-                className={`bg-white rounded-2xl p-4 shadow-sm border transition hover:shadow-md ${
-                  !notif.read ? 'border-sky-200 bg-sky-50/50' : 'border-gray-100'
-                }`}
-                onClick={() => !notif.read && markAsRead(notif.id)}
-              >
-                <div className="flex items-start gap-3">
-                  <div className={`p-2 rounded-xl ${
-                    notif.type === 'license_reminder' 
-                      ? 'bg-orange-100 text-orange-600'
-                      : 'bg-sky-100 text-sky-600'
-                  }`}>
-                    <AlertCircle className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="font-semibold text-gray-800">{notif.title}</h3>
-                      <span className="text-xs text-gray-400 whitespace-nowrap">
+            {notifications.map(notif => {
+              const style = notificationStyles[notif.type] || notificationStyles.default
+              
+              return (
+                <div
+                  key={notif.id}
+                  className={`bg-white rounded-2xl p-4 shadow-sm border transition hover:shadow-md cursor-pointer ${
+                    !notif.read ? 'border-sky-200 bg-sky-50/50' : 'border-gray-100'
+                  }`}
+                  onClick={() => {
+                    if (!notif.read) markAsRead(notif.id)
+                    // الانتقال للصفحة المرتبطة
+                    if (notif.actionUrl) navigate(notif.actionUrl)
+                  }}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`p-2 rounded-xl ${style.bgColor} ${style.textColor}`}>
+                      {style.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm text-gray-600">{notif.message}</p>
+                        {!notif.read && (
+                          <span className="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">
+                            جديد
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-400">
                         {formatDate(notif.createdAt)}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600 mt-1">{notif.message}</p>
-                    {!notif.read && (
-                      <span className="inline-block mt-2 text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">
-                        جديد
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    {!notif.read && (
+                    <div className="flex flex-col gap-1">
+                      {!notif.read && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            markAsRead(notif.id)
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-green-500 transition"
+                          title="تحديد كمقروء"
+                        >
+                          <Check className="w-4 h-4" />
+                        </button>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          markAsRead(notif.id)
+                          deleteNotification(notif.id)
                         }}
-                        className="p-1.5 text-gray-400 hover:text-green-500 transition"
-                        title="تحديد كمقروء"
+                        className="p-1.5 text-gray-400 hover:text-red-500 transition"
+                        title="حذف"
                       >
-                        <Check className="w-4 h-4" />
+                        <Trash2 className="w-4 h-4" />
                       </button>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        deleteNotification(notif.id)
-                      }}
-                      className="p-1.5 text-gray-400 hover:text-red-500 transition"
-                      title="حذف"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

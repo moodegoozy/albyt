@@ -4,7 +4,7 @@ import { auth, db } from "@/firebase";
 import { deleteUser } from "firebase/auth";
 import { doc, deleteDoc } from "firebase/firestore";
 import { useAuth } from "@/auth";
-import { Heart, Shield, Trash2, Code2 } from "lucide-react";
+import { Heart, Shield, Trash2, Code2, AlertTriangle } from "lucide-react";
 import { useDialog } from "@/components/ui/ConfirmDialog";
 
 export const Footer: React.FC = () => {
@@ -60,6 +60,17 @@ export const Footer: React.FC = () => {
             <Shield className="w-3 h-3 sm:w-4 sm:h-4" />
             الخصوصية
           </Link>
+
+          {/* الإبلاغ عن مشكلة */}
+          {user && (
+            <Link
+              to="/report-problem"
+              className="flex items-center gap-1.5 sm:gap-2 bg-amber-500/80 backdrop-blur-sm text-white font-semibold px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl hover:bg-amber-500 hover:scale-105 transition-all duration-300 text-xs sm:text-sm"
+            >
+              <AlertTriangle className="w-3 h-3 sm:w-4 sm:h-4" />
+              إبلاغ عن مشكلة
+            </Link>
+          )}
 
           {/* المطور */}
           <Link

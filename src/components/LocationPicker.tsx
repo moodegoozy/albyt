@@ -250,16 +250,39 @@ export const LocationPicker: React.FC<Props> = ({ isOpen, onClose, onConfirm, in
     }
   }
 
+  // إحداثيات تقريبية للمدن السعودية
+  const cityCoordinates: Record<string, { lat: number; lng: number }> = {
+    'الرياض': { lat: 24.7136, lng: 46.6753 },
+    'جدة': { lat: 21.4858, lng: 39.1925 },
+    'مكة المكرمة': { lat: 21.3891, lng: 39.8579 },
+    'المدينة المنورة': { lat: 24.5247, lng: 39.5692 },
+    'الدمام': { lat: 26.4207, lng: 50.0888 },
+    'الخبر': { lat: 26.2172, lng: 50.1971 },
+    'الأحساء': { lat: 25.3548, lng: 49.5886 },
+    'الطائف': { lat: 21.2703, lng: 40.4158 },
+    'تبوك': { lat: 28.3838, lng: 36.5550 },
+    'بريدة': { lat: 26.3260, lng: 43.9750 },
+    'خميس مشيط': { lat: 18.3066, lng: 42.7283 },
+    'أبها': { lat: 18.2164, lng: 42.5053 },
+    'القطيف': { lat: 26.5196, lng: 50.0115 },
+    'نجران': { lat: 17.4924, lng: 44.1277 },
+    'جازان': { lat: 16.8892, lng: 42.5611 },
+    'ينبع': { lat: 24.0895, lng: 38.0618 },
+    'حائل': { lat: 27.5114, lng: 41.7208 },
+  }
+
   // ✅ تأكيد الموقع
   const handleConfirm = () => {
-    // في الوضع اليدوي، لا نحتاج إحداثيات
+    // في الوضع اليدوي، نستخدم إحداثيات المدينة المختارة
     if (inputMode === 'manual') {
       if (!address.trim()) {
         setError('أدخل العنوان التفصيلي')
         return
       }
-      // استخدام إحداثيات افتراضية (الرياض) للعنوان اليدوي
-      onConfirm({ lat: 24.7136, lng: 46.6753 }, address)
+      // استخراج اسم المدينة من أول جزء في العنوان
+      const cityName = address.split('،')[0]?.trim()
+      const coords = cityCoordinates[cityName] || { lat: 24.7136, lng: 46.6753 }
+      onConfirm(coords, address)
       return
     }
     

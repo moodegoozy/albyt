@@ -1,0 +1,1 @@
+function o(t,n){const s=a(n.lat-t.lat),c=a(n.lng-t.lng),M=Math.sin(s/2)*Math.sin(s/2)+Math.cos(a(t.lat))*Math.cos(a(n.lat))*Math.sin(c/2)*Math.sin(c/2);return 6371*(2*Math.atan2(Math.sqrt(M),Math.sqrt(1-M)))}function a(t){return t*(Math.PI/180)}const r=15;export{r as M,o as c};

@@ -44,8 +44,10 @@ export function useCart() {
   const remove = useCallback((id: string) => 
     setItems(prev => prev.filter(p => p.id !== id)), [])
 
-  const changeQty = useCallback((id: string, qty: number) => 
-    setItems(prev => prev.map(p => p.id === id ? { ...p, qty } : p)), [])
+  const changeQty = useCallback((id: string, qty: number) => {
+    const safeQty = Math.max(1, qty)
+    setItems(prev => prev.map(p => p.id === id ? { ...p, qty: safeQty } : p))
+  }, [])
 
   const clear = useCallback(() => setItems([]), [])
 

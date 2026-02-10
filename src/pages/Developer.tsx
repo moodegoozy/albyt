@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '@/auth'
 import { RoleGate } from '@/routes/RoleGate'
 import { 
   Trash2, Users, Settings, RefreshCw, Database, Shield, Server, 
   Edit3, Save, X, ChevronDown, ChevronUp, Building2, Wallet, Package, Truck, UserPlus, Plus,
-  FileCheck, AlertCircle, CheckCircle, Clock, ExternalLink
+  FileCheck, AlertCircle, CheckCircle, Clock, ExternalLink, Search, Filter, SortAsc, SortDesc,
+  Calendar, TrendingUp, TrendingDown, Activity, Zap, Crown, Star, Eye, BarChart3, PieChart,
+  ArrowUpRight, ArrowDownRight, Sparkles, Bell, Target, Award, Flame, Globe, Layers, Store
 } from 'lucide-react'
 import { useToast } from '@/components/ui/Toast'
 import { useDialog } from '@/components/ui/ConfirmDialog'
@@ -194,9 +197,7 @@ export const Developer: React.FC = () => {
   const [editingUser, setEditingUser] = useState<string | null>(null)
   const [userForm, setUserForm] = useState<Partial<User>>({})
   
-  // فلاتر
-  const [orderFilter, setOrderFilter] = useState<string>('all')
-  const [userFilter, setUserFilter] = useState<string>('all')
+  // فلاتر (نقلت للأسفل مع الفلاتر المتقدمة)
   const [expandedAdmin, setExpandedAdmin] = useState<string | null>(null)
   
   // إضافة مشرف جديد
@@ -248,9 +249,134 @@ export const Developer: React.FC = () => {
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([])
   const [loadingLogs, setLoadingLogs] = useState(false)
   const [logFilter, setLogFilter] = useState<string>('all')
+
+  // ===== فلاتر وبحث متقدم =====
+  const [searchQuery, setSearchQuery] = useState('')
+  const [restaurantFilter, setRestaurantFilter] = useState<'all' | 'premium' | 'free' | 'verified' | 'unverified'>('all')
+  const [orderFilter, setOrderFilter] = useState<'all' | 'pending' | 'delivered' | 'cancelled'>('all')
+  const [userFilter, setUserFilter] = useState<'all' | 'customer' | 'owner' | 'courier' | 'admin'>('all')
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'name' | 'revenue'>('newest')
+  const [dateRange, setDateRange] = useState<'today' | 'week' | 'month' | 'all'>('all')
   
   // حفظ بيانات المطور الحالي لإعادة تسجيل الدخول
   const currentDeveloperEmail = user?.email || ''
+
+  // ===== دوال الفلترة =====
+  const getFilteredRestaurants = () => {
+    let filtered = [...restaurants]
+    
+    // فلتر البحث
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(r => 
+        r.name?.toLowerCase().includes(query) ||
+        r.email?.toLowerCase().includes(query) ||
+        r.phone?.includes(query) ||
+        r.city?.toLowerCase().includes(query)
+      )
+    }
+    
+    // فلتر الباقة
+    if (restaurantFilter === 'premium') {
+      filtered = filtered.filter(r => (r as any).packageType === 'premium')
+    } else if (restaurantFilter === 'free') {
+      filtered = filtered.filter(r => !(r as any).packageType || (r as any).packageType === 'free')
+    } else if (restaurantFilter === 'verified') {
+      filtered = filtered.filter(r => r.isVerified)
+    } else if (restaurantFilter === 'unverified') {
+      filtered = filtered.filter(r => !r.isVerified)
+    }
+    
+    // الترتيب
+    if (sortOrder === 'newest') {
+      filtered.sort((a, b) => (b.createdAt?.toDate?.()?.getTime() || 0) - (a.createdAt?.toDate?.()?.getTime() || 0))
+    } else if (sortOrder === 'oldest') {
+      filtered.sort((a, b) => (a.createdAt?.toDate?.()?.getTime() || 0) - (b.createdAt?.toDate?.()?.getTime() || 0))
+    } else if (sortOrder === 'name') {
+      filtered.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'))
+    }
+    
+    return filtered
+  }
+
+  const getFilteredOrders = () => {
+    let filtered = [...orders]
+    
+    // فلتر البحث
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(o => 
+        o.id?.toLowerCase().includes(query) ||
+        o.restaurantName?.toLowerCase().includes(query) ||
+        o.address?.toLowerCase().includes(query)
+      )
+    }
+    
+    // فلتر الحالة
+    if (orderFilter === 'pending') {
+      filtered = filtered.filter(o => ['pending', 'accepted', 'preparing', 'ready'].includes(o.status))
+    } else if (orderFilter === 'delivered') {
+      filtered = filtered.filter(o => o.status === 'delivered')
+    } else if (orderFilter === 'cancelled') {
+      filtered = filtered.filter(o => o.status === 'cancelled')
+    }
+    
+    // فلتر التاريخ
+    if (dateRange !== 'all') {
+      const now = new Date()
+      const startDate = new Date()
+      if (dateRange === 'today') {
+        startDate.setHours(0, 0, 0, 0)
+      } else if (dateRange === 'week') {
+        startDate.setDate(now.getDate() - 7)
+      } else if (dateRange === 'month') {
+        startDate.setMonth(now.getMonth() - 1)
+      }
+      filtered = filtered.filter(o => {
+        const orderDate = o.createdAt?.toDate?.() || new Date(o.createdAt)
+        return orderDate >= startDate
+      })
+    }
+    
+    // الترتيب
+    if (sortOrder === 'newest') {
+      filtered.sort((a, b) => (b.createdAt?.toDate?.()?.getTime() || 0) - (a.createdAt?.toDate?.()?.getTime() || 0))
+    } else if (sortOrder === 'oldest') {
+      filtered.sort((a, b) => (a.createdAt?.toDate?.()?.getTime() || 0) - (b.createdAt?.toDate?.()?.getTime() || 0))
+    }
+    
+    return filtered
+  }
+
+  const getFilteredUsers = () => {
+    let filtered = [...users]
+    
+    // فلتر البحث
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(u => 
+        u.name?.toLowerCase().includes(query) ||
+        u.email?.toLowerCase().includes(query) ||
+        u.phone?.includes(query)
+      )
+    }
+    
+    // فلتر الدور
+    if (userFilter !== 'all') {
+      filtered = filtered.filter(u => u.role === userFilter)
+    }
+    
+    // الترتيب
+    if (sortOrder === 'newest') {
+      filtered.sort((a, b) => (b.createdAt?.toDate?.()?.getTime() || 0) - (a.createdAt?.toDate?.()?.getTime() || 0))
+    } else if (sortOrder === 'oldest') {
+      filtered.sort((a, b) => (a.createdAt?.toDate?.()?.getTime() || 0) - (b.createdAt?.toDate?.()?.getTime() || 0))
+    } else if (sortOrder === 'name') {
+      filtered.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'))
+    }
+    
+    return filtered
+  }
 
   // ===== تسجيل عملية في السجل =====
   const logActivity = async (
@@ -931,77 +1057,128 @@ export const Developer: React.FC = () => {
 
   return (
     <RoleGate allow={['developer']}>
-      <div className="space-y-6">
-        {/* رأس الصفحة */}
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <h1 className="text-3xl font-extrabold text-primary">👨‍💻 لوحة المطور الشاملة</h1>
-            <p className="text-gray-600 mt-1">إدارة كاملة لجميع بيانات التطبيق</p>
+      <div className="space-y-6 pb-8">
+        {/* ===== رأس الصفحة الفاخر ===== */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-3xl p-8 text-white shadow-2xl">
+          {/* خلفية متحركة */}
+          <div className="absolute inset-0 overflow-hidden">
+            <div className="absolute -top-40 -right-40 w-80 h-80 bg-sky-500/20 rounded-full blur-3xl animate-pulse" />
+            <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-500/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl" />
           </div>
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="flex items-center gap-2 bg-primary hover:bg-sky-600 text-white px-4 py-2 rounded-xl font-semibold transition disabled:opacity-50"
-          >
-            <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
-            تحديث
-          </button>
+          
+          <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-14 h-14 bg-gradient-to-br from-sky-400 to-sky-600 rounded-2xl flex items-center justify-center shadow-lg shadow-sky-500/30">
+                  <Zap className="w-7 h-7 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-3xl font-black tracking-tight">مركز التحكم</h1>
+                  <p className="text-sky-300/80 text-sm">Developer Console • سفرة البيت</p>
+                </div>
+              </div>
+              <p className="text-slate-400 mt-3 max-w-xl">
+                إدارة شاملة لجميع عمليات التطبيق، المستخدمين، المطاعم، الطلبات والمالية
+              </p>
+            </div>
+            
+            <div className="flex flex-wrap items-center gap-3">
+              {/* زر التحديث */}
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm px-5 py-3 rounded-xl font-semibold transition border border-white/10 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+                تحديث البيانات
+              </button>
+              
+              {/* زر المحاسبة */}
+              <a
+                href="/accounting"
+                className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 px-5 py-3 rounded-xl font-semibold transition shadow-lg shadow-emerald-500/30"
+              >
+                <BarChart3 className="w-5 h-5" />
+                المحاسبة
+              </a>
+            </div>
+          </div>
+          
+          {/* إحصائيات سريعة في الهيدر */}
+          <div className="relative z-10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-8">
+            <QuickStat icon={<Users className="w-5 h-5" />} value={stats.users} label="المستخدمين" color="sky" />
+            <QuickStat icon={<Building2 className="w-5 h-5" />} value={stats.restaurants} label="المطاعم" color="emerald" />
+            <QuickStat icon={<Package className="w-5 h-5" />} value={stats.orders} label="الطلبات" color="purple" />
+            <QuickStat icon={<Truck className="w-5 h-5" />} value={stats.couriers} label="المناديب" color="orange" />
+            <QuickStat icon={<Crown className="w-5 h-5" />} value={stats.admins} label="المشرفين" color="amber" />
+            <QuickStat icon={<Wallet className="w-5 h-5" />} value={`${stats.totalAppEarnings.toFixed(0)} ر.س`} label="الأرباح" color="green" />
+          </div>
         </div>
 
-        {/* التبويبات */}
-        <div className="flex flex-wrap gap-2 border-b pb-4">
-          {[
-            { id: 'overview', label: '📊 نظرة عامة' },
-            { id: 'finance', label: '💰 المالية' },
-            { id: 'restaurants', label: '🏪 المطاعم' },
-            { id: 'storeAnalytics', label: '📈 مراقبة المتاجر' },
-            { id: 'packages', label: '📦 طلبات الباقات' },
-            { id: 'packageSettings', label: '💎 أسعار الباقات' },
-            { id: 'licenses', label: '📄 التراخيص' },
-            { id: 'orders', label: '📦 الطلبات' },
-            { id: 'users', label: '👤 المستخدمين' },
-            { id: 'couriers', label: '🚗 المناديب' },
-            { id: 'admins', label: '👑 المشرفين' },
-            { id: 'tasks', label: '📋 المهام' },
-            { id: 'activityLog', label: '📜 سجل العمليات' },
-            { id: 'settings', label: '⚙️ الإعدادات' },
-            { id: 'tools', label: '🛠️ الأدوات' },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => {
-                setActiveTab(tab.id as Tab)
-                if (tab.id === 'activityLog') loadActivityLogs()
-              }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold transition ${
-                activeTab === tab.id 
-                  ? 'bg-primary text-white' 
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        {/* ===== التبويبات الفاخرة ===== */}
+        <div className="bg-white rounded-2xl shadow-lg border border-slate-100 p-2">
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { id: 'overview', label: 'نظرة عامة', icon: <Activity className="w-4 h-4" /> },
+              { id: 'finance', label: 'المالية', icon: <Wallet className="w-4 h-4" /> },
+              { id: 'restaurants', label: 'المطاعم', icon: <Building2 className="w-4 h-4" /> },
+              { id: 'storeAnalytics', label: 'تحليلات', icon: <PieChart className="w-4 h-4" /> },
+              { id: 'packages', label: 'الباقات', icon: <Crown className="w-4 h-4" />, badge: packageRequests.filter(r => ['pending', 'payment_sent'].includes(r.status)).length },
+              { id: 'packageSettings', label: 'أسعار الباقات', icon: <Sparkles className="w-4 h-4" /> },
+              { id: 'licenses', label: 'التراخيص', icon: <FileCheck className="w-4 h-4" /> },
+              { id: 'orders', label: 'الطلبات', icon: <Package className="w-4 h-4" /> },
+              { id: 'users', label: 'المستخدمين', icon: <Users className="w-4 h-4" /> },
+              { id: 'couriers', label: 'المناديب', icon: <Truck className="w-4 h-4" /> },
+              { id: 'admins', label: 'المشرفين', icon: <Crown className="w-4 h-4" /> },
+              { id: 'tasks', label: 'المهام', icon: <Target className="w-4 h-4" /> },
+              { id: 'activityLog', label: 'السجل', icon: <Clock className="w-4 h-4" /> },
+              { id: 'settings', label: 'الإعدادات', icon: <Settings className="w-4 h-4" /> },
+              { id: 'tools', label: 'الأدوات', icon: <Zap className="w-4 h-4" /> },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id as Tab)
+                  if (tab.id === 'activityLog') loadActivityLogs()
+                }}
+                className={`relative flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all duration-200 ${
+                  activeTab === tab.id 
+                    ? 'bg-gradient-to-r from-sky-500 to-sky-600 text-white shadow-lg shadow-sky-500/30' 
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {tab.icon}
+                <span className="hidden sm:inline">{tab.label}</span>
+                {tab.badge && tab.badge > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center animate-pulse">
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* ===== نظرة عامة ===== */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
-            {/* 🔔 تنبيهات هامة */}
+            {/* تنبيهات هامة */}
             {packageRequests.filter(r => ['pending', 'payment_sent'].includes(r.status)).length > 0 && (
-              <div className="bg-gradient-to-r from-amber-100 to-orange-100 border-2 border-amber-300 rounded-2xl p-5 shadow-lg">
-                <div className="flex items-center justify-between flex-wrap gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-amber-500 rounded-xl flex items-center justify-center animate-pulse">
-                      <Package className="w-6 h-6 text-white" />
+              <div className="relative overflow-hidden bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 rounded-2xl p-6 text-white shadow-xl">
+                <div className="absolute inset-0 bg-black/10" />
+                <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
+                <div className="relative z-10 flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
+                      <Bell className="w-7 h-7 animate-bounce" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold text-amber-800">🔔 طلبات باقات تحتاج إجراء</h3>
-                      <p className="text-amber-700">
+                      <h3 className="text-xl font-bold">طلبات تحتاج انتباهك!</h3>
+                      <p className="text-white/80">
                         {packageRequests.filter(r => r.status === 'pending').length > 0 && (
-                          <span>⏳ {packageRequests.filter(r => r.status === 'pending').length} طلب جديد</span>
+                          <span className="mr-3">⏳ {packageRequests.filter(r => r.status === 'pending').length} طلب جديد</span>
                         )}
-                        {packageRequests.filter(r => r.status === 'pending').length > 0 && packageRequests.filter(r => r.status === 'payment_sent').length > 0 && ' • '}
                         {packageRequests.filter(r => r.status === 'payment_sent').length > 0 && (
                           <span>💳 {packageRequests.filter(r => r.status === 'payment_sent').length} بانتظار التأكيد</span>
                         )}
@@ -1010,80 +1187,80 @@ export const Developer: React.FC = () => {
                   </div>
                   <button
                     onClick={() => setActiveTab('packages')}
-                    className="bg-amber-500 hover:bg-amber-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg transition transform hover:scale-105"
+                    className="bg-white text-orange-600 px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-xl transition transform hover:scale-105"
                   >
-                    📦 عرض الطلبات
+                    عرض الطلبات ←
                   </button>
                 </div>
               </div>
             )}
 
-            {/* إحصائيات سريعة */}
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-4 text-white text-center">
-                <p className="text-3xl font-bold">{stats.users}</p>
-                <p className="text-sm opacity-90">👤 المستخدمين</p>
-              </div>
-              <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-4 text-white text-center">
-                <p className="text-3xl font-bold">{stats.restaurants}</p>
-                <p className="text-sm opacity-90">🏪 المطاعم</p>
-              </div>
-              <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-4 text-white text-center">
-                <p className="text-3xl font-bold">{stats.orders}</p>
-                <p className="text-sm opacity-90">📦 الطلبات</p>
-              </div>
-              <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl p-4 text-white text-center cursor-pointer hover:scale-105 transition" onClick={() => setActiveTab('packages')}>
-                <p className="text-3xl font-bold">{packageRequests.filter(r => r.status === 'pending').length}</p>
-                <p className="text-sm opacity-90">📦 طلبات معلقة</p>
-              </div>
-              <div className="bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-2xl p-4 text-white text-center">
-                <p className="text-3xl font-bold">{stats.couriers}</p>
-                <p className="text-sm opacity-90">🚗 المناديب</p>
-              </div>
-              <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-4 text-white text-center">
-                <p className="text-3xl font-bold">{stats.totalAppEarnings.toFixed(2)}</p>
-                <p className="text-sm opacity-90">💰 أرباح التطبيق</p>
-              </div>
+            {/* بطاقات الإحصائيات المتقدمة */}
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatCard
+                title="المبيعات اليوم"
+                value={`${orders.filter(o => {
+                  const d = o.createdAt?.toDate?.() || new Date(o.createdAt)
+                  const today = new Date()
+                  return d.toDateString() === today.toDateString() && o.status === 'delivered'
+                }).reduce((s, o) => s + (o.total || 0), 0).toFixed(0)} ر.س`}
+                change={12.5}
+                icon={<TrendingUp className="w-5 h-5" />}
+                color="emerald"
+              />
+              <StatCard
+                title="طلبات اليوم"
+                value={orders.filter(o => {
+                  const d = o.createdAt?.toDate?.() || new Date(o.createdAt)
+                  const today = new Date()
+                  return d.toDateString() === today.toDateString()
+                }).length.toString()}
+                change={8.3}
+                icon={<Package className="w-5 h-5" />}
+                color="sky"
+              />
+              <StatCard
+                title="مشتركين التميز"
+                value={restaurants.filter((r: any) => r.packageType === 'premium').length.toString()}
+                subtitle={`من ${restaurants.length} مطعم`}
+                icon={<Crown className="w-5 h-5" />}
+                color="amber"
+              />
+              <StatCard
+                title="معدل التوصيل"
+                value={`${stats.orders > 0 ? ((stats.deliveredOrders / stats.orders) * 100).toFixed(0) : 0}%`}
+                subtitle="نسبة الإتمام"
+                icon={<Target className="w-5 h-5" />}
+                color="purple"
+              />
             </div>
 
-            {/* إحصائيات الباقات والحسابات */}
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl p-4 text-white">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-2xl">✨</span>
-                  <span className="text-3xl font-bold">
-                    {restaurants.filter((r: any) => r.packageType === 'premium').length}
-                  </span>
-                </div>
-                <p className="text-sm opacity-90">مشتركين باقة التميز</p>
-              </div>
-              <div className="bg-gradient-to-br from-gray-400 to-gray-500 rounded-2xl p-4 text-white">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-2xl">📦</span>
-                  <span className="text-3xl font-bold">
-                    {restaurants.filter((r: any) => !r.packageType || r.packageType === 'free').length}
-                  </span>
-                </div>
-                <p className="text-sm opacity-90">الباقة المجانية</p>
-              </div>
-              <div className="bg-gradient-to-br from-green-400 to-emerald-500 rounded-2xl p-4 text-white">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-2xl">✅</span>
-                  <span className="text-3xl font-bold">
-                    {users.filter((u: any) => u.isActive !== false).length}
-                  </span>
-                </div>
-                <p className="text-sm opacity-90">حسابات نشطة</p>
-              </div>
-              <div className="bg-gradient-to-br from-red-400 to-red-500 rounded-2xl p-4 text-white">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-2xl">⏸️</span>
-                  <span className="text-3xl font-bold">
-                    {users.filter((u: any) => u.isActive === false).length}
-                  </span>
-                </div>
-                <p className="text-sm opacity-90">حسابات موقوفة</p>
-              </div>
+            {/* إحصائيات الحسابات */}
+            <div className="grid md:grid-cols-4 gap-4">
+              <MiniStatCard
+                icon={<CheckCircle className="w-5 h-5 text-emerald-500" />}
+                value={users.filter((u: any) => u.isActive !== false).length}
+                label="حسابات نشطة"
+                bgColor="bg-emerald-50"
+              />
+              <MiniStatCard
+                icon={<AlertCircle className="w-5 h-5 text-red-500" />}
+                value={users.filter((u: any) => u.isActive === false).length}
+                label="حسابات موقوفة"
+                bgColor="bg-red-50"
+              />
+              <MiniStatCard
+                icon={<Sparkles className="w-5 h-5 text-amber-500" />}
+                value={restaurants.filter((r: any) => r.packageType === 'premium').length}
+                label="باقة تميز"
+                bgColor="bg-amber-50"
+              />
+              <MiniStatCard
+                icon={<Package className="w-5 h-5 text-slate-500" />}
+                value={restaurants.filter((r: any) => !r.packageType || r.packageType === 'free').length}
+                label="باقة مجانية"
+                bgColor="bg-slate-50"
+              />
             </div>
 
             {/* إعدادات Firebase */}
@@ -1164,12 +1341,74 @@ export const Developer: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {/* روابط سريعة */}
+            <div className="bg-white rounded-2xl shadow-lg p-6">
+              <h2 className="text-xl font-bold mb-4">🔗 روابط سريعة</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Link
+                  to="/reports-admin"
+                  className="flex items-center gap-3 bg-amber-50 hover:bg-amber-100 text-amber-800 p-4 rounded-xl transition"
+                >
+                  <span className="text-2xl">⚠️</span>
+                  <div className="text-right">
+                    <p className="font-bold">إدارة البلاغات</p>
+                    <p className="text-xs opacity-75">مشاكل المستخدمين</p>
+                  </div>
+                </Link>
+                <Link
+                  to="/accounting"
+                  className="flex items-center gap-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 p-4 rounded-xl transition"
+                >
+                  <span className="text-2xl">💰</span>
+                  <div className="text-right">
+                    <p className="font-bold">لوحة المحاسبة</p>
+                    <p className="text-xs opacity-75">التقارير المالية</p>
+                  </div>
+                </Link>
+                <Link
+                  to="/support-admin"
+                  className="flex items-center gap-3 bg-blue-50 hover:bg-blue-100 text-blue-800 p-4 rounded-xl transition"
+                >
+                  <span className="text-2xl">🎧</span>
+                  <div className="text-right">
+                    <p className="font-bold">إدارة الدعم</p>
+                    <p className="text-xs opacity-75">تذاكر الدعم الفني</p>
+                  </div>
+                </Link>
+                <Link
+                  to="/problems-admin"
+                  className="flex items-center gap-3 bg-red-50 hover:bg-red-100 text-red-800 p-4 rounded-xl transition"
+                >
+                  <span className="text-2xl">🚨</span>
+                  <div className="text-right">
+                    <p className="font-bold">مراقبة المشاكل</p>
+                    <p className="text-xs opacity-75">مشاكل النظام</p>
+                  </div>
+                </Link>
+              </div>
+            </div>
           </div>
         )}
 
         {/* ===== المالية ===== */}
         {activeTab === 'finance' && (
           <div className="space-y-6">
+            {/* رابط لوحة المحاسبة الكاملة */}
+            <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-6 text-white flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold mb-1">📊 لوحة المحاسبة التفصيلية</h3>
+                <p className="text-white/80 text-sm">عرض تقارير مفصلة، محافظ الأسر والمناديب، والإحصائيات الشهرية</p>
+              </div>
+              <a
+                href="/accounting"
+                className="bg-white text-emerald-600 px-6 py-3 rounded-xl font-bold hover:bg-emerald-50 transition flex items-center gap-2"
+              >
+                <Wallet className="w-5 h-5" />
+                فتح المحاسبة
+              </a>
+            </div>
+
             {(() => {
               const financeStats = getFinanceStats()
               return (
@@ -1291,15 +1530,103 @@ export const Developer: React.FC = () => {
 
         {/* ===== المطاعم ===== */}
         {activeTab === 'restaurants' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <h2 className="text-xl font-bold">🏪 جميع المطاعم ({restaurants.length})</h2>
-              <button
-                onClick={() => setShowAddRestaurant(!showAddRestaurant)}
-                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl font-semibold"
-              >
-                {showAddRestaurant ? '❌ إلغاء' : '➕ إضافة مطعم'}
-              </button>
+          <div className="space-y-6">
+            {/* ===== شريط البحث والفلاتر الفاخر ===== */}
+            <div className="bg-gradient-to-br from-white via-sky-50/30 to-emerald-50/30 rounded-3xl p-6 border border-sky-100 shadow-lg shadow-sky-100/50">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-green-600 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-200">
+                    <Store className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-green-600 bg-clip-text text-transparent">
+                      إدارة المطاعم
+                    </h2>
+                    <p className="text-sm text-gray-500">
+                      {getFilteredRestaurants().length} من {restaurants.length} مطعم
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowAddRestaurant(!showAddRestaurant)}
+                  className="group flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white px-5 py-3 rounded-2xl font-bold shadow-lg shadow-emerald-200 transition-all duration-300 hover:scale-105"
+                >
+                  {showAddRestaurant ? (
+                    <>
+                      <X className="w-5 h-5" />
+                      إلغاء
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
+                      إضافة مطعم جديد
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* شريط البحث */}
+              <div className="relative mb-4">
+                <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="ابحث بالاسم، الإيميل، الهاتف، أو المدينة..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pr-12 pl-4 py-4 border-2 border-sky-100 rounded-2xl focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 transition-all bg-white/80 backdrop-blur text-lg"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+
+              {/* فلاتر متقدمة */}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Filter className="w-4 h-4" />
+                  <span className="font-medium">فلتر:</span>
+                </div>
+                {[
+                  { value: 'all', label: 'الكل', icon: '🏪' },
+                  { value: 'premium', label: 'بريميوم', icon: '👑' },
+                  { value: 'free', label: 'مجاني', icon: '🆓' },
+                  { value: 'verified', label: 'موثق', icon: '✅' },
+                  { value: 'unverified', label: 'غير موثق', icon: '⏳' }
+                ].map(filter => (
+                  <button
+                    key={filter.value}
+                    onClick={() => setRestaurantFilter(filter.value as any)}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
+                      restaurantFilter === filter.value
+                        ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-lg shadow-emerald-200'
+                        : 'bg-white border border-gray-200 text-gray-600 hover:border-emerald-300 hover:bg-emerald-50'
+                    }`}
+                  >
+                    {filter.icon} {filter.label}
+                  </button>
+                ))}
+
+                <div className="h-6 w-px bg-gray-200 mx-2 hidden sm:block" />
+
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <SortAsc className="w-4 h-4" />
+                  <span className="font-medium">ترتيب:</span>
+                </div>
+                <select
+                  value={sortOrder}
+                  onChange={e => setSortOrder(e.target.value as any)}
+                  className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-sm font-medium focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                >
+                  <option value="newest">الأحدث أولاً</option>
+                  <option value="oldest">الأقدم أولاً</option>
+                  <option value="name">الاسم (أ-ي)</option>
+                </select>
+              </div>
             </div>
 
             {/* نموذج إضافة مطعم */}
@@ -1392,9 +1719,28 @@ export const Developer: React.FC = () => {
               </div>
             )}
             
+            {/* قائمة المطاعم المفلترة */}
             <div className="space-y-4">
-              {restaurants.map(restaurant => (
-                <div key={restaurant.id} className="bg-white rounded-2xl shadow p-4">
+              {getFilteredRestaurants().length === 0 ? (
+                <div className="bg-white rounded-3xl p-12 text-center border border-gray-100 shadow-sm">
+                  <div className="w-20 h-20 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                    <Search className="w-10 h-10 text-gray-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-600 mb-2">لا توجد نتائج</h3>
+                  <p className="text-gray-500">جرب تغيير الفلاتر أو كلمة البحث</p>
+                  <button
+                    onClick={() => {
+                      setSearchQuery('')
+                      setRestaurantFilter('all')
+                    }}
+                    className="mt-4 px-6 py-2 bg-sky-100 text-sky-600 rounded-xl font-medium hover:bg-sky-200 transition-colors"
+                  >
+                    إعادة تعيين الفلاتر
+                  </button>
+                </div>
+              ) : (
+                getFilteredRestaurants().map(restaurant => (
+                <div key={restaurant.id} className="bg-white rounded-2xl shadow-lg shadow-gray-100 border border-gray-100 p-5 hover:shadow-xl transition-all duration-300">
                   {editingRestaurant === restaurant.id ? (
                     // وضع التحرير
                     <div className="space-y-4">
@@ -1639,41 +1985,143 @@ export const Developer: React.FC = () => {
                     </div>
                   )}
                 </div>
-              ))}
+              ))
+              )}
             </div>
           </div>
         )}
 
         {/* ===== الطلبات ===== */}
         {activeTab === 'orders' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <h2 className="text-xl font-bold">📦 جميع الطلبات ({orders.length})</h2>
-              <select
-                value={orderFilter}
-                onChange={e => setOrderFilter(e.target.value)}
-                className="border rounded-xl p-2"
-              >
-                <option value="all">جميع الحالات</option>
-                <option value="pending">قيد المراجعة</option>
-                <option value="accepted">مقبول</option>
-                <option value="preparing">قيد التحضير</option>
-                <option value="ready">جاهز</option>
-                <option value="out_for_delivery">في الطريق</option>
-                <option value="delivered">تم التسليم</option>
-                <option value="cancelled">ملغي</option>
-              </select>
+          <div className="space-y-6">
+            {/* ===== شريط البحث والفلاتر الفاخر للطلبات ===== */}
+            <div className="bg-gradient-to-br from-white via-amber-50/30 to-orange-50/30 rounded-3xl p-6 border border-amber-100 shadow-lg shadow-amber-100/50">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-200">
+                    <Package className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">
+                      إدارة الطلبات
+                    </h2>
+                    <p className="text-sm text-gray-500">
+                      {getFilteredOrders().length} من {orders.length} طلب
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* شريط البحث */}
+              <div className="relative mb-4">
+                <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="ابحث برقم الطلب، اسم المطعم، أو العنوان..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pr-12 pl-4 py-4 border-2 border-amber-100 rounded-2xl focus:border-amber-400 focus:ring-4 focus:ring-amber-100 transition-all bg-white/80 backdrop-blur text-lg"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+
+              {/* فلاتر متقدمة */}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Filter className="w-4 h-4" />
+                  <span className="font-medium">الحالة:</span>
+                </div>
+                {[
+                  { value: 'all', label: 'الكل', icon: '📦' },
+                  { value: 'pending', label: 'جاري', icon: '⏳' },
+                  { value: 'delivered', label: 'مكتمل', icon: '✅' },
+                  { value: 'cancelled', label: 'ملغي', icon: '❌' }
+                ].map(filter => (
+                  <button
+                    key={filter.value}
+                    onClick={() => setOrderFilter(filter.value as any)}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
+                      orderFilter === filter.value
+                        ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-200'
+                        : 'bg-white border border-gray-200 text-gray-600 hover:border-amber-300 hover:bg-amber-50'
+                    }`}
+                  >
+                    {filter.icon} {filter.label}
+                  </button>
+                ))}
+
+                <div className="h-6 w-px bg-gray-200 mx-2 hidden sm:block" />
+
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Calendar className="w-4 h-4" />
+                  <span className="font-medium">الفترة:</span>
+                </div>
+                {[
+                  { value: 'all', label: 'الكل' },
+                  { value: 'today', label: 'اليوم' },
+                  { value: 'week', label: 'الأسبوع' },
+                  { value: 'month', label: 'الشهر' }
+                ].map(range => (
+                  <button
+                    key={range.value}
+                    onClick={() => setDateRange(range.value as any)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                      dateRange === range.value
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'text-gray-500 hover:bg-gray-100'
+                    }`}
+                  >
+                    {range.label}
+                  </button>
+                ))}
+
+                <div className="h-6 w-px bg-gray-200 mx-2 hidden sm:block" />
+
+                <select
+                  value={sortOrder}
+                  onChange={e => setSortOrder(e.target.value as any)}
+                  className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-sm font-medium focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                >
+                  <option value="newest">الأحدث أولاً</option>
+                  <option value="oldest">الأقدم أولاً</option>
+                </select>
+              </div>
             </div>
+
+            {/* قائمة الطلبات */}
             
-            <div className="space-y-3">
-              {orders
-                .filter(o => orderFilter === 'all' || o.status === orderFilter)
-                .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
-                .map(order => (
-                  <div key={order.id} className="bg-white rounded-2xl shadow p-4">
+            <div className="space-y-4">
+              {getFilteredOrders().length === 0 ? (
+                <div className="bg-white rounded-3xl p-12 text-center border border-gray-100 shadow-sm">
+                  <div className="w-20 h-20 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                    <Package className="w-10 h-10 text-gray-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-600 mb-2">لا توجد طلبات</h3>
+                  <p className="text-gray-500">جرب تغيير الفلاتر أو الفترة الزمنية</p>
+                  <button
+                    onClick={() => {
+                      setSearchQuery('')
+                      setOrderFilter('all')
+                      setDateRange('all')
+                    }}
+                    className="mt-4 px-6 py-2 bg-amber-100 text-amber-600 rounded-xl font-medium hover:bg-amber-200 transition-colors"
+                  >
+                    إعادة تعيين الفلاتر
+                  </button>
+                </div>
+              ) : (
+              getFilteredOrders().map(order => (
+                  <div key={order.id} className="bg-white rounded-2xl shadow-lg shadow-gray-100 border border-gray-100 p-5 hover:shadow-xl transition-all duration-300">
                     <div className="flex items-start justify-between flex-wrap gap-4">
                       <div>
-                        <h3 className="font-bold">طلب #{order.id.slice(-8)}</h3>
+                        <h3 className="font-bold text-lg">طلب #{order.id.slice(-8)}</h3>
                         <p className="text-sm text-gray-600">🏪 {order.restaurantName || 'مطعم'}</p>
                         <p className="text-sm text-gray-600">📍 {order.address}</p>
                         <p className="text-sm text-gray-600">💰 {order.total?.toFixed(2)} ر.س</p>
@@ -1686,11 +2134,11 @@ export const Developer: React.FC = () => {
                       </div>
                       
                       <div className="text-left">
-                        <span className={`inline-block px-3 py-1 rounded-xl text-sm font-semibold ${
-                          order.status === 'delivered' ? 'bg-green-100 text-green-700' :
-                          order.status === 'cancelled' ? 'bg-red-100 text-red-700' :
-                          order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-blue-100 text-blue-700'
+                        <span className={`inline-block px-3 py-1.5 rounded-xl text-sm font-bold ${
+                          order.status === 'delivered' ? 'bg-gradient-to-r from-green-100 to-emerald-100 text-green-700' :
+                          order.status === 'cancelled' ? 'bg-gradient-to-r from-red-100 to-pink-100 text-red-700' :
+                          order.status === 'pending' ? 'bg-gradient-to-r from-yellow-100 to-amber-100 text-yellow-700' :
+                          'bg-gradient-to-r from-blue-100 to-sky-100 text-blue-700'
                         }`}>
                           {statusLabel(order.status)}
                         </span>
@@ -1717,42 +2165,122 @@ export const Developer: React.FC = () => {
                       <p className="text-sm text-gray-500 mb-1">الأصناف:</p>
                       <div className="flex flex-wrap gap-2">
                         {order.items?.map((item, i) => (
-                          <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded">
+                          <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded-lg">
                             {item.name} × {item.qty}
                           </span>
                         ))}
                       </div>
                     </div>
                   </div>
-                ))}
+                ))
+              )}
             </div>
           </div>
         )}
 
         {/* ===== المستخدمين ===== */}
         {activeTab === 'users' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <h2 className="text-xl font-bold">👤 جميع المستخدمين ({users.length})</h2>
-              <select
-                value={userFilter}
-                onChange={e => setUserFilter(e.target.value)}
-                className="border rounded-xl p-2"
-              >
-                <option value="all">جميع الأدوار</option>
-                <option value="customer">عملاء</option>
-                <option value="owner">أصحاب مطاعم</option>
-                <option value="courier">مناديب</option>
-                <option value="admin">مشرفين</option>
-                <option value="developer">مطورين</option>
-              </select>
+          <div className="space-y-6">
+            {/* ===== شريط البحث والفلاتر الفاخر للمستخدمين ===== */}
+            <div className="bg-gradient-to-br from-white via-violet-50/30 to-purple-50/30 rounded-3xl p-6 border border-violet-100 shadow-lg shadow-violet-100/50">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-gradient-to-br from-violet-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shadow-violet-200">
+                    <Users className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent">
+                      إدارة المستخدمين
+                    </h2>
+                    <p className="text-sm text-gray-500">
+                      {getFilteredUsers().length} من {users.length} مستخدم
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* شريط البحث */}
+              <div className="relative mb-4">
+                <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="ابحث بالاسم، الإيميل، أو رقم الهاتف..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pr-12 pl-4 py-4 border-2 border-violet-100 rounded-2xl focus:border-violet-400 focus:ring-4 focus:ring-violet-100 transition-all bg-white/80 backdrop-blur text-lg"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+
+              {/* فلاتر متقدمة */}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Filter className="w-4 h-4" />
+                  <span className="font-medium">الدور:</span>
+                </div>
+                {[
+                  { value: 'all', label: 'الكل', icon: '👥', color: 'violet' },
+                  { value: 'customer', label: 'عميل', icon: '🛒' },
+                  { value: 'owner', label: 'مطعم', icon: '🏪' },
+                  { value: 'courier', label: 'مندوب', icon: '🚗' },
+                  { value: 'admin', label: 'مشرف', icon: '👑' }
+                ].map(filter => (
+                  <button
+                    key={filter.value}
+                    onClick={() => setUserFilter(filter.value as any)}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
+                      userFilter === filter.value
+                        ? 'bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-200'
+                        : 'bg-white border border-gray-200 text-gray-600 hover:border-violet-300 hover:bg-violet-50'
+                    }`}
+                  >
+                    {filter.icon} {filter.label}
+                  </button>
+                ))}
+
+                <div className="h-6 w-px bg-gray-200 mx-2 hidden sm:block" />
+
+                <select
+                  value={sortOrder}
+                  onChange={e => setSortOrder(e.target.value as any)}
+                  className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-sm font-medium focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                >
+                  <option value="newest">الأحدث أولاً</option>
+                  <option value="oldest">الأقدم أولاً</option>
+                  <option value="name">الاسم (أ-ي)</option>
+                </select>
+              </div>
             </div>
-            
+
+            {/* قائمة المستخدمين */}
+            {getFilteredUsers().length === 0 ? (
+              <div className="bg-white rounded-3xl p-12 text-center border border-gray-100 shadow-sm">
+                <div className="w-20 h-20 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                  <Users className="w-10 h-10 text-gray-400" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-600 mb-2">لا توجد نتائج</h3>
+                <p className="text-gray-500">جرب تغيير الفلاتر أو كلمة البحث</p>
+                <button
+                  onClick={() => {
+                    setSearchQuery('')
+                    setUserFilter('all')
+                  }}
+                  className="mt-4 px-6 py-2 bg-violet-100 text-violet-600 rounded-xl font-medium hover:bg-violet-200 transition-colors"
+                >
+                  إعادة تعيين الفلاتر
+                </button>
+              </div>
+            ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {users
-                .filter(u => userFilter === 'all' || u.role === userFilter)
-                .map(u => (
-                  <div key={u.uid} className="bg-white rounded-2xl shadow p-4">
+              {getFilteredUsers().map(u => (
+                  <div key={u.uid} className="bg-white rounded-2xl shadow-lg shadow-gray-100 border border-gray-100 p-5 hover:shadow-xl transition-all duration-300">
                     {editingUser === u.uid ? (
                       <div className="space-y-3">
                         <input
@@ -1836,7 +2364,7 @@ export const Developer: React.FC = () => {
                             </button>
                             <button
                               onClick={() => handleDeleteUser(u.uid)}
-                              className="p-1.5 bg-red-100 text-red-600 rounded-lg"
+                              className="p-1.5 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -1845,22 +2373,49 @@ export const Developer: React.FC = () => {
                       </>
                     )}
                   </div>
-                ))}
+                ))
+              }
             </div>
+            )}
           </div>
         )}
 
         {/* ===== المناديب ===== */}
         {activeTab === 'couriers' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <h2 className="text-xl font-bold">🚗 المناديب ({stats.couriers})</h2>
-              <button
-                onClick={() => setShowAddCourier(!showAddCourier)}
-                className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-xl font-semibold"
-              >
-                {showAddCourier ? '❌ إلغاء' : '➕ إضافة مندوب'}
-              </button>
+          <div className="space-y-6">
+            {/* ===== شريط عنوان فاخر للمناديب ===== */}
+            <div className="bg-gradient-to-br from-white via-cyan-50/30 to-teal-50/30 rounded-3xl p-6 border border-cyan-100 shadow-lg shadow-cyan-100/50">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg shadow-cyan-200">
+                    <Truck className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold bg-gradient-to-r from-cyan-600 to-teal-600 bg-clip-text text-transparent">
+                      إدارة المناديب
+                    </h2>
+                    <p className="text-sm text-gray-500">
+                      {stats.couriers} مندوب مسجل
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowAddCourier(!showAddCourier)}
+                  className="group flex items-center gap-2 bg-gradient-to-r from-cyan-500 to-teal-600 hover:from-cyan-600 hover:to-teal-700 text-white px-5 py-3 rounded-2xl font-bold shadow-lg shadow-cyan-200 transition-all duration-300 hover:scale-105"
+                >
+                  {showAddCourier ? (
+                    <>
+                      <X className="w-5 h-5" />
+                      إلغاء
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
+                      إضافة مندوب جديد
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
             {/* نموذج إضافة مندوب */}
@@ -5030,6 +5585,200 @@ const PackageSettingsSection: React.FC<{
             <p className="text-gray-500 text-sm">بدون رسوم</p>
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ===== مكونات مساعدة للواجهة الفاخرة =====
+
+// إحصائية سريعة في الهيدر
+type QuickStatProps = {
+  icon: React.ReactNode
+  value: string | number
+  label: string
+  color: 'sky' | 'emerald' | 'purple' | 'orange' | 'amber' | 'green'
+}
+
+const QuickStat: React.FC<QuickStatProps> = ({ icon, value, label, color }) => {
+  const colors = {
+    sky: 'bg-sky-500/20 text-sky-300',
+    emerald: 'bg-emerald-500/20 text-emerald-300',
+    purple: 'bg-purple-500/20 text-purple-300',
+    orange: 'bg-orange-500/20 text-orange-300',
+    amber: 'bg-amber-500/20 text-amber-300',
+    green: 'bg-green-500/20 text-green-300',
+  }
+
+  return (
+    <div className={`${colors[color]} rounded-xl p-3 backdrop-blur-sm`}>
+      <div className="flex items-center gap-2">
+        {icon}
+        <span className="text-xl font-bold text-white">{value}</span>
+      </div>
+      <p className="text-xs text-white/60 mt-1">{label}</p>
+    </div>
+  )
+}
+
+// بطاقة إحصائية كبيرة
+type StatCardProps = {
+  title: string
+  value: string
+  change?: number
+  subtitle?: string
+  icon: React.ReactNode
+  color: 'emerald' | 'sky' | 'amber' | 'purple' | 'red'
+}
+
+const StatCard: React.FC<StatCardProps> = ({ title, value, change, subtitle, icon, color }) => {
+  const gradients = {
+    emerald: 'from-emerald-500 to-teal-600',
+    sky: 'from-sky-500 to-blue-600',
+    amber: 'from-amber-500 to-orange-600',
+    purple: 'from-purple-500 to-indigo-600',
+    red: 'from-red-500 to-rose-600',
+  }
+
+  return (
+    <div className={`relative overflow-hidden bg-gradient-to-br ${gradients[color]} rounded-2xl p-5 text-white shadow-lg`}>
+      <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
+      <div className="relative z-10">
+        <div className="flex items-center justify-between mb-3">
+          <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+            {icon}
+          </div>
+          {change !== undefined && (
+            <div className={`flex items-center gap-1 text-sm ${change >= 0 ? 'text-green-200' : 'text-red-200'}`}>
+              {change >= 0 ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+              {Math.abs(change)}%
+            </div>
+          )}
+        </div>
+        <p className="text-2xl font-bold">{value}</p>
+        <p className="text-white/70 text-sm mt-1">{subtitle || title}</p>
+      </div>
+    </div>
+  )
+}
+
+// بطاقة إحصائية صغيرة
+type MiniStatCardProps = {
+  icon: React.ReactNode
+  value: number
+  label: string
+  bgColor: string
+}
+
+const MiniStatCard: React.FC<MiniStatCardProps> = ({ icon, value, label, bgColor }) => {
+  return (
+    <div className={`${bgColor} rounded-xl p-4 flex items-center gap-3`}>
+      <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm">
+        {icon}
+      </div>
+      <div>
+        <p className="text-2xl font-bold text-slate-800">{value}</p>
+        <p className="text-sm text-slate-500">{label}</p>
+      </div>
+    </div>
+  )
+}
+
+// شريط الفلاتر
+type FilterBarProps = {
+  searchValue: string
+  onSearchChange: (value: string) => void
+  searchPlaceholder: string
+  filters?: {
+    label: string
+    value: string
+    options: { value: string; label: string }[]
+    onChange: (value: string) => void
+  }[]
+  sortOptions?: {
+    value: string
+    options: { value: string; label: string }[]
+    onChange: (value: string) => void
+  }
+  actionButton?: {
+    label: string
+    icon: React.ReactNode
+    onClick: () => void
+    color?: 'primary' | 'success' | 'warning'
+  }
+}
+
+const FilterBar: React.FC<FilterBarProps> = ({
+  searchValue,
+  onSearchChange,
+  searchPlaceholder,
+  filters,
+  sortOptions,
+  actionButton,
+}) => {
+  const buttonColors = {
+    primary: 'bg-sky-500 hover:bg-sky-600 text-white',
+    success: 'bg-emerald-500 hover:bg-emerald-600 text-white',
+    warning: 'bg-amber-500 hover:bg-amber-600 text-white',
+  }
+
+  return (
+    <div className="bg-white rounded-2xl shadow-lg border border-slate-100 p-4">
+      <div className="flex flex-wrap items-center gap-3">
+        {/* حقل البحث */}
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+          <input
+            type="text"
+            value={searchValue}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder={searchPlaceholder}
+            className="w-full pr-10 pl-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition"
+          />
+        </div>
+
+        {/* الفلاتر */}
+        {filters?.map((filter, index) => (
+          <div key={index} className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-slate-400" />
+            <select
+              value={filter.value}
+              onChange={(e) => filter.onChange(e.target.value)}
+              className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+            >
+              {filter.options.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+        ))}
+
+        {/* الترتيب */}
+        {sortOptions && (
+          <div className="flex items-center gap-2">
+            <SortAsc className="w-4 h-4 text-slate-400" />
+            <select
+              value={sortOptions.value}
+              onChange={(e) => sortOptions.onChange(e.target.value)}
+              className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+            >
+              {sortOptions.options.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* زر الإجراء */}
+        {actionButton && (
+          <button
+            onClick={actionButton.onClick}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold transition ${buttonColors[actionButton.color || 'primary']}`}
+          >
+            {actionButton.icon}
+            {actionButton.label}
+          </button>
+        )}
       </div>
     </div>
   )

@@ -2,22 +2,25 @@
 import React, { useEffect, useState } from 'react'
 import { 
   collection, doc, onSnapshot, orderBy, query, updateDoc, where, 
-  serverTimestamp, limit, getDoc, setDoc
+  serverTimestamp, limit, getDoc, setDoc, getDocs, runTransaction
 } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '@/firebase'
 import { useAuth } from '@/auth'
-import { Order } from '@/types'
+import { Order, Rating, POINTS_CONFIG, ORDER_TIME_LIMITS } from '@/types'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '@/components/ui/Toast'
 import { useDialog } from '@/components/ui/ConfirmDialog'
+import { RatingModal } from '@/components/RatingModal'
+import { OrderTimer } from '@/components/OrderTimer'
+import { notifyCourierAssigned, notifyOrderDelivered } from '@/utils/notificationService'
 import { 
   MessageCircle, Package, MapPin, Truck, CheckCircle, 
   Clock, Navigation, Phone, DollarSign, Sparkles, AlertCircle,
   User, Settings, Wallet, FileText, Camera, Building2, 
   Power, PowerOff, History, TrendingUp, Calendar,
   ChevronLeft, Shield, Car, CreditCard, Info, X, Eye,
-  MapPinned, Star, Target, Award, Briefcase, BarChart3, RefreshCw
+  MapPinned, Star, Target, Award, Briefcase, BarChart3, RefreshCw, MinusCircle
 } from 'lucide-react'
 
 // رسوم المنصة على كل طلب توصيل (تُخصم من المندوب)
@@ -44,6 +47,12 @@ type CourierProfile = {
   totalDeliveries?: number
   rating?: number
   joinedAt?: any
+  // نظام النقاط
+  points?: {
+    currentPoints: number
+    isSuspended: boolean
+    warningCount: number
+  }
 }
 
 type TabType = 'dashboard' | 'orders' | 'history' | 'earnings' | 'profile'
@@ -62,6 +71,9 @@ export const CourierApp: React.FC = () => {
   const [deliveryFees, setDeliveryFees] = useState<Record<string, string>>({})
   const [savingFee, setSavingFee] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  
+  // قائمة الأسر التي وافقت على توظيف المندوب
+  const [acceptedRestaurants, setAcceptedRestaurants] = useState<string[]>([])
   
   // بيانات المندوب
   const [profile, setProfile] = useState<CourierProfile | null>(null)
@@ -90,6 +102,12 @@ export const CourierApp: React.FC = () => {
   // تعديل الملف الشخصي
   const [editingProfile, setEditingProfile] = useState(false)
   const [tempProfile, setTempProfile] = useState<Partial<CourierProfile>>({})
+  
+  // نظام تقييم العميل
+  const [ratingModal, setRatingModal] = useState<{
+    isOpen: boolean
+    orderId: string
+  }>({ isOpen: false, orderId: '' })
 
   // تحميل بيانات المندوب
   useEffect(() => {
@@ -118,21 +136,48 @@ export const CourierApp: React.FC = () => {
       setLoadingProfile(false)
     }
     
+    // تحميل الأسر التي وافقت على توظيف المندوب
+    const loadAcceptedRestaurants = async () => {
+      const { getDocs } = await import('firebase/firestore')
+      const hiringQuery = query(
+        collection(db, 'hiringRequests'),
+        where('courierId', '==', user.uid),
+        where('status', '==', 'accepted')
+      )
+      const hiringSnap = await getDocs(hiringQuery)
+      const restaurantIds = hiringSnap.docs.map(d => d.data().restaurantId)
+      setAcceptedRestaurants(restaurantIds)
+    }
+    
     loadProfile()
+    loadAcceptedRestaurants()
   }, [user?.uid])
 
   // تحميل الطلبات
   useEffect(() => {
     if (!user?.uid) return
     
-    // الطلبات الجاهزة للتوصيل
+    // الطلبات الجاهزة للتوصيل (من الأسر التي وافقت على المندوب فقط)
     const q1 = query(
       collection(db, 'orders'), 
       where('status', 'in', ['ready']), 
       orderBy('createdAt', 'desc'),
-      limit(20)
+      limit(50)
     )
-    const u1 = onSnapshot(q1, (snap) => setReady(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order))))
+    const u1 = onSnapshot(q1, (snap) => {
+      const allReadyOrders = snap.docs.map(d => ({ id: d.id, ...d.data() } as Order))
+      // تصفية الطلبات: فقط من الأسر التي وافقت على توظيف المندوب
+      if (acceptedRestaurants.length > 0) {
+        const filtered = allReadyOrders.filter(order => {
+          const restaurantId = order.restaurantId || order.items?.[0]?.ownerId || ''
+          return acceptedRestaurants.includes(restaurantId)
+        })
+        setReady(filtered)
+      } else {
+        // إذا لم يتم قبول المندوب في أي أسرة، لا يرى طلبات
+        setReady([])
+      }
+    })
     
     // طلباتي الحالية
     const q2 = query(
@@ -149,7 +194,7 @@ export const CourierApp: React.FC = () => {
     })
     
     return () => { u1(); u2() }
-  }, [user?.uid])
+  }, [user?.uid, acceptedRestaurants])
 
   // حساب الإحصائيات
   const calculateStats = (orders: Order[]) => {
@@ -213,10 +258,29 @@ export const CourierApp: React.FC = () => {
 
   // تحديث البيانات
   const handleRefresh = async () => {
+    if (!user?.uid) return
     setRefreshing(true)
-    await new Promise(r => setTimeout(r, 1000))
-    setRefreshing(false)
-    toast.success('تم التحديث')
+    try {
+      // إعادة تحميل ملف المندوب
+      const profileSnap = await getDoc(doc(db, 'couriers', user.uid))
+      if (profileSnap.exists()) {
+        setProfile(profileSnap.data() as any)
+      }
+      // إعادة تحميل المطاعم المقبولة
+      const hiringQuery = query(
+        collection(db, 'hiringRequests'),
+        where('courierId', '==', user.uid),
+        where('status', '==', 'accepted')
+      )
+      const hiringSnap = await getDocs(hiringQuery)
+      const restaurantIds = hiringSnap.docs.map(d => d.data().restaurantId)
+      setAcceptedRestaurants(restaurantIds)
+      toast.success('تم التحديث')
+    } catch (err) {
+      toast.error('حدث خطأ أثناء التحديث')
+    } finally {
+      setRefreshing(false)
+    }
   }
 
   // تبديل حالة التوفر
@@ -232,7 +296,7 @@ export const CourierApp: React.FC = () => {
     toast.success(newStatus ? '🟢 أنت الآن متاح للطلبات' : '🔴 أنت الآن غير متاح')
   }
 
-  // استلام الطلب
+  // استلام الطلب (مع transaction لمنع race condition)
   const takeOrder = async (id: string, order: Order) => {
     if (!user) return
     
@@ -241,39 +305,73 @@ export const CourierApp: React.FC = () => {
       return
     }
     
-    if (!order.deliveryFeeSetBy) {
-      const feeStr = deliveryFees[id]
-      const fee = parseFloat(feeStr)
+    const feeStr = deliveryFees[id]
+    const fee = order.deliveryFeeSetBy ? (order.deliveryFee || 0) : parseFloat(feeStr)
+    
+    if (!order.deliveryFeeSetBy && (isNaN(fee) || fee < 0)) {
+      toast.error('حدد رسوم التوصيل أولاً')
+      return
+    }
+
+    setSavingFee(id)
+    
+    try {
+      // استخدام transaction لمنع مندوبين من استلام نفس الطلب
+      await runTransaction(db, async (transaction) => {
+        const orderRef = doc(db, 'orders', id)
+        const orderSnap = await transaction.get(orderRef)
+        
+        if (!orderSnap.exists()) {
+          throw new Error('الطلب غير موجود')
+        }
+        
+        const currentData = orderSnap.data()
+        
+        // التحقق من أن الطلب لا يزال متاحاً
+        if (currentData.courierId) {
+          throw new Error('تم استلام هذا الطلب من قبل مندوب آخر')
+        }
+        
+        if (currentData.status !== 'ready') {
+          throw new Error('هذا الطلب لم يعد متاحاً للاستلام')
+        }
+        
+        const currentTotal = order.total || order.subtotal
+        const newTotal = currentTotal + fee
+        const updateData: Record<string, any> = {
+          courierId: user.uid,
+          status: 'out_for_delivery',
+          courierPlatformFee: COURIER_PLATFORM_FEE,
+          'timestamps.pickedUpAt': serverTimestamp(),
+          updatedAt: serverTimestamp()
+        }
+        
+        // إضافة رسوم التوصيل إذا لم تكن محددة مسبقاً
+        if (!order.deliveryFeeSetBy) {
+          updateData.deliveryFee = fee
+          updateData.deliveryFeeSetBy = 'courier'
+          updateData.deliveryFeeSetAt = serverTimestamp()
+          updateData.total = newTotal
+        }
+        
+        transaction.update(orderRef, updateData)
+      })
       
-      if (isNaN(fee) || fee < 0) {
-        toast.error('حدد رسوم التوصيل أولاً')
-        return
+      // 🔔 إشعار للعميل: مندوب في الطريق
+      const orderData = allOrders.find((o: Order) => o.id === id) || ready.find((o: Order) => o.id === id)
+      if (orderData) {
+        notifyCourierAssigned(orderData.customerId, id, profile?.name || 'المندوب')
       }
-
-      setSavingFee(id)
-      const newTotal = order.subtotal + fee
-
-      await updateDoc(doc(db, 'orders', id), { 
-        courierId: user.uid, 
-        status: 'out_for_delivery',
-        deliveryFee: fee,
-        deliveryFeeSetBy: 'courier',
-        deliveryFeeSetAt: serverTimestamp(),
-        total: newTotal,
-        courierPlatformFee: COURIER_PLATFORM_FEE,
-        updatedAt: serverTimestamp() 
-      })
       
+      toast.success(order.deliveryFeeSetBy 
+        ? 'تم استلام الطلب!' 
+        : `تم استلام الطلب! رسوم التوصيل: ${fee} ر.س`
+      )
+    } catch (err: any) {
+      console.error('خطأ في استلام الطلب:', err)
+      toast.error(err.message || 'حدث خطأ أثناء استلام الطلب')
+    } finally {
       setSavingFee(null)
-      toast.success(`تم استلام الطلب! رسوم التوصيل: ${fee} ر.س`)
-    } else {
-      await updateDoc(doc(db, 'orders', id), { 
-        courierId: user.uid, 
-        status: 'out_for_delivery',
-        courierPlatformFee: COURIER_PLATFORM_FEE,
-        updatedAt: serverTimestamp() 
-      })
-      toast.success('تم استلام الطلب!')
     }
   }
 
@@ -285,12 +383,78 @@ export const CourierApp: React.FC = () => {
     )
     if (!confirmed) return
     
+    // جلب بيانات الطلب للإشعار
+    const orderData = mine.find(o => o.id === id)
+    
     await updateDoc(doc(db, 'orders', id), { 
       status: 'delivered', 
       deliveredAt: serverTimestamp(),
+      'timestamps.deliveredAt': serverTimestamp(),
       updatedAt: serverTimestamp() 
     })
+    
+    // 🔔 إشعار للعميل: تم توصيل طلبك
+    if (orderData) {
+      notifyOrderDelivered(orderData.customerId, id, orderData.restaurantName || 'المطعم')
+      
+      // 🔔 إشعار للإدارة: طلب ناجح
+      try {
+        const { notifyAdminSuccessfulOrder } = await import('@/utils/notificationService')
+        await notifyAdminSuccessfulOrder(
+          id,
+          orderData.restaurantName || 'المطعم',
+          'العميل',
+          orderData.total || 0,
+          orderData.platformFee || 0
+        )
+      } catch (adminNotifErr) {
+        console.warn('⚠️ تعذر إشعار الإدارة:', adminNotifErr)
+      }
+    }
+    
     toast.success('تم تسليم الطلب بنجاح! ✅')
+  }
+  
+  // هل الطلب يحتاج تقييم من المندوب؟
+  const needsCustomerRating = (order: Order): boolean => {
+    if (order.status !== 'delivered') return false
+    return !order.ratings?.courierToCustomer?.stars
+  }
+  
+  // إرسال تقييم العميل
+  const submitCustomerRating = async (orderId: string, rating: Rating) => {
+    try {
+      const orderRef = doc(db, 'orders', orderId)
+      const orderSnap = await getDoc(orderRef)
+      if (!orderSnap.exists()) return
+      
+      const orderData = orderSnap.data()
+      const currentRatings = orderData.ratings || {}
+      
+      // تحديث تقييم المندوب للعميل
+      const updatedRatings = {
+        ...currentRatings,
+        courierToCustomer: rating
+      }
+      
+      // التحقق من اكتمال جميع التقييمات
+      const allRatingsComplete = 
+        updatedRatings.customerToRestaurant?.stars &&
+        updatedRatings.customerToCourier?.stars &&
+        updatedRatings.restaurantToCustomer?.stars &&
+        updatedRatings.courierToCustomer?.stars
+      
+      await updateDoc(orderRef, {
+        ratings: updatedRatings,
+        ratingCompleted: allRatingsComplete,
+        updatedAt: serverTimestamp()
+      })
+      
+      toast.success('شكراً على تقييمك! ⭐')
+      setRatingModal({ isOpen: false, orderId: '' })
+    } catch (error) {
+      toast.error('حدث خطأ في إرسال التقييم')
+    }
   }
 
   // حفظ الملف الشخصي
@@ -379,6 +543,11 @@ export const CourierApp: React.FC = () => {
         <span className="text-white/90 text-sm">{order.restaurantName || 'مطعم'}</span>
       </div>
       <div className="p-4">
+        {/* عداد وقت انتظار الاستلام */}
+        <div className="mb-3">
+          <OrderTimer order={order} type="pickup" compact />
+        </div>
+        
         <div className="flex items-center gap-2 text-gray-600 text-sm mb-2">
           <MapPin className="w-4 h-4" />
           <span className="truncate">{order.address}</span>
@@ -458,6 +627,11 @@ export const CourierApp: React.FC = () => {
         </div>
       </div>
       <div className="p-4">
+        {/* عداد وقت التوصيل */}
+        <div className="mb-3">
+          <OrderTimer order={order} type="delivery" />
+        </div>
+        
         <div className="flex items-center gap-2 text-gray-600 text-sm mb-2">
           <MapPin className="w-4 h-4" />
           <span className="truncate">{order.address}</span>
@@ -492,6 +666,58 @@ export const CourierApp: React.FC = () => {
   // ===== الصفحة الرئيسية =====
   const renderDashboard = () => (
     <div className="space-y-6">
+      {/* ⛔ تنبيه الإيقاف */}
+      {profile?.points?.isSuspended && (
+        <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-red-500 rounded-xl flex items-center justify-center">
+              <MinusCircle className="w-6 h-6 text-white" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-bold text-red-700">⛔ حسابك موقوف!</h3>
+              <p className="text-sm text-red-600">لن تستطيع استلام طلبات جديدة. تواصل مع الدعم الفني.</p>
+            </div>
+          </div>
+          <button
+            onClick={() => nav('/support')}
+            className="w-full mt-3 py-2 bg-red-500 text-white rounded-xl font-bold"
+          >
+            تواصل مع الدعم ←
+          </button>
+        </div>
+      )}
+
+      {/* نظام النقاط */}
+      {profile?.points && !profile.points.isSuspended && (
+        <div className={`rounded-2xl p-4 border-2 ${
+          profile.points.currentPoints < POINTS_CONFIG.WARNING_THRESHOLD
+            ? 'bg-amber-50 border-amber-300'
+            : 'bg-sky-50 border-sky-200'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Shield className={`w-6 h-6 ${
+                profile.points.currentPoints < POINTS_CONFIG.WARNING_THRESHOLD
+                  ? 'text-amber-500' : 'text-sky-500'
+              }`} />
+              <span className="font-bold text-gray-700">رصيد النقاط</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`text-2xl font-bold ${
+                profile.points.currentPoints < POINTS_CONFIG.WARNING_THRESHOLD
+                  ? 'text-amber-600' : 'text-sky-600'
+              }`}>{profile.points.currentPoints}</span>
+              <span className="text-gray-400">/ {POINTS_CONFIG.STARTING_POINTS}</span>
+            </div>
+          </div>
+          {profile.points.currentPoints < POINTS_CONFIG.WARNING_THRESHOLD && (
+            <p className="text-sm text-amber-600 mt-2">
+              ⚠️ نقاطك منخفضة! حافظ على جودة الخدمة.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* بيان العمل المستقل */}
       <div className="bg-gradient-to-r from-blue-50 to-sky-50 border border-blue-200 rounded-2xl p-4">
         <div className="flex items-start gap-3">
@@ -669,10 +895,16 @@ export const CourierApp: React.FC = () => {
           <div className="space-y-3">
             {ready.map(renderReadyOrder)}
           </div>
+        ) : acceptedRestaurants.length === 0 ? (
+          <div className="text-center py-8 bg-amber-50 rounded-2xl border border-amber-200">
+            <Briefcase className="w-12 h-12 text-amber-400 mx-auto mb-2" />
+            <p className="text-amber-700 font-medium">لا توجد أسر منتجة قبلت طلب توظيفك</p>
+            <p className="text-amber-600 text-sm mt-1">تقدم لطلبات توظيف من صفحة "طلبات التوظيف"</p>
+          </div>
         ) : (
           <div className="text-center py-8 bg-gray-50 rounded-2xl">
             <Package className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-            <p className="text-gray-500">لا توجد طلبات جاهزة</p>
+            <p className="text-gray-500">لا توجد طلبات جاهزة حالياً</p>
           </div>
         )}
       </div>
@@ -713,6 +945,41 @@ export const CourierApp: React.FC = () => {
                   <span className="text-red-500 text-sm">-{COURIER_PLATFORM_FEE} رسوم</span>
                 </div>
               </div>
+              
+              {/* نظام تقييم العميل */}
+              {needsCustomerRating(order) && (
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                  <button
+                    onClick={() => setRatingModal({ isOpen: true, orderId: order.id })}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-sky-50 to-blue-50 
+                               border-2 border-sky-200 rounded-xl hover:shadow-md transition-all group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <User className="w-5 h-5 text-sky-600" />
+                      <span className="font-medium text-gray-800">قيّم العميل ⭐</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {[1,2,3,4,5].map(n => (
+                        <Star key={n} className="w-4 h-4 text-gray-300 group-hover:text-sky-400 transition" />
+                      ))}
+                    </div>
+                  </button>
+                </div>
+              )}
+              
+              {/* عرض التقييم المكتمل */}
+              {order.ratings?.courierToCustomer?.stars && (
+                <div className="mt-3 pt-3 border-t border-gray-100 bg-green-50 rounded-xl p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-green-700 font-medium">تقييمك للعميل:</span>
+                    <div className="flex items-center gap-1">
+                      {[1,2,3,4,5].map(n => (
+                        <Star key={n} className={`w-4 h-4 ${n <= (order.ratings?.courierToCustomer?.stars || 0) ? 'text-sky-400 fill-sky-400' : 'text-gray-300'}`} />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -814,6 +1081,15 @@ export const CourierApp: React.FC = () => {
           💡 يتم تحويل أرباحك أسبوعياً إلى حسابك البنكي
         </p>
       </div>
+
+      {/* رابط المحفظة التفصيلية */}
+      <button
+        onClick={() => nav('/courier/wallet')}
+        className="w-full py-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-2xl font-bold hover:from-orange-600 hover:to-orange-700 transition flex items-center justify-center gap-2"
+      >
+        <Wallet className="w-5 h-5" />
+        عرض المحفظة التفصيلية
+      </button>
     </div>
   )
 
@@ -1146,6 +1422,15 @@ export const CourierApp: React.FC = () => {
       {activeTab === 'history' && renderHistory()}
       {activeTab === 'earnings' && renderEarnings()}
       {activeTab === 'profile' && renderProfile()}
+      
+      {/* نافذة التقييم */}
+      <RatingModal
+        isOpen={ratingModal.isOpen}
+        onClose={() => setRatingModal({ isOpen: false, orderId: '' })}
+        onSubmit={(rating) => submitCustomerRating(ratingModal.orderId, rating)}
+        type="customer"
+        orderId={ratingModal.orderId}
+      />
     </div>
   )
 }

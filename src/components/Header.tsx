@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth";
-import { Menu, X, Home, ShoppingCart, Package, Store, Truck, Shield, Code2, ArrowRight, User, Bell } from "lucide-react";
+import { Menu, X, Home, ShoppingCart, Package, Store, Truck, Shield, Code2, ArrowRight, User, Bell, Headphones } from "lucide-react";
 import { db } from "@/firebase";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 
@@ -22,7 +22,7 @@ const NavLink: React.FC<{ to: string; label: string; icon?: React.ReactNode; onC
         "flex items-center gap-2 px-4 py-3 sm:py-2.5 rounded-2xl text-sm font-bold transition-all duration-300 " +
         (active
           ? "bg-white text-sky-600 shadow-lg shadow-sky-200/50 scale-105"
-          : "text-white/90 hover:text-white hover:bg-white/20 backdrop-blur-sm")
+          : "text-white/90 hover:text-white hover:bg-white/20")
       }
     >
       {icon}
@@ -80,7 +80,7 @@ export const Header: React.FC = () => {
   }, [user?.uid]); // ✅ استخدم user.uid بدلاً من user object
 
   return (
-    <header className="bg-gradient-to-r from-sky-600/95 via-sky-500/95 to-sky-600/95 backdrop-blur-lg shadow-xl shadow-sky-200/30">
+    <header className="bg-gradient-to-r from-sky-600 via-sky-500 to-sky-600 shadow-xl shadow-sky-200/30 relative z-30">
       <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 sm:py-4 flex items-center justify-between">
         {/* زر الرجوع + شعار */}
         <div className="flex items-center gap-2">
@@ -162,6 +162,17 @@ export const Header: React.FC = () => {
             </Link>
           )}
 
+          {/* 🎧 زر الدعم الفني */}
+          {user && (
+            <Link
+              to="/support"
+              className="p-2.5 rounded-xl bg-white/20 hover:bg-white/30 transition text-white"
+              title="الدعم الفني / شكوى"
+            >
+              <Headphones className="w-5 h-5" />
+            </Link>
+          )}
+
           {/* دخول/خروج */}
           {user ? (
             <button
@@ -177,13 +188,13 @@ export const Header: React.FC = () => {
 
         {/* زر المينيو للجوال */}
         <button
-          className="md:hidden p-2.5 rounded-2xl bg-white/20 hover:bg-white/30 transition backdrop-blur-sm"
+          className="md:hidden p-2.5 rounded-2xl bg-white text-sky-600 shadow-lg hover:shadow-xl transition"
           onClick={() => setOpen(!open)}
         >
           {open ? (
-            <X className="w-6 h-6 text-white" />
+            <X className="w-6 h-6" />
           ) : (
-            <Menu className="w-6 h-6 text-white" />
+            <Menu className="w-6 h-6" />
           )}
         </button>
       </div>
@@ -198,10 +209,11 @@ export const Header: React.FC = () => {
 
       {/* قائمة الجوال المنزلقة */}
       <div className={`
-        fixed top-0 right-0 h-full w-72 max-w-[80vw] bg-gradient-to-b from-sky-500 to-sky-700 
-        z-50 md:hidden transform transition-transform duration-300 ease-out shadow-2xl
+        fixed top-0 right-0 h-full w-72 max-w-[80vw] z-50 md:hidden transform transition-transform duration-300 ease-out shadow-2xl
         ${open ? 'translate-x-0' : 'translate-x-full'}
-      `}>
+      `}
+      style={{ background: 'linear-gradient(to bottom, #0ea5e9, #0369a1)' }}
+      >
         {/* رأس القائمة */}
         <div className="flex items-center justify-between p-4 border-b border-white/20">
           <span className="text-white font-bold text-lg">القائمة</span>
@@ -314,6 +326,16 @@ export const Header: React.FC = () => {
               to="/notifications" 
               label={`الإشعارات ${unreadCount > 0 ? `(${unreadCount})` : ''}`}
               icon={<Bell className="w-5 h-5" />}
+              onClick={() => setOpen(false)} 
+            />
+          )}
+
+          {/* 🎧 الدعم الفني */}
+          {user && (
+            <NavLink 
+              to="/support" 
+              label="الدعم الفني / شكوى"
+              icon={<Headphones className="w-5 h-5" />}
               onClick={() => setOpen(false)} 
             />
           )}

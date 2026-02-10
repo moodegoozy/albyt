@@ -1,10 +1,14 @@
 // src/pages/OrdersAdmin.tsx
-import React, { useEffect, useMemo, useState } from 'react'
-import { collection, doc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore'
-import { db } from '@/firebase'
+import React, { useEffect, useMemo, useState, useRef } from 'react'
+import { collection, doc, onSnapshot, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore'
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { db, storage } from '@/firebase'
 import { useAuth } from '@/auth'
 import { useNavigate } from 'react-router-dom'
-import { MessageCircle } from 'lucide-react'
+import { MessageCircle, Star, User, Camera, Loader2, CheckCircle, Image } from 'lucide-react'
+import { RatingModal } from '@/components/RatingModal'
+import { useToast } from '@/components/ui/Toast'
+import { Rating } from '@/types'
 
 type Order = any
 
@@ -39,9 +43,21 @@ const statusColor = (s: string) => {
 export const OrdersAdmin: React.FC = () => {
   const { user } = useAuth()
   const nav = useNavigate()
+  const toast = useToast()
   const [orders, setOrders] = useState<Order[]>([])
   const [error, setError] = useState<string | null>(null)
   const [deliveryFees, setDeliveryFees] = useState<Record<string, number>>({})
+  
+  // حالة التقييم
+  const [ratingModal, setRatingModal] = useState<{
+    isOpen: boolean;
+    orderId: string;
+    customerName: string;
+  } | null>(null)
+  
+  // حالة رفع صورة الطلب
+  const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const restaurantUid = useMemo(() => user?.uid ?? null, [user])
 
@@ -90,12 +106,171 @@ export const OrdersAdmin: React.FC = () => {
       updates.total = (order.subtotal || 0) + fee
     }
     
+    // عند الإلغاء، نسجل الوقت ومن ألغى
+    if (status === 'cancelled') {
+      updates.cancelledAt = serverTimestamp()
+      updates.cancelledBy = 'owner'
+    }
+    
     await updateDoc(doc(db, 'orders', id), updates)
+
+    // 💰 استرداد تلقائي عند الإلغاء
+    if (status === 'cancelled' && order) {
+      try {
+        const { processOrderRefund, notifyRefundParties } = await import('@/utils/refundService')
+        const refundResult = await processOrderRefund({
+          id: order.id || id,
+          customerId: order.customerId,
+          restaurantId: order.restaurantId || restaurantUid || '',
+          subtotal: order.subtotal,
+          total: order.total,
+          restaurantEarnings: order.restaurantEarnings,
+          platformFee: order.platformFee,
+          adminCommission: order.adminCommission,
+          appEarnings: order.appEarnings,
+          referredBy: order.referredBy,
+          paymentMethod: order.paymentMethod,
+        })
+        
+        // إشعار الأطراف
+        await notifyRefundParties({
+          id: order.id || id,
+          customerId: order.customerId,
+          restaurantId: order.restaurantId || restaurantUid || '',
+          subtotal: order.subtotal,
+          total: order.total,
+        }, refundResult, 'owner')
+        
+        if (refundResult.success) {
+          toast.success('تم إلغاء الطلب واسترداد المبالغ تلقائياً ✅')
+        }
+      } catch (refundErr) {
+        console.warn('⚠️ تعذر الاسترداد التلقائي:', refundErr)
+        toast.warning('تم الإلغاء لكن فشل الاسترداد التلقائي')
+      }
+      return
+    }
+
+    // 🔔 إرسال إشعارات حسب الحالة الجديدة
+    try {
+      const { 
+        notifyOrderAccepted, 
+        notifyOrderPreparing, 
+        notifyOrderReady,
+        notifyCourierOrderReady 
+      } = await import('@/utils/notificationService')
+      
+      const customerId = order?.customerId
+      const restaurantName = order?.restaurantName || 'المطعم'
+      
+      if (customerId) {
+        if (status === 'accepted') {
+          await notifyOrderAccepted(customerId, id, restaurantName)
+        } else if (status === 'preparing') {
+          await notifyOrderPreparing(customerId, id, restaurantName)
+        } else if (status === 'ready') {
+          await notifyOrderReady(customerId, id, restaurantName, order?.deliveryType || 'delivery')
+          
+          // ✅ إشعار المناديب المعتمدين عند جاهزية الطلب للتوصيل
+          if (order?.deliveryType === 'delivery' && restaurantUid) {
+            const { collection, query, where, getDocs } = await import('firebase/firestore')
+            const hiringQuery = query(
+              collection(db, 'hiringRequests'),
+              where('restaurantId', '==', restaurantUid),
+              where('status', '==', 'accepted')
+            )
+            const hiringSnap = await getDocs(hiringQuery)
+            const customerAddress = order?.address || 'العميل'
+            
+            for (const docSnap of hiringSnap.docs) {
+              const courierId = docSnap.data().courierId
+              if (courierId) {
+                await notifyCourierOrderReady(courierId, id, restaurantName, customerAddress)
+              }
+            }
+          }
+        }
+      }
+    } catch (notifErr) {
+      console.warn('⚠️ تعذر إرسال الإشعار:', notifErr)
+    }
+  }
+
+  // إرسال تقييم العميل من الأسرة
+  const submitCustomerRating = async (orderId: string, rating: { stars: number; comment: string }) => {
+    const ratingData: Rating = {
+      stars: rating.stars,
+      comment: rating.comment || undefined,
+      createdAt: new Date()
+    }
+
+    await updateDoc(doc(db, 'orders', orderId), {
+      'ratings.restaurantToCustomer': ratingData,
+      updatedAt: serverTimestamp()
+    })
+
+    toast.success('تم تقييم العميل بنجاح! ⭐')
+  }
+
+  // التحقق إذا كان الطلب يحتاج تقييم للعميل
+  const needsCustomerRating = (order: any) => {
+    return order.status === 'delivered' && !order.ratings?.restaurantToCustomer?.stars
+  }
+
+  // رفع صورة الطلب الجاهز
+  const uploadOrderPhoto = async (orderId: string, file: File) => {
+    if (!file) return
+    
+    setUploadingPhoto(orderId)
+    
+    try {
+      // رفع الصورة إلى Firebase Storage
+      const storageRef = ref(storage, `orders/${orderId}/ready_${Date.now()}.jpg`)
+      await uploadBytes(storageRef, file)
+      const photoUrl = await getDownloadURL(storageRef)
+      
+      // تحديث الطلب بالصورة
+      await updateDoc(doc(db, 'orders', orderId), {
+        readyPhotoUrl: photoUrl,
+        readyPhotoAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+      
+      toast.success('تم رفع صورة الطلب بنجاح! 📸')
+    } catch (error) {
+      console.error('Error uploading photo:', error)
+      toast.error('حدث خطأ في رفع الصورة')
+    } finally {
+      setUploadingPhoto(null)
+    }
+  }
+
+  // معالجة اختيار الصورة
+  const handlePhotoSelect = (orderId: string, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      uploadOrderPhoto(orderId, file)
+    }
   }
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-extrabold text-yellow-500">📋 إدارة الطلبات</h1>
+
+      {/* نافذة التقييم */}
+      {ratingModal && (
+        <RatingModal
+          isOpen={ratingModal.isOpen}
+          onClose={() => setRatingModal(null)}
+          onSubmit={async (rating) => {
+            await submitCustomerRating(ratingModal.orderId, rating)
+            setRatingModal(null)
+          }}
+          type="customer"
+          targetName={ratingModal.customerName}
+          orderId={ratingModal.orderId}
+        />
+      )}
 
       {error && <div className="text-red-500 text-sm mb-2">{error}</div>}
 
@@ -173,6 +348,84 @@ export const OrdersAdmin: React.FC = () => {
             </div>
           )}
 
+          {/* 📸 رفع صورة الطلب الجاهز - للطلبات قيد التحضير أو الجاهزة */}
+          {['preparing', 'ready'].includes(o.status) && (
+            <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-200 rounded-2xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Camera className="w-5 h-5 text-purple-600" />
+                <span className="font-bold text-purple-800">📸 صورة الطلب الجاهز</span>
+              </div>
+              
+              {o.readyPhotoUrl ? (
+                <div className="space-y-3">
+                  <div className="relative">
+                    <img 
+                      src={o.readyPhotoUrl} 
+                      alt="صورة الطلب" 
+                      className="w-full h-48 object-cover rounded-xl border-2 border-purple-300"
+                    />
+                    <div className="absolute top-2 left-2 bg-green-500 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" />
+                      تم الرفع
+                    </div>
+                  </div>
+                  <p className="text-xs text-purple-600 text-center">
+                    ✅ تم رفع صورة الطلب - يمكن للمندوب استلامه الآن
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-purple-700">
+                    ⚠️ يُرجى رفع صورة الطلب قبل تسليمه للمندوب
+                  </p>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={(e) => handlePhotoSelect(o.id, e)}
+                    className="hidden"
+                    id={`photo-${o.id}`}
+                  />
+                  <label
+                    htmlFor={`photo-${o.id}`}
+                    className={`flex items-center justify-center gap-3 w-full py-4 rounded-xl cursor-pointer transition-all ${
+                      uploadingPhoto === o.id 
+                        ? 'bg-purple-200 cursor-wait' 
+                        : 'bg-purple-500 hover:bg-purple-600 text-white'
+                    }`}
+                  >
+                    {uploadingPhoto === o.id ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span>جاري الرفع...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Camera className="w-5 h-5" />
+                        <span className="font-bold">📸 التقط صورة الطلب</span>
+                      </>
+                    )}
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* عرض صورة الطلب للطلبات المكتملة */}
+          {o.readyPhotoUrl && !['preparing', 'ready'].includes(o.status) && (
+            <div className="bg-gray-50 rounded-xl p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Image className="w-4 h-4 text-gray-500" />
+                <span className="text-sm font-medium text-gray-700">صورة الطلب:</span>
+              </div>
+              <img 
+                src={o.readyPhotoUrl} 
+                alt="صورة الطلب" 
+                className="w-full h-32 object-cover rounded-lg"
+              />
+            </div>
+          )}
+
           {/* 🔘 أزرار تغيير الحالة */}
           <div className="mt-3 grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
             {/* زر المحادثة مع العميل */}
@@ -205,6 +458,49 @@ export const OrdersAdmin: React.FC = () => {
               )
             })}
           </div>
+
+          {/* نظام تقييم العميل - للطلبات المكتملة */}
+          {needsCustomerRating(o) && (
+            <div className="mt-4 bg-gradient-to-r from-sky-50 to-blue-50 border-2 border-sky-200 rounded-2xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Star className="w-5 h-5 text-sky-500 fill-sky-500" />
+                <span className="font-bold text-sky-800">قيّم العميل ⭐</span>
+              </div>
+              <button
+                onClick={() => setRatingModal({
+                  isOpen: true,
+                  orderId: o.id,
+                  customerName: 'العميل'
+                })}
+                className="w-full flex items-center justify-between px-4 py-3 bg-white border-2 border-sky-300 
+                           rounded-xl hover:bg-sky-50 transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <User className="w-5 h-5 text-sky-600" />
+                  <span className="font-medium text-gray-800">قيّم تعامل العميل</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  {[1,2,3,4,5].map(n => (
+                    <Star key={n} className="w-4 h-4 text-gray-300 group-hover:text-sky-400 transition" />
+                  ))}
+                </div>
+              </button>
+            </div>
+          )}
+
+          {/* عرض التقييم المكتمل */}
+          {o.ratings?.restaurantToCustomer?.stars && (
+            <div className="mt-4 bg-green-50 border border-green-200 rounded-xl p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-green-700 font-medium">تقييمك للعميل:</span>
+                <div className="flex items-center gap-1">
+                  {[1,2,3,4,5].map(n => (
+                    <Star key={n} className={`w-4 h-4 ${n <= o.ratings.restaurantToCustomer.stars ? 'text-sky-400 fill-sky-400' : 'text-gray-300'}`} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       ))}
 

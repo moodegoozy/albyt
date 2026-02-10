@@ -7,7 +7,7 @@ import { RoleGate } from '@/routes/RoleGate'
 import { useToast } from '@/components/ui/Toast'
 import { useDialog } from '@/components/ui/ConfirmDialog'
 import { Restaurant } from '@/types'
-import { Trash2, Plus, UserCheck, Upload, Image, Shield, Award, Medal, Crown, CheckCircle, XCircle, ChevronDown } from 'lucide-react'
+import { Trash2, Plus, UserCheck, Upload, Image, Shield, Award, Medal, Crown, CheckCircle, XCircle, ChevronDown, Edit, X, Store, Phone, MapPin, Building2 } from 'lucide-react'
 
 export const AdminRestaurants: React.FC = () => {
   const { user, role } = useAuth()
@@ -19,7 +19,22 @@ export const AdminRestaurants: React.FC = () => {
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const fileRef = useRef<HTMLInputElement>(null)
+  const editFileRef = useRef<HTMLInputElement>(null)
   const storage = getStorage(app)
+  
+  // حالة التعديل
+  const [editingRestaurant, setEditingRestaurant] = useState<Restaurant | null>(null)
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    phone: '',
+    city: '',
+    location: '',
+    isOpen: true,
+    allowDelivery: true,
+    allowPickup: false,
+    logoFile: null as File | null,
+    logoPreview: '',
+  })
   
   const [formData, setFormData] = useState({
     name: '',
@@ -140,6 +155,103 @@ export const AdminRestaurants: React.FC = () => {
       loadRestaurants()
     } catch (err) {
       toast.error('خطأ في إضافة المطعم')
+      console.error(err)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  // بدء تعديل المطعم
+  const handleStartEdit = (restaurant: Restaurant) => {
+    setEditingRestaurant(restaurant)
+    setEditFormData({
+      name: restaurant.name || '',
+      phone: restaurant.phone || '',
+      city: restaurant.city || '',
+      location: restaurant.location || '',
+      isOpen: restaurant.isOpen !== false,
+      allowDelivery: restaurant.allowDelivery !== false,
+      allowPickup: restaurant.allowPickup === true,
+      logoFile: null,
+      logoPreview: restaurant.logoUrl || '',
+    })
+  }
+
+  // إلغاء التعديل
+  const handleCancelEdit = () => {
+    setEditingRestaurant(null)
+    setEditFormData({
+      name: '',
+      phone: '',
+      city: '',
+      location: '',
+      isOpen: true,
+      allowDelivery: true,
+      allowPickup: false,
+      logoFile: null,
+      logoPreview: '',
+    })
+  }
+
+  // حفظ التعديلات
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingRestaurant) return
+
+    if (!editFormData.name.trim()) {
+      toast.warning('أدخل اسم المطعم')
+      return
+    }
+
+    try {
+      setUploading(true)
+      
+      // رفع الشعار الجديد إذا وُجد
+      let logoUrl = editFormData.logoPreview
+      if (editFormData.logoFile) {
+        const safeName = editFormData.logoFile.name.replace(/\s+/g, '_').slice(-60)
+        const path = `uploads/restaurant_${Date.now()}_${safeName}`
+        const storageRef = ref(storage, path)
+        
+        const task = uploadBytesResumable(storageRef, editFormData.logoFile, {
+          contentType: editFormData.logoFile.type || 'image/jpeg',
+        })
+        
+        await new Promise<void>((resolve, reject) => {
+          task.on(
+            'state_changed',
+            (snap) => {
+              const progress = Math.round((snap.bytesTransferred / snap.totalBytes) * 100)
+              setUploadProgress(progress)
+            },
+            reject,
+            async () => {
+              logoUrl = await getDownloadURL(task.snapshot.ref)
+              resolve()
+            }
+          )
+        })
+      }
+      
+      // تحديث بيانات المطعم
+      await updateDoc(doc(db, 'restaurants', editingRestaurant.id), {
+        name: editFormData.name,
+        phone: editFormData.phone,
+        city: editFormData.city,
+        location: editFormData.location,
+        isOpen: editFormData.isOpen,
+        allowDelivery: editFormData.allowDelivery,
+        allowPickup: editFormData.allowPickup,
+        logoUrl: logoUrl,
+        updatedAt: serverTimestamp(),
+      })
+
+      toast.success('تم تحديث المطعم بنجاح ✅')
+      handleCancelEdit()
+      setUploadProgress(0)
+      loadRestaurants()
+    } catch (err) {
+      toast.error('خطأ في تحديث المطعم')
       console.error(err)
     } finally {
       setUploading(false)
@@ -357,6 +469,190 @@ export const AdminRestaurants: React.FC = () => {
           </div>
         )}
 
+        {/* نموذج تعديل المطعم (Modal) */}
+        {editingRestaurant && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between p-4 border-b">
+                <h2 className="text-xl font-bold text-primary">تعديل المطعم</h2>
+                <button
+                  onClick={handleCancelEdit}
+                  className="p-2 hover:bg-gray-100 rounded-xl transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <form onSubmit={handleSaveEdit} className="p-6 space-y-4">
+                {/* شعار المطعم */}
+                <div className="space-y-2">
+                  <label className="block font-semibold text-gray-700">شعار المطعم</label>
+                  <div className="flex items-center gap-4">
+                    {editFormData.logoPreview ? (
+                      <img 
+                        src={editFormData.logoPreview} 
+                        alt="معاينة الشعار" 
+                        className="w-20 h-20 rounded-xl object-cover border-2 border-sky-200"
+                      />
+                    ) : (
+                      <div className="w-20 h-20 rounded-xl bg-gray-100 flex items-center justify-center border-2 border-dashed border-gray-300">
+                        <Image className="w-8 h-8 text-gray-400" />
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <input
+                        ref={editFileRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) {
+                            setEditFormData({
+                              ...editFormData,
+                              logoFile: file,
+                              logoPreview: URL.createObjectURL(file)
+                            })
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => editFileRef.current?.click()}
+                        className="flex items-center gap-2 px-4 py-2 bg-sky-100 hover:bg-sky-200 text-sky-700 rounded-xl font-semibold transition"
+                      >
+                        <Upload className="w-4 h-4" />
+                        {editFormData.logoFile ? 'تغيير الصورة' : 'رفع شعار جديد'}
+                      </button>
+                    </div>
+                  </div>
+                  {uploading && uploadProgress > 0 && (
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-sky-500 h-2 rounded-full transition-all" 
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+                
+                {/* اسم المطعم */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    <Store className="w-4 h-4 inline ml-1" />
+                    اسم المطعم
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.name}
+                    onChange={e => setEditFormData({ ...editFormData, name: e.target.value })}
+                    className="w-full border rounded-xl p-3 text-gray-900"
+                    placeholder="اسم المطعم"
+                  />
+                </div>
+                
+                {/* رقم الهاتف */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    <Phone className="w-4 h-4 inline ml-1" />
+                    رقم الهاتف
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.phone}
+                    onChange={e => setEditFormData({ ...editFormData, phone: e.target.value })}
+                    className="w-full border rounded-xl p-3 text-gray-900"
+                    placeholder="05xxxxxxxx"
+                  />
+                </div>
+                
+                {/* المدينة */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    <Building2 className="w-4 h-4 inline ml-1" />
+                    المدينة
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.city}
+                    onChange={e => setEditFormData({ ...editFormData, city: e.target.value })}
+                    className="w-full border rounded-xl p-3 text-gray-900"
+                    placeholder="المدينة"
+                  />
+                </div>
+                
+                {/* الموقع */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    <MapPin className="w-4 h-4 inline ml-1" />
+                    الموقع / العنوان
+                  </label>
+                  <textarea
+                    value={editFormData.location}
+                    onChange={e => setEditFormData({ ...editFormData, location: e.target.value })}
+                    className="w-full border rounded-xl p-3 text-gray-900"
+                    placeholder="العنوان التفصيلي"
+                    rows={2}
+                  />
+                </div>
+                
+                {/* خيارات المتجر */}
+                <div className="space-y-3 p-4 bg-gray-50 rounded-xl">
+                  <h3 className="font-semibold text-gray-800">إعدادات المتجر</h3>
+                  
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editFormData.isOpen}
+                      onChange={e => setEditFormData({ ...editFormData, isOpen: e.target.checked })}
+                      className="w-5 h-5 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                    />
+                    <span className="text-gray-700">المتجر مفتوح ويستقبل طلبات</span>
+                  </label>
+                  
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editFormData.allowDelivery}
+                      onChange={e => setEditFormData({ ...editFormData, allowDelivery: e.target.checked })}
+                      className="w-5 h-5 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                    />
+                    <span className="text-gray-700">يدعم التوصيل</span>
+                  </label>
+                  
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editFormData.allowPickup}
+                      onChange={e => setEditFormData({ ...editFormData, allowPickup: e.target.checked })}
+                      className="w-5 h-5 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                    />
+                    <span className="text-gray-700">يدعم الاستلام من المطعم</span>
+                  </label>
+                </div>
+                
+                {/* أزرار الحفظ والإلغاء */}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="submit"
+                    disabled={uploading}
+                    className="flex-1 bg-sky-600 hover:bg-sky-700 text-white rounded-xl p-3 font-semibold transition disabled:opacity-50"
+                  >
+                    {uploading ? `جارٍ الرفع... ${uploadProgress}%` : '✅ حفظ التعديلات'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-xl p-3 font-semibold transition"
+                  >
+                    ❌ إلغاء
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         {/* قائمة المطاعم */}
         <div className="grid gap-4">
           {restaurants.length === 0 ? (
@@ -458,14 +754,25 @@ export const AdminRestaurants: React.FC = () => {
                       </div>
                     </div>
                     
-                    {/* زر الحذف */}
+                    {/* زر التعديل */}
                     <button
-                      onClick={() => handleDelete(restaurant.id)}
-                      className="p-2.5 bg-red-100 hover:bg-red-200 text-red-600 rounded-xl transition"
-                      title="حذف المطعم"
+                      onClick={() => handleStartEdit(restaurant)}
+                      className="p-2.5 bg-sky-100 hover:bg-sky-200 text-sky-600 rounded-xl transition"
+                      title="تعديل المطعم"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Edit className="w-4 h-4" />
                     </button>
+                    
+                    {/* زر الحذف - للمطور فقط */}
+                    {role === 'developer' && (
+                      <button
+                        onClick={() => handleDelete(restaurant.id)}
+                        className="p-2.5 bg-red-100 hover:bg-red-200 text-red-600 rounded-xl transition"
+                        title="حذف المطعم"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

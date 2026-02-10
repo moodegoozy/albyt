@@ -16,11 +16,41 @@
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.json" />
+    <!-- DNS Prefetch & Preconnect لتسريع Firebase -->
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://albayt-sofra.firebaseapp.com" crossorigin />
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://www.googleapis.com" crossorigin />
+    <link rel="dns-prefetch" href="https://firebasestorage.googleapis.com" />
     <title>سفرة البيت</title>
-    <script type="module" crossorigin src="/assets/index-B_6nJtDb.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DkBVM7mw.css">
+    <style>
+      /* شاشة تحميل فورية قبل تحميل JS */
+      #app-loader {
+        position: fixed; inset: 0; z-index: 9999;
+        display: flex; align-items: center; justify-content: center; flex-direction: column;
+        background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+      }
+      #app-loader .spinner {
+        width: 40px; height: 40px;
+        border: 3px solid #bae6fd; border-top-color: #0ea5e9;
+        border-radius: 50%; animation: spin .7s linear infinite;
+      }
+      #app-loader p { margin-top: 16px; color: #0369a1; font-family: system-ui; font-size: 15px; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+    <script type="module" crossorigin src="/assets/index-FuU3jBZc.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-react-C_wfuX_s.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-firebase-Co4MdP0H.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-icons-Dyg7S3Xx.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-KBblhOUv.css">
   </head>
   <body class="bg-gray-50 overscroll-none touch-manipulation">
-    <div id="root"></div>
+    <div id="root">
+      <!-- شاشة تحميل تظهر فوراً قبل React -->
+      <div id="app-loader">
+        <div class="spinner"></div>
+        <p>جاري التحميل...</p>
+      </div>
+    </div>
   </body>
 </html>

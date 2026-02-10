@@ -1,17 +1,21 @@
 // src/pages/TrackOrders.tsx
 import React, { useEffect, useState } from 'react'
-import { collection, getDocs, onSnapshot, orderBy, query, where, limit, doc, getDoc } from 'firebase/firestore'
+import { collection, getDocs, onSnapshot, orderBy, query, where, limit, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useAuth } from '@/auth'
-import { Order } from '@/types'
+import { useCart } from '@/hooks/useCart'
+import { Order, Rating } from '@/types'
 import { useNavigate } from 'react-router-dom'
-import { MessageCircle, Package, MapPin, Truck, CheckCircle, Clock, ChefHat, XCircle, Store, CreditCard, Building2, Copy, X } from 'lucide-react'
+import { MessageCircle, Package, MapPin, Truck, CheckCircle, Clock, ChefHat, XCircle, Store, CreditCard, Building2, Copy, X, Headphones, Star, RefreshCw } from 'lucide-react'
 import { useToast } from '@/components/ui/Toast'
+import { RatingModal } from '@/components/RatingModal'
+import { OrderTimer } from '@/components/OrderTimer'
 
 export const TrackOrders: React.FC = () => {
   const { user } = useAuth()
   const nav = useNavigate()
   const toast = useToast()
+  const { clear, add } = useCart() // سلة المشتريات لإعادة الطلب
   const [err, setErr] = useState<string | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [diag, setDiag] = useState<{ uid: string; fallbackCount: number; sample: any[] } | null>(null)
@@ -20,6 +24,14 @@ export const TrackOrders: React.FC = () => {
   const [showPaymentModal, setShowPaymentModal] = useState<string | null>(null) // orderId
   const [bankInfo, setBankInfo] = useState<{ bankName?: string; bankAccountName?: string; bankAccountNumber?: string } | null>(null)
   const [loadingBank, setLoadingBank] = useState(false)
+
+  // حالة التقييم
+  const [ratingModal, setRatingModal] = useState<{
+    isOpen: boolean;
+    orderId: string;
+    type: 'restaurant' | 'courier';
+    targetName: string;
+  } | null>(null)
 
   // جلب بيانات البنك للمطعم من subcollection المحمي
   const fetchBankInfo = async (restaurantId: string, orderId: string) => {
@@ -122,6 +134,92 @@ export const TrackOrders: React.FC = () => {
     return () => unsub()
   }, [user])
 
+  // 🔄 إعادة الطلب - نسخ العناصر للسلة والانتقال للمتجر
+  const reorder = (order: Order) => {
+    // مسح السلة الحالية
+    clear()
+    
+    // إضافة كل عناصر الطلب السابق للسلة
+    order.items?.forEach(item => {
+      add({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        ownerId: item.ownerId || order.restaurantId
+      }, item.qty)
+    })
+    
+    toast.success('تمت إضافة العناصر للسلة! 🛒')
+    
+    // الانتقال لصفحة قائمة المطعم للتعديل إن أراد
+    if (order.restaurantId) {
+      nav(`/menu?restaurant=${order.restaurantId}`)
+    } else {
+      nav('/cart')
+    }
+  }
+
+  // ❌ إلغاء الطلب من قِبل العميل (فقط قبل القبول)
+  const [cancellingOrder, setCancellingOrder] = useState<string | null>(null)
+  
+  const cancelOrder = async (order: Order) => {
+    if (order.status !== 'pending') {
+      toast.error('لا يمكن إلغاء الطلب بعد قبوله')
+      return
+    }
+    
+    const confirmed = window.confirm('هل أنت متأكد من إلغاء الطلب؟')
+    if (!confirmed) return
+    
+    setCancellingOrder(order.id)
+    
+    try {
+      // تحديث حالة الطلب للإلغاء
+      await updateDoc(doc(db, 'orders', order.id), {
+        status: 'cancelled',
+        cancelledAt: serverTimestamp(),
+        cancelledBy: 'customer',
+        updatedAt: serverTimestamp()
+      })
+      
+      // استرداد المبالغ تلقائياً
+      const { processOrderRefund, notifyRefundParties } = await import('@/utils/refundService')
+      const refundResult = await processOrderRefund({
+        id: order.id,
+        customerId: order.customerId,
+        restaurantId: order.restaurantId || '',
+        subtotal: order.subtotal,
+        total: order.total,
+        restaurantEarnings: (order as any).restaurantEarnings,
+        platformFee: (order as any).platformFee,
+        adminCommission: (order as any).adminCommission,
+        appEarnings: (order as any).appEarnings,
+        referredBy: (order as any).referredBy,
+        paymentMethod: (order as any).paymentMethod,
+      })
+      
+      // إشعار الأطراف
+      await notifyRefundParties({
+        id: order.id,
+        customerId: order.customerId,
+        restaurantId: order.restaurantId || '',
+        subtotal: order.subtotal,
+        total: order.total,
+      }, refundResult, 'customer')
+      
+      if (refundResult.details.customerRefunded > 0) {
+        toast.success(`تم إلغاء الطلب واسترداد ${refundResult.details.customerRefunded.toFixed(2)} ر.س لمحفظتك ✅`)
+      } else {
+        toast.success('تم إلغاء الطلب بنجاح ✅')
+      }
+    } catch (err) {
+      console.error('خطأ في إلغاء الطلب:', err)
+      toast.error('فشل في إلغاء الطلب')
+    } finally {
+      setCancellingOrder(null)
+    }
+  }
+
   const badge = (s: string) => {
     const map: Record<string, { text: string; emoji: string; color: string; icon: any }> = {
       pending: { text: 'قيد المراجعة', emoji: '⏳', color: 'bg-yellow-500', icon: Clock },
@@ -156,9 +254,124 @@ export const TrackOrders: React.FC = () => {
     return ['pending', 'accepted'].includes(order.status)
   }
 
+  // التحقق إذا كان الطلب يحتاج تقييم
+  const needsRating = (order: Order) => {
+    if (order.status !== 'delivered') return false
+    // التحقق من عدم وجود تقييم مسبق
+    const hasRatedRestaurant = order.ratings?.customerToRestaurant?.stars
+    const hasRatedCourier = order.ratings?.customerToCourier?.stars
+    // إذا يوجد مندوب، يجب تقييم كلاهما
+    if (order.courierId) {
+      return !hasRatedRestaurant || !hasRatedCourier
+    }
+    // إذا لا يوجد مندوب، يجب تقييم المطعم فقط
+    return !hasRatedRestaurant
+  }
+
+  // التحقق من التقييم المطلوب التالي
+  const getNextRatingNeeded = (order: Order): 'restaurant' | 'courier' | null => {
+    if (order.status !== 'delivered') return null
+    if (!order.ratings?.customerToRestaurant?.stars) return 'restaurant'
+    if (order.courierId && !order.ratings?.customerToCourier?.stars) return 'courier'
+    return null
+  }
+
+  // إرسال التقييم
+  const submitRating = async (orderId: string, type: 'restaurant' | 'courier', rating: { stars: number; comment: string }) => {
+    const order = orders.find(o => o.id === orderId)
+    if (!order) return
+
+    const ratingData: Rating = {
+      stars: rating.stars,
+      comment: rating.comment || undefined,
+      createdAt: new Date()
+    }
+
+    const fieldPath = type === 'restaurant' ? 'ratings.customerToRestaurant' : 'ratings.customerToCourier'
+    
+    // تحديث الطلب بالتقييم
+    const updateData: any = {
+      [fieldPath]: ratingData,
+      updatedAt: serverTimestamp()
+    }
+
+    // التحقق إذا اكتمل التقييم
+    const currentRatings = order.ratings || {}
+    if (type === 'restaurant') {
+      currentRatings.customerToRestaurant = ratingData
+    } else {
+      currentRatings.customerToCourier = ratingData
+    }
+
+    // التحقق من اكتمال كل التقييمات المطلوبة
+    const hasRatedRestaurant = currentRatings.customerToRestaurant?.stars
+    const hasRatedCourier = currentRatings.customerToCourier?.stars
+    
+    if (order.courierId) {
+      // يوجد مندوب، يجب تقييم كلاهما
+      if (hasRatedRestaurant && hasRatedCourier) {
+        updateData.ratingCompleted = true
+      }
+    } else {
+      // لا يوجد مندوب، يكفي تقييم المطعم
+      if (hasRatedRestaurant) {
+        updateData.ratingCompleted = true
+      }
+    }
+
+    await updateDoc(doc(db, 'orders', orderId), updateData)
+
+    // تحديث متوسط تقييم المطعم
+    if (type === 'restaurant' && order.restaurantId) {
+      await updateRestaurantRating(order.restaurantId, rating.stars)
+    }
+
+    toast.success('شكراً لتقييمك! ⭐')
+  }
+
+  // تحديث متوسط تقييم المطعم
+  const updateRestaurantRating = async (restaurantId: string, newRating: number) => {
+    try {
+      const restDoc = await getDoc(doc(db, 'restaurants', restaurantId))
+      if (restDoc.exists()) {
+        const data = restDoc.data()
+        const currentRating = data.averageRating || 0
+        const totalRatings = data.totalRatings || 0 // عدد التقييمات (وليس الطلبات)
+        
+        // حساب المتوسط الجديد بشكل صحيح
+        const newAverage = totalRatings > 0
+          ? ((currentRating * totalRatings) + newRating) / (totalRatings + 1)
+          : newRating
+
+        await updateDoc(doc(db, 'restaurants', restaurantId), {
+          averageRating: Math.round(newAverage * 10) / 10,
+          totalRatings: totalRatings + 1, // زيادة عدد التقييمات
+          updatedAt: serverTimestamp()
+        })
+      }
+    } catch (err) {
+      console.error('Error updating restaurant rating:', err)
+    }
+  }
+
   return (
     <div className="space-y-3">
       <h1 className="text-xl font-bold">طلباتي</h1>
+
+      {/* نافذة التقييم */}
+      {ratingModal && (
+        <RatingModal
+          isOpen={ratingModal.isOpen}
+          onClose={() => setRatingModal(null)}
+          onSubmit={async (rating) => {
+            await submitRating(ratingModal.orderId, ratingModal.type, rating)
+            setRatingModal(null)
+          }}
+          type={ratingModal.type}
+          targetName={ratingModal.targetName}
+          orderId={ratingModal.orderId}
+        />
+      )}
 
       {/* نافذة بيانات الدفع */}
       {showPaymentModal && (
@@ -291,6 +504,23 @@ export const TrackOrders: React.FC = () => {
               </div>
             )}
 
+            {/* عداد الوقت - يظهر للطلبات النشطة */}
+            {(o.status === 'accepted' || o.status === 'preparing') && (
+              <div className="mb-3">
+                <OrderTimer order={o} type="preparation" />
+              </div>
+            )}
+            {o.status === 'ready' && o.deliveryType === 'delivery' && (
+              <div className="mb-3">
+                <OrderTimer order={o} type="pickup" />
+              </div>
+            )}
+            {o.status === 'out_for_delivery' && (
+              <div className="mb-3">
+                <OrderTimer order={o} type="delivery" />
+              </div>
+            )}
+
             <div className="text-sm text-gray-700 bg-gray-50 rounded-xl p-3 mb-3">
               {o.items?.map((i) => `${i.name}×${i.qty}`).join(' • ')}
             </div>
@@ -340,6 +570,143 @@ export const TrackOrders: React.FC = () => {
                 </button>
               )}
 
+              {/* ❌ زر إلغاء الطلب - يظهر فقط للطلبات قيد المراجعة */}
+              {o.status === 'pending' && (
+                <button
+                  onClick={() => cancelOrder(o)}
+                  disabled={cancellingOrder === o.id}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-red-500 to-red-600 
+                             text-white rounded-xl font-bold shadow-lg hover:shadow-xl 
+                             hover:scale-[1.02] transition-all duration-200 disabled:opacity-50"
+                >
+                  {cancellingOrder === o.id ? (
+                    <>
+                      <Clock className="w-5 h-5 animate-spin" />
+                      <span>جاري الإلغاء...</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-5 h-5" />
+                      <span>إلغاء الطلب ❌</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              {/* نظام التقييم الإجباري - يظهر للطلبات المكتملة التي تحتاج تقييم */}
+              {needsRating(o) && (
+                <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border-2 border-amber-200 rounded-2xl p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
+                    <span className="font-bold text-amber-800">قيّم تجربتك ⭐</span>
+                  </div>
+                  <p className="text-sm text-amber-700 mb-4">
+                    ساعدنا في تحسين الخدمة بتقييمك
+                  </p>
+                  
+                  <div className="space-y-2">
+                    {/* تقييم الأسرة */}
+                    {!o.ratings?.customerToRestaurant?.stars && (
+                      <button
+                        onClick={() => setRatingModal({
+                          isOpen: true,
+                          orderId: o.id,
+                          type: 'restaurant',
+                          targetName: o.restaurantName || 'الأسرة المنتجة'
+                        })}
+                        className="w-full flex items-center justify-between px-4 py-3 bg-white border-2 border-amber-300 
+                                   rounded-xl hover:bg-amber-50 transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Store className="w-5 h-5 text-amber-600" />
+                          <span className="font-medium text-gray-800">قيّم الأسرة المنتجة</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {[1,2,3,4,5].map(n => (
+                            <Star key={n} className="w-4 h-4 text-gray-300 group-hover:text-amber-400 transition" />
+                          ))}
+                        </div>
+                      </button>
+                    )}
+
+                    {/* تقييم المندوب (إذا كان موجود) */}
+                    {o.courierId && !o.ratings?.customerToCourier?.stars && (
+                      <button
+                        onClick={() => setRatingModal({
+                          isOpen: true,
+                          orderId: o.id,
+                          type: 'courier',
+                          targetName: 'المندوب'
+                        })}
+                        className="w-full flex items-center justify-between px-4 py-3 bg-white border-2 border-emerald-300 
+                                   rounded-xl hover:bg-emerald-50 transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Truck className="w-5 h-5 text-emerald-600" />
+                          <span className="font-medium text-gray-800">قيّم المندوب</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {[1,2,3,4,5].map(n => (
+                            <Star key={n} className="w-4 h-4 text-gray-300 group-hover:text-emerald-400 transition" />
+                          ))}
+                        </div>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* عرض التقييمات المكتملة */}
+                  {(o.ratings?.customerToRestaurant?.stars || o.ratings?.customerToCourier?.stars) && (
+                    <div className="mt-3 pt-3 border-t border-amber-200 space-y-2">
+                      {o.ratings?.customerToRestaurant?.stars && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600">تقييم الأسرة:</span>
+                          <div className="flex items-center gap-1">
+                            {[1,2,3,4,5].map(n => (
+                              <Star key={n} className={`w-4 h-4 ${n <= o.ratings!.customerToRestaurant!.stars ? 'text-amber-400 fill-amber-400' : 'text-gray-300'}`} />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {o.ratings?.customerToCourier?.stars && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600">تقييم المندوب:</span>
+                          <div className="flex items-center gap-1">
+                            {[1,2,3,4,5].map(n => (
+                              <Star key={n} className={`w-4 h-4 ${n <= o.ratings!.customerToCourier!.stars ? 'text-emerald-400 fill-emerald-400' : 'text-gray-300'}`} />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* عرض التقييم المكتمل للطلبات السابقة */}
+              {o.status === 'delivered' && o.ratingCompleted && (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+                  <div className="flex items-center gap-2 text-green-700">
+                    <CheckCircle className="w-5 h-5" />
+                    <span className="font-medium">تم تقييم الطلب ✅</span>
+                  </div>
+                </div>
+              )}
+
+              {/* 🔄 زر إعادة الطلب - للطلبات المكتملة أو الملغية */}
+              {(o.status === 'delivered' || o.status === 'cancelled') && o.items && o.items.length > 0 && (
+                <button
+                  onClick={() => reorder(o)}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 
+                             bg-gradient-to-r from-sky-500 to-sky-600 
+                             text-white rounded-xl font-bold shadow-lg 
+                             hover:shadow-xl hover:scale-[1.02] 
+                             transition-all duration-200"
+                >
+                  <RefreshCw className="w-5 h-5" />
+                  <span>🔄 إعادة الطلب</span>
+                </button>
+              )}
+
               <div className="flex gap-2">
                 {/* زر المحادثة مع المندوب */}
                 {canChatWithCourier(o) && (
@@ -366,6 +733,18 @@ export const TrackOrders: React.FC = () => {
                     <span>تواصل مع المطعم 🍽️</span>
                   </button>
                 )}
+
+                {/* زر الشكوى / الدعم الفني */}
+                <button
+                  onClick={() => nav(`/support?orderId=${o.id}`)}
+                  className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 
+                             text-white rounded-full font-medium shadow-lg hover:shadow-xl 
+                             hover:scale-105 transition-all duration-200"
+                  title="تقديم شكوى أو طلب دعم"
+                >
+                  <Headphones className="w-5 h-5" />
+                  <span>شكوى</span>
+                </button>
               </div>
             </div>
           </div>

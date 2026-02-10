@@ -4,20 +4,192 @@
  */
 
 /**
+ * Support Ticket - تذكرة دعم فني أو شكوى
+ */
+export interface SupportTicket {
+  id: string;
+  ticketNumber: string; // رقم التذكرة (مثل: TKT-2024-001)
+  type: 'complaint' | 'support' | 'suggestion' | 'refund'; // نوع التذكرة
+  subject: string; // عنوان الشكوى
+  description: string; // وصف المشكلة
+  // بيانات صاحب التذكرة
+  userId: string;
+  userName?: string;
+  userEmail?: string;
+  userPhone?: string;
+  userRole: 'customer' | 'owner' | 'courier' | 'admin';
+  // بيانات الطلب المرتبط (إن وجد)
+  orderId?: string;
+  orderNumber?: string;
+  // بيانات الأسرة المشتكى عليها (إن وجد)
+  againstRestaurantId?: string;
+  againstRestaurantName?: string;
+  // بيانات المندوب المشتكى عليه (إن وجد)
+  againstCourierId?: string;
+  againstCourierName?: string;
+  // حالة التذكرة
+  status: TicketStatus;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  // المرفقات (صور الإثبات)
+  attachments?: string[];
+  // الرد والحل
+  adminResponse?: string;
+  adminId?: string;
+  adminName?: string;
+  resolution?: string; // كيف تم حل المشكلة
+  // التواريخ
+  createdAt?: Date;
+  updatedAt?: Date;
+  resolvedAt?: Date;
+  closedAt?: Date;
+}
+
+/**
+ * حالات تذكرة الدعم
+ */
+export type TicketStatus = 
+  | 'open'              // جديدة
+  | 'in_progress'       // قيد المعالجة
+  | 'waiting_customer'  // بانتظار رد العميل
+  | 'waiting_restaurant'// بانتظار رد الأسرة
+  | 'resolved'          // تم الحل
+  | 'closed';           // مغلقة
+
+/**
+ * نظام النقاط - للأسر والمندوبين
+ * كل مستخدم يبدأ بـ 100 نقطة
+ * الشكوى المؤكدة = خصم نقاط
+ * أقل من 30 نقطة = إيقاف تلقائي
+ */
+export interface PointsSystem {
+  currentPoints: number; // النقاط الحالية (تبدأ من 100)
+  totalDeductions: number; // إجمالي النقاط المخصومة
+  suspendedAt?: Date; // تاريخ الإيقاف (إن وجد)
+  suspendedReason?: string; // سبب الإيقاف
+  isSuspended: boolean; // هل الحساب موقوف؟
+  warningCount: number; // عدد التنبيهات
+  lastWarningAt?: Date; // تاريخ آخر تنبيه
+  pointsHistory: PointsHistoryItem[]; // سجل النقاط
+}
+
+/**
+ * سجل تاريخ النقاط
+ */
+export interface PointsHistoryItem {
+  id: string;
+  type: 'deduction' | 'bonus' | 'reset'; // نوع العملية
+  amount: number; // عدد النقاط (سالب للخصم، موجب للمكافأة)
+  reason: string; // سبب الخصم/المكافأة
+  orderId?: string; // رقم الطلب المرتبط
+  ticketId?: string; // رقم التذكرة المرتبطة
+  adminId?: string; // المسؤول الذي أجرى العملية
+  createdAt: Date;
+}
+
+/**
+ * إعدادات نظام النقاط
+ */
+export const POINTS_CONFIG = {
+  STARTING_POINTS: 100, // نقاط البداية
+  SUSPENSION_THRESHOLD: 30, // الحد الأدنى للإيقاف
+  WARNING_THRESHOLD: 50, // حد التنبيه
+  // خصومات الشكاوى حسب النوع
+  DEDUCTIONS: {
+    FOOD_QUALITY: 15, // جودة الطعام
+    LATE_DELIVERY: 10, // تأخير التسليم
+    BAD_SERVICE: 10, // سوء الخدمة
+    WRONG_ORDER: 12, // طلب خاطئ
+    PACKAGING: 8, // سوء التغليف
+    HYGIENE: 20, // نظافة
+    NO_SHOW: 15, // عدم الحضور (للمندوب)
+    RUDE_BEHAVIOR: 15, // سوء التعامل
+    LOW_RATING: 5, // تقييم منخفض متكرر
+  },
+  // مكافآت
+  BONUSES: {
+    MONTHLY_EXCELLENT: 10, // أداء ممتاز شهري
+    NO_COMPLAINTS_WEEK: 5, // أسبوع بدون شكاوى
+  }
+};
+
+/**
+ * إعدادات عداد الوقت للطلبات (بالدقائق)
+ * تجاوز الوقت = تنبيه تلقائي
+ */
+export const ORDER_TIME_LIMITS = {
+  // وقت تجهيز الأسرة (من القبول حتى الجاهزية)
+  PREPARATION_TIME: 30, // 30 دقيقة
+  // وقت استلام المندوب (من الجاهزية حتى الاستلام)
+  COURIER_PICKUP_TIME: 15, // 15 دقيقة
+  // وقت التوصيل (من الاستلام حتى التسليم)
+  DELIVERY_TIME: 30, // 30 دقيقة
+  // ألوان التحذير
+  WARNING_THRESHOLD: 0.75, // تحذير عند 75% من الوقت
+};
+
+/**
+ * حالة عداد الوقت
+ */
+export type TimerStatus = 'normal' | 'warning' | 'exceeded';
+
+/**
+ * أوقات الطلب - timestamps لكل مرحلة
+ */
+export interface OrderTimestamps {
+  acceptedAt?: Date; // وقت قبول الطلب (بداية التجهيز)
+  readyAt?: Date; // وقت جهوزية الطلب (بداية انتظار المندوب)
+  pickedUpAt?: Date; // وقت استلام المندوب (بداية التوصيل)
+  deliveredAt?: Date; // وقت التسليم (النهاية)
+}
+
+/**
+ * تنبيهات تجاوز الوقت
+ */
+export interface TimeAlert {
+  id: string;
+  orderId: string;
+  orderNumber?: string;
+  type: 'preparation' | 'pickup' | 'delivery';
+  exceededBy: number; // كم دقيقة تجاوز
+  targetId: string; // UID الأسرة أو المندوب
+  targetType: 'restaurant' | 'courier';
+  createdAt?: Date;
+  acknowledged?: boolean; // هل تم التنبيه؟
+}
+
+/**
+ * TicketMessage - رسالة في تذكرة الدعم
+ */
+export interface TicketMessage {
+  id: string;
+  ticketId: string;
+  senderId: string;
+  senderName?: string;
+  senderRole: 'user' | 'admin' | 'system';
+  message: string;
+  attachments?: string[];
+  createdAt?: Date;
+}
+
+/**
  * Menu Item - Product sold by a restaurant
  */
 export interface MenuItem {
   id: string;
   name: string;
   desc?: string;
+  description?: string; // وصف الصنف
   price: number;
   imageUrl?: string;
   available: boolean;
   categoryId?: string;
+  category?: string; // اسم التصنيف
   ownerId: string; // Links to restaurants/{ownerId}
   // نظام الخصومات
   discountPercent?: number; // نسبة الخصم (مثال: 20 تعني 20%)
   discountExpiresAt?: Date | any; // تاريخ انتهاء الخصم
+  // إحصائيات
+  orderCount?: number; // عدد مرات الطلب
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -34,6 +206,7 @@ export interface Restaurant {
   city?: string;
   location?: string; // Address or description
   logoUrl?: string;
+  coverUrl?: string; // صورة الغلاف
   // حالة المتجر
   isOpen?: boolean; // هل المتجر مفتوح للطلبات؟ (true = متاح، false = مغلق)
   // خيارات التوصيل والاستلام
@@ -61,6 +234,8 @@ export interface Restaurant {
   averageRating?: number; // متوسط التقييم
   onTimeDeliveryRate?: number; // نسبة الالتزام بالوقت
   complaintsCount?: number; // عدد الشكاوى
+  // ملاحظة قصيرة تظهر للعملاء
+  announcement?: string; // ملاحظة أو إعلان قصير يظهر للعملاء عند زيارة المتجر
   // بيانات الحساب البنكي للتحويل
   bankName?: string; // اسم البنك
   bankAccountName?: string; // اسم صاحب الحساب
@@ -100,13 +275,48 @@ export interface Order {
   notes?: string;
   restaurantName?: string; // Denormalized for display convenience
   restaurantId?: string; // Links to restaurants/{id}
+  branchId?: string; // Links to restaurants/{ownerId}/branches/{branchId} if order is from a branch
   // نظام العمولات والرسوم
   platformFee?: number; // رسوم المنصة الثابتة (3.75 ريال لكل طلب) - على المندوب
   adminCommission?: number; // عمولة المشرف (0.5 ريال إذا المطعم مسجل عن طريقه)
   courierPlatformFee?: number; // رسوم المنصة المخصومة من المندوب (3.75 ريال)
   referredBy?: string; // UID المشرف الذي أضاف المطعم
+  // نظام التقييم الإجباري
+  ratings?: OrderRatings; // التقييمات للطلب
+  ratingCompleted?: boolean; // هل اكتمل التقييم؟
+  // عداد الوقت - timestamps لكل مرحلة
+  timestamps?: OrderTimestamps;
+  // تنبيهات تجاوز الوقت
+  timeAlerts?: {
+    preparationExceeded?: boolean;
+    pickupExceeded?: boolean;
+    deliveryExceeded?: boolean;
+  };
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+/**
+ * OrderRatings - تقييمات الطلب
+ */
+export interface OrderRatings {
+  // تقييم العميل للأسرة
+  customerToRestaurant?: Rating;
+  // تقييم العميل للمندوب
+  customerToCourier?: Rating;
+  // تقييم الأسرة للعميل
+  restaurantToCustomer?: Rating;
+  // تقييم المندوب للعميل
+  courierToCustomer?: Rating;
+}
+
+/**
+ * Rating - تقييم فردي
+ */
+export interface Rating {
+  stars: number; // 1-5 نجوم
+  comment?: string; // تعليق اختياري
+  createdAt?: Date;
 }
 
 /**
@@ -212,7 +422,77 @@ export interface WalletTransaction {
   description: string;
   orderId?: string; // رقم الطلب المرتبط
   restaurantId?: string;
+  courierId?: string; // معرف المندوب (للمعاملات المتعلقة بالتوصيل)
+  customerId?: string; // معرف العميل
   createdAt: Date;
+}
+
+/**
+ * OwnerWallet - محفظة الأسرة المنتجة (صاحب المطعم)
+ * تُخزن في: wallets/{ownerId}
+ */
+export interface OwnerWallet {
+  id: string; // = ownerId (معرف صاحب المطعم)
+  ownerType: 'restaurant'; // نوع المحفظة
+  balance: number; // الرصيد الحالي (المتاح للسحب)
+  totalSales: number; // إجمالي المبيعات (قبل الخصومات)
+  totalWithdrawn: number; // إجمالي المسحوب
+  pendingBalance: number; // رصيد معلق (طلبات لم تكتمل بعد)
+  updatedAt?: Date;
+}
+
+/**
+ * CourierWallet - محفظة المندوب
+ * تُخزن في: wallets/{courierId}
+ */
+export interface CourierWallet {
+  id: string; // = courierId (معرف المندوب)
+  ownerType: 'courier'; // نوع المحفظة
+  balance: number; // الرصيد الحالي (المتاح للسحب)
+  totalEarnings: number; // إجمالي الأرباح من التوصيل
+  totalPlatformFees: number; // إجمالي رسوم المنصة المخصومة
+  netEarnings: number; // صافي الأرباح (الأرباح - الرسوم)
+  totalWithdrawn: number; // إجمالي المسحوب
+  updatedAt?: Date;
+}
+
+/**
+ * AppAccounting - محاسبة التطبيق الشهرية (للمطور فقط)
+ * تُخزن في: accounting/{yearMonth} مثال: accounting/2026-02
+ */
+export interface AppAccounting {
+  id: string; // = yearMonth (مثل: 2026-02)
+  year: number;
+  month: number;
+  // إيرادات المنصة
+  totalPlatformFees: number; // إجمالي رسوم المنصة من المناديب
+  totalAdminCommissions: number; // إجمالي عمولات المشرفين
+  totalSubscriptions: number; // إجمالي اشتراكات الباقات
+  totalPromotions: number; // إجمالي إيرادات الإعلانات
+  // إحصائيات
+  totalOrders: number; // إجمالي الطلبات
+  totalOrdersValue: number; // إجمالي قيمة الطلبات
+  totalDeliveries: number; // إجمالي التوصيلات
+  totalDeliveryFees: number; // إجمالي رسوم التوصيل
+  // صافي الدخل
+  grossRevenue: number; // إجمالي الإيرادات
+  netRevenue: number; // صافي الإيرادات (بعد الخصومات)
+  // تفاصيل يومية
+  dailyStats: Record<string, DailyStats>; // { "2026-02-01": {...} }
+  updatedAt?: Date;
+}
+
+/**
+ * DailyStats - إحصائيات يومية للمحاسبة
+ */
+export interface DailyStats {
+  date: string; // تاريخ اليوم (YYYY-MM-DD)
+  orders: number;
+  ordersValue: number;
+  deliveries: number;
+  deliveryFees: number;
+  platformFees: number;
+  adminCommissions: number;
 }
 
 /**
@@ -234,6 +514,48 @@ export interface Promotion {
   expiresAt?: Date; // تاريخ انتهاء الإعلان
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+/**
+ * Story - ستوري الأسرة المنتجة (مثل إنستغرام)
+ * تُخزن في: stories/{storyId}
+ * تنتهي بعد 24 ساعة تلقائياً
+ */
+export interface Story {
+  id: string;
+  ownerId: string; // معرف صاحب الأسرة
+  restaurantId: string; // = ownerId
+  restaurantName?: string; // اسم الأسرة
+  restaurantLogo?: string; // شعار الأسرة
+  // نوع الستوري
+  type: 'image' | 'video' | 'text';
+  // المحتوى
+  mediaUrl?: string; // رابط الصورة أو الفيديو
+  caption?: string; // النص المصاحب
+  backgroundColor?: string; // لون الخلفية (للنص فقط)
+  textColor?: string; // لون النص
+  // روابط
+  linkUrl?: string; // رابط خارجي (اختياري)
+  linkLabel?: string; // نص الرابط (مثل: "اطلب الآن")
+  menuItemId?: string; // ربط بصنف معين
+  menuItemName?: string; // اسم الصنف
+  // الإحصائيات
+  viewsCount: number;
+  viewedBy: string[]; // قائمة معرفات المشاهدين
+  // التوقيت
+  expiresAt: Date; // تنتهي بعد 24 ساعة
+  createdAt?: Date;
+}
+
+/**
+ * StoryGroup - مجموعة ستوريات الأسرة للعرض
+ */
+export interface StoryGroup {
+  ownerId: string;
+  restaurantName?: string;
+  restaurantLogo?: string;
+  stories: Story[];
+  hasUnviewed: boolean; // هل يوجد ستوري لم يشاهده المستخدم
 }
 
 /**
@@ -387,3 +709,99 @@ export interface PackageDiscount {
   // سبب أو وصف الخصم (للعرض)
   label?: string;
 }
+
+/**
+ * SpecialOffer - عرض خاص للأسرة المنتجة
+ * تُخزن في: offers/{offerId}
+ */
+export interface SpecialOffer {
+  id: string;
+  ownerId: string; // معرف صاحب الأسرة
+  restaurantId: string; // = ownerId
+  restaurantName?: string; // اسم الأسرة (denormalized)
+  restaurantLogo?: string; // شعار الأسرة
+  // نوع العرض
+  offerType: OfferType;
+  // تفاصيل العرض
+  title: string; // عنوان العرض (مثل: "عرض نهاية الأسبوع")
+  description?: string; // وصف العرض
+  imageUrl?: string; // صورة العرض
+  // إعدادات العرض حسب النوع
+  discountPercent?: number; // نسبة الخصم (للنوع percent_discount)
+  discountAmount?: number; // مبلغ الخصم الثابت
+  minOrderAmount?: number; // الحد الأدنى للطلب للاستفادة من العرض
+  // عرض الوجبة المجمّعة
+  bundleItems?: BundleItem[]; // عناصر الوجبة
+  bundlePrice?: number; // سعر الوجبة الخاص
+  bundleOriginalPrice?: number; // السعر الأصلي للمقارنة
+  // عرض اشترِ X واحصل على Y
+  buyQuantity?: number; // اشترِ كم (مثلاً 2)
+  getQuantity?: number; // واحصل على كم مجاناً (مثلاً 1)
+  applicableItemIds?: string[]; // الأصناف المشمولة بالعرض
+  applicableItemNames?: string[]; // أسماء الأصناف (denormalized)
+  // الحالة والتوقيت
+  isActive: boolean;
+  startsAt?: Date | any;
+  expiresAt?: Date | any;
+  // إحصائيات
+  viewsCount: number;
+  usedCount: number; // عدد مرات الاستخدام
+  // تواريخ
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+/**
+ * أنواع العروض المتاحة
+ */
+export type OfferType = 
+  | 'percent_discount'    // خصم نسبة مئوية
+  | 'fixed_discount'      // خصم مبلغ ثابت
+  | 'bundle_meal'         // وجبة مجمّعة بسعر خاص
+  | 'buy_x_get_y';        // اشترِ X واحصل على Y مجاناً
+
+/**
+ * BundleItem - عنصر في الوجبة المجمّعة
+ */
+export interface BundleItem {
+  itemId: string; // معرف الصنف
+  itemName: string; // اسم الصنف
+  quantity: number; // الكمية
+  originalPrice: number; // السعر الأصلي
+}
+
+/**
+ * بلاغ مشكلة - للعملاء والأسر والمندوبين
+ * يُحفظ في مجموعة problemReports ويظهر للإدارة فقط
+ */
+export interface ProblemReport {
+  id: string;
+  // بيانات المُبلِّغ
+  userId: string;
+  userName?: string;
+  userEmail?: string;
+  userPhone?: string;
+  userRole: 'customer' | 'owner' | 'courier';
+  // نوع المشكلة
+  problemType: ProblemType;
+  // وصف المشكلة
+  description: string;
+  // الحالة
+  status: 'pending' | 'reviewed' | 'resolved';
+  // ملاحظات الإدارة (اختياري)
+  adminNotes?: string;
+  adminId?: string;
+  // التواريخ
+  createdAt?: Date | any;
+  reviewedAt?: Date | any;
+}
+
+/**
+ * أنواع المشاكل المتاحة للإبلاغ
+ */
+export type ProblemType = 
+  | 'orders'     // مشاكل الطلبات
+  | 'delivery'   // مشاكل التوصيل
+  | 'payment'    // مشاكل الدفع
+  | 'account'    // مشاكل الحساب
+  | 'suggestion'; // اقتراحات

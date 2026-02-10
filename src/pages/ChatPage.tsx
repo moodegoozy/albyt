@@ -374,14 +374,14 @@ export const ChatPage: React.FC = () => {
           return (
             <div
               key={msg.id}
-              className={`flex ${isMe ? 'justify-start' : 'justify-end'}`}
+              className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
             >
               <div
                 className={`
                   max-w-[80%] rounded-2xl px-4 py-3 shadow-md
                   ${isMe 
-                    ? 'bg-gradient-to-br from-primary to-sky-600 text-white rounded-br-sm' 
-                    : 'bg-white text-gray-800 rounded-bl-sm border border-gray-100'
+                    ? 'bg-gradient-to-br from-primary to-sky-600 text-white rounded-bl-sm' 
+                    : 'bg-white text-gray-800 rounded-br-sm border border-gray-100'
                   }
                   transform transition-all duration-300 hover:scale-[1.02]
                 `}

@@ -58,6 +58,7 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isOwner() && request.auth.uid == ownerId || isAdmin() || isDeveloper();
       allow update: if isOwner() && request.auth.uid == ownerId || isAdmin() || isDeveloper();
+      // الحذف للمطور فقط
       allow delete: if isDeveloper();
     }
 
@@ -75,12 +76,15 @@ service cloud.firestore {
     /* ===== menu ===== */
     match /menuItems/{itemId} {
       allow read: if true;
-      allow create: if isOwner() && request.resource.data.ownerId == request.auth.uid || isAdmin() || isDeveloper();
-      allow update: if isOwner() 
-                    && resource.data.ownerId == request.auth.uid
-                    && request.resource.data.ownerId == request.auth.uid
+      // الإنشاء: صاحب المطعم
+      allow create: if isDeveloper()
                     || isAdmin()
-                    || isDeveloper();
+                    || (isOwner() && request.resource.data.ownerId == request.auth.uid);
+      // التحديث: صاحب المطعم
+      allow update: if isDeveloper()
+                    || isAdmin()
+                    || (isOwner() && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == request.auth.uid);
+      // الحذف: المطور فقط
       allow delete: if isDeveloper();
     }
 
@@ -97,25 +101,63 @@ service cloud.firestore {
 
       allow update: if isOwner()
                     || (isCourier() && resource.data.courierId == request.auth.uid)
+                    || (isCustomer() && resource.data.customerId == request.auth.uid)
                     || isAdmin()
                     || isDeveloper();
       allow delete: if isDeveloper();
     }
 
-    /* ===== wallets (for admins and app) ===== */
+    /* ===== wallets (for admins, customers, owners, couriers and app) ===== */
     match /wallets/{walletId} {
-      // القراءة: المطور أو صاحب المحفظة (المشرف)
-      allow read: if isDeveloper() || (isAdmin() && request.auth.uid == walletId);
+      // القراءة: 
+      // - المطور: جميع المحافظ
+      // - المشرف/العميل/صاحب المطعم/المندوب: محفظته فقط
+      allow read: if isDeveloper() 
+                  || (signedIn() && request.auth.uid == walletId);
       
-      // الإنشاء: المشرف لمحفظته + المطور + العملاء (لإنشاء محفظة المشرف عند الطلب)
+      // الإنشاء: المستخدم لمحفظته + المطور + العملاء (لإنشاء محفظة المشرف عند الطلب)
       allow create: if isDeveloper() 
-                    || (isAdmin() && request.auth.uid == walletId)
+                    || (signedIn() && request.auth.uid == walletId)
                     || (isCustomer() && walletId != request.auth.uid); // العميل يمكنه إنشاء محفظة المشرف
       
-      // التحديث: المطور أو العملاء (لتحديث محفظة المشرف عند الطلب)
+      // التحديث: المطور فقط (لأمان المحفظة) + العملاء (لتحديث محفظة المشرف عند الطلب)
       allow update: if isDeveloper() 
                     || (isCustomer() && walletId != request.auth.uid); // العميل يمكنه تحديث محفظة المشرف
       
+      allow delete: if isDeveloper();
+      
+      // معاملات المحفظة (subcollection)
+      match /transactions/{txId} {
+        // القراءة: صاحب المحفظة أو المطور
+        allow read: if isDeveloper() || request.auth.uid == walletId;
+        // الكتابة: المطور فقط (المعاملات تُضاف من الخادم)
+        allow create, update, delete: if isDeveloper();
+      }
+    }
+
+    /* ===== accounting (محاسبة التطبيق - للمطور فقط) ===== */
+    match /accounting/{monthId} {
+      // القراءة والكتابة: المطور فقط
+      allow read, write: if isDeveloper();
+    }
+
+    /* ===== transactions (سجل المعاملات العام - للمطور فقط) ===== */
+    match /transactions/{txId} {
+      allow read, write: if isDeveloper();
+    }
+
+    /* ===== rechargeRequests (طلبات شحن محفظة العميل) ===== */
+    match /rechargeRequests/{requestId} {
+      // القراءة: المطور أو صاحب الطلب
+      allow read: if isDeveloper() || (isCustomer() && resource.data.userId == request.auth.uid);
+      
+      // الإنشاء: العميل فقط
+      allow create: if isCustomer() && request.resource.data.userId == request.auth.uid;
+      
+      // التحديث: المطور فقط (للموافقة/الرفض)
+      allow update: if isDeveloper();
+      
+      // الحذف: المطور فقط
       allow delete: if isDeveloper();
     }
 
@@ -214,6 +256,87 @@ service cloud.firestore {
       allow delete: if isDeveloper() || (signedIn() && resource.data.recipientId == request.auth.uid);
     }
 
+    /* ===== supportTickets (تذاكر الدعم الفني والشكاوى) ===== */
+    match /supportTickets/{ticketId} {
+      // القراءة: صاحب التذكرة أو المطور
+      allow read: if isDeveloper() || (signedIn() && resource.data.userId == request.auth.uid);
+      
+      // الإنشاء: أي مستخدم مسجل
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      
+      // التحديث: المطور فقط (للرد وتغيير الحالة)
+      allow update: if isDeveloper();
+      
+      // الحذف: المطور فقط
+      allow delete: if isDeveloper();
+    }
+
+    /* ===== problemReports (بلاغات المشاكل من المستخدمين) ===== */
+    match /problemReports/{reportId} {
+      // القراءة: المطور أو المشرف فقط (لا يرى المستخدم بلاغه)
+      allow read: if isDeveloper() || isAdmin();
+      
+      // الإنشاء: العملاء والأسر والمندوبين
+      allow create: if signedIn() 
+                    && request.resource.data.userId == request.auth.uid
+                    && (isCustomer() || isOwner() || isCourier());
+      
+      // التحديث: المطور أو المشرف فقط (لتغيير الحالة)
+      allow update: if isDeveloper() || isAdmin();
+      
+      // الحذف: المطور فقط
+      allow delete: if isDeveloper();
+    }
+
+    /* ===== supportTickets/messages (رسائل تذاكر الدعم) ===== */
+    match /supportTickets/{ticketId}/messages/{messageId} {
+      // الحصول على بيانات التذكرة
+      function getTicket() {
+        return get(/databases/$(database)/documents/supportTickets/$(ticketId)).data;
+      }
+      
+      // القراءة: صاحب التذكرة أو المطور
+      allow read: if isDeveloper() || (signedIn() && getTicket().userId == request.auth.uid);
+      
+      // الإنشاء: صاحب التذكرة أو المطور
+      allow create: if signedIn() && (isDeveloper() || getTicket().userId == request.auth.uid);
+      
+      // لا يسمح بالتعديل أو الحذف
+      allow update, delete: if isDeveloper();
+    }
+
+    /* ===== supportChats (محادثات الدعم الفني المباشر) ===== */
+    match /supportChats/{chatId} {
+      // القراءة: صاحب المحادثة أو المطور
+      allow read: if isDeveloper() || (signedIn() && resource.data.userId == request.auth.uid);
+      
+      // الإنشاء: أي مستخدم مسجل
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      
+      // التحديث: صاحب المحادثة أو المطور
+      allow update: if isDeveloper() || (signedIn() && resource.data.userId == request.auth.uid);
+      
+      // الحذف: المطور فقط
+      allow delete: if isDeveloper();
+    }
+
+    /* ===== supportChats/messages (رسائل الدعم المباشر) ===== */
+    match /supportChats/{chatId}/messages/{messageId} {
+      // الحصول على بيانات المحادثة
+      function getChat() {
+        return get(/databases/$(database)/documents/supportChats/$(chatId)).data;
+      }
+      
+      // القراءة: صاحب المحادثة أو المطور
+      allow read: if isDeveloper() || (signedIn() && getChat().userId == request.auth.uid);
+      
+      // الإنشاء: صاحب المحادثة أو المطور أو البوت
+      allow create: if signedIn() && (isDeveloper() || getChat().userId == request.auth.uid);
+      
+      // لا يسمح بالتعديل أو الحذف
+      allow update, delete: if isDeveloper();
+    }
+
     /* ===== promotions (الإعلانات الممولة للأسر المنتجة) ===== */
     match /promotions/{promotionId} {
       // القراءة: الجميع (لعرض الإعلانات للعملاء)
@@ -229,6 +352,23 @@ service cloud.firestore {
       
       // الحذف: صاحب الأسرة (لحذف إعلانه) أو المطور
       allow delete: if isDeveloper() || (isOwner() && resource.data.ownerId == request.auth.uid);
+    }
+
+    /* ===== stories (ستوري الأسر المنتجة) ===== */
+    match /stories/{storyId} {
+      // القراءة: الجميع (لعرض الستوري للعملاء)
+      allow read: if true;
+      
+      // الإنشاء: أي مستخدم مسجل دخول ويكون هو صاحب الستوري
+      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
+      
+      // التحديث: صاحب الستوري أو أي مستخدم (لزيادة المشاهدات) أو المطور
+      allow update: if isDeveloper() 
+                    || (signedIn() && resource.data.ownerId == request.auth.uid)
+                    || (signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount', 'viewedBy']));
+      
+      // الحذف: صاحب الستوري أو المطور
+      allow delete: if isDeveloper() || (signedIn() && resource.data.ownerId == request.auth.uid);
     }
 
     /* ===== restaurantStats (إحصائيات المطاعم/الأسر المنتجة) ===== */
@@ -283,6 +423,40 @@ service cloud.firestore {
       
       // لا يسمح بالتعديل إلا للمطور
       allow update: if isDeveloper();
+    }
+
+    /* ===== offers (عروض الأسر المنتجة العادية) ===== */
+    match /offers/{offerId} {
+      // القراءة: الجميع (لعرض العروض للعملاء)
+      allow read: if true;
+      
+      // الإنشاء: صاحب الأسرة فقط
+      allow create: if isOwner() && request.resource.data.ownerId == request.auth.uid;
+      
+      // التحديث: صاحب الأسرة (لتعديل عرضه) أو أي مستخدم (لزيادة المشاهدات) أو المطور
+      allow update: if isDeveloper() 
+                    || (isOwner() && resource.data.ownerId == request.auth.uid)
+                    || (signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount', 'usedCount']));
+      
+      // الحذف: صاحب الأسرة أو المطور
+      allow delete: if isDeveloper() || (isOwner() && resource.data.ownerId == request.auth.uid);
+    }
+
+    /* ===== ramadanOffers (عروض رمضان الخاصة) ===== */
+    match /ramadanOffers/{offerId} {
+      // القراءة: الجميع (لعرض عروض رمضان للعملاء)
+      allow read: if true;
+      
+      // الإنشاء: صاحب الأسرة فقط
+      allow create: if isOwner() && request.resource.data.ownerId == request.auth.uid;
+      
+      // التحديث: صاحب الأسرة (لتعديل عرضه) أو أي مستخدم (لزيادة المشاهدات) أو المطور
+      allow update: if isDeveloper() 
+                    || (isOwner() && resource.data.ownerId == request.auth.uid)
+                    || (signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount', 'usedCount']));
+      
+      // الحذف: صاحب الأسرة أو المطور
+      allow delete: if isDeveloper() || (isOwner() && resource.data.ownerId == request.auth.uid);
     }
   }
 }

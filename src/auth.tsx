@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import { onAuthStateChanged, signOut, User } from 'firebase/auth'
 import { auth, db } from './firebase'
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
+import { initializePushNotifications } from './utils/pushNotifications'
 
 type Role = 'owner' | 'courier' | 'customer' | 'admin' | 'developer'
 type GeoLocation = { lat: number; lng: number }
@@ -164,6 +165,14 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
           } catch (err) {
             console.warn('تعذر إنشاء مستند المطعم للمالك', err)
           }
+        }
+
+        // 🔔 تفعيل الإشعارات الفورية عند تسجيل الدخول
+        try {
+          await initializePushNotifications()
+          console.log('✅ تم تفعيل الإشعارات')
+        } catch (notifError) {
+          console.warn('⚠️ تعذر تفعيل الإشعارات:', notifError)
         }
       } else {
         setRole(null)

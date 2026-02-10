@@ -280,3 +280,43 @@ img {
     position: sticky;
   }
 }
+
+/* ===== رمضان - Ramadan Animations ===== */
+@keyframes swing {
+  0%, 100% { transform: rotate(-5deg); }
+  50% { transform: rotate(5deg); }
+}
+
+.animate-swing {
+  animation: swing 3s ease-in-out infinite;
+  transform-origin: top center;
+}
+
+/* خلفية رمضانية */
+.ramadan-bg {
+  background: linear-gradient(135deg, 
+    #1e1b4b 0%, 
+    #312e81 25%, 
+    #4c1d95 50%, 
+    #064e3b 75%, 
+    #065f46 100%
+  );
+}
+
+.ramadan-gradient {
+  background: linear-gradient(135deg, 
+    rgba(107, 33, 168, 0.1) 0%, 
+    rgba(217, 119, 6, 0.1) 50%, 
+    rgba(6, 95, 70, 0.1) 100%
+  );
+}
+
+/* تأثير النجوم المتلألئة */
+@keyframes twinkle {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+.animate-twinkle {
+  animation: twinkle 2s ease-in-out infinite;
+}

@@ -1,11 +1,27 @@
 // src/pages/CartPage.tsx
-import React from "react"
+import React, { useMemo } from "react"
 import { useCart } from "@/hooks/useCart"
 import { Link } from "react-router-dom"
 import { Trash2, ShoppingBag, ArrowLeft, Minus, Plus } from "lucide-react"
 
+// رسوم التطبيق: 1.57 هللة على المنتجات التي سعرها 5 ريال أو أكثر
+const APP_FEE_PER_ITEM = 0.0157  // 1.57 هللة = 0.0157 ريال
+const APP_FEE_MIN_PRICE = 5      // الحد الأدنى للسعر لتطبيق الرسوم
+
 export const CartPage: React.FC = () => {
   const { items, subtotal, remove, clear, changeQty } = useCart()
+  
+  // 💰 حساب رسوم التطبيق
+  const appFee = useMemo(() => {
+    return items.reduce((fee, item) => {
+      if (item.price >= APP_FEE_MIN_PRICE) {
+        return fee + (APP_FEE_PER_ITEM * item.qty)
+      }
+      return fee
+    }, 0)
+  }, [items])
+  
+  const total = subtotal + appFee
 
   if (items.length === 0) {
     return (
@@ -92,6 +108,12 @@ export const CartPage: React.FC = () => {
           <span>المجموع الفرعي</span>
           <span className="font-bold">{subtotal.toFixed(2)} ر.س</span>
         </div>
+        {appFee > 0 && (
+          <div className="flex justify-between text-gray-500">
+            <span>رسوم التطبيق</span>
+            <span className="font-semibold">{appFee.toFixed(2)} ر.س</span>
+          </div>
+        )}
         <div className="flex justify-between text-amber-600">
           <span>رسوم التوصيل</span>
           <span className="font-semibold text-sm">تُحدد عند قبول الطلب</span>
@@ -99,7 +121,7 @@ export const CartPage: React.FC = () => {
         <div className="h-px bg-sky-200/50"></div>
         <div className="flex justify-between">
           <span className="font-bold text-lg text-sky-900">الإجمالي</span>
-          <span className="font-bold text-xl text-sky-600">{subtotal.toFixed(2)} ر.س</span>
+          <span className="font-bold text-xl text-sky-600">{total.toFixed(2)} ر.س</span>
         </div>
         <p className="text-xs text-gray-500 text-center">
           💡 رسوم التوصيل يحددها المندوب أو الأسرة حسب موقعك

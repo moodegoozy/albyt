@@ -1,11 +1,14 @@
 // src/pages/RestaurantOrders.tsx
 import React, { useEffect, useState } from 'react'
-import { collection, onSnapshot, orderBy, query, where, updateDoc, doc, serverTimestamp } from 'firebase/firestore'
+import { collection, onSnapshot, orderBy, query, where, updateDoc, doc, serverTimestamp, getDoc } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useAuth } from '@/auth'
-import { Order } from '@/types'
+import { Order, Rating, ORDER_TIME_LIMITS } from '@/types'
 import { useToast } from '@/components/ui/Toast'
-import { Package, MapPin, Truck, DollarSign, Check, Clock, X, AlertCircle, Store } from 'lucide-react'
+import { OrderTimer } from '@/components/OrderTimer'
+import { RatingModal } from '@/components/RatingModal'
+import { Package, MapPin, Truck, DollarSign, Check, Clock, X, AlertCircle, Store, Star, User } from 'lucide-react'
+import { notifyOrderAccepted, notifyOrderReady } from '@/utils/notificationService'
 
 // رسوم المنصة على المندوب
 const COURIER_PLATFORM_FEE = 3.75
@@ -28,6 +31,11 @@ export const RestaurantOrders: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [deliveryFees, setDeliveryFees] = useState<Record<string, string>>({})
   const [savingFee, setSavingFee] = useState<string | null>(null)
+  const [ratingModal, setRatingModal] = useState<{
+    isOpen: boolean;
+    orderId: string;
+    targetName: string;
+  } | null>(null)
 
   useEffect(() => {
     if (!user) return
@@ -40,13 +48,103 @@ export const RestaurantOrders: React.FC = () => {
     const unsub = onSnapshot(q, (snap) => {
       setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order)))
       setLoading(false)
+    }, (err) => {
+      console.error('خطأ في جلب الطلبات:', err)
+      setLoading(false)
     })
     return () => unsub()
   }, [user])
 
   const updateStatus = async (id: string, status: string) => {
-    await updateDoc(doc(db, 'orders', id), { status, updatedAt: serverTimestamp() })
+    // جلب بيانات الطلب لإرسال الإشعار
+    const order = orders.find(o => o.id === id)
+    
+    // إضافة timestamps حسب الحالة
+    const updateData: Record<string, any> = { 
+      status, 
+      updatedAt: serverTimestamp() 
+    }
+    
+    // تسجيل وقت كل مرحلة
+    if (status === 'accepted') {
+      updateData['timestamps.acceptedAt'] = serverTimestamp()
+    } else if (status === 'ready') {
+      updateData['timestamps.readyAt'] = serverTimestamp()
+    } else if (status === 'cancelled') {
+      updateData.cancelledAt = serverTimestamp()
+      updateData.cancelledBy = 'owner'
+    }
+    
+    await updateDoc(doc(db, 'orders', id), updateData)
+    
+    // 💰 استرداد تلقائي عند الإلغاء
+    if (status === 'cancelled' && order) {
+      try {
+        const { processOrderRefund, notifyRefundParties } = await import('@/utils/refundService')
+        const refundResult = await processOrderRefund({
+          id: order.id,
+          customerId: order.customerId,
+          restaurantId: (order as any).restaurantId || user?.uid || '',
+          subtotal: order.subtotal,
+          total: order.total,
+          restaurantEarnings: (order as any).restaurantEarnings,
+          platformFee: (order as any).platformFee,
+          adminCommission: (order as any).adminCommission,
+          appEarnings: (order as any).appEarnings,
+          referredBy: (order as any).referredBy,
+          paymentMethod: (order as any).paymentMethod,
+        })
+        
+        // إشعار الأطراف
+        await notifyRefundParties({
+          id: order.id,
+          customerId: order.customerId,
+          restaurantId: (order as any).restaurantId || user?.uid || '',
+          subtotal: order.subtotal,
+          total: order.total,
+        }, refundResult, 'owner')
+        
+        if (refundResult.success) {
+          toast.success('تم إلغاء الطلب واسترداد المبالغ تلقائياً ✅')
+        }
+      } catch (refundErr) {
+        console.warn('⚠️ تعذر الاسترداد التلقائي:', refundErr)
+        toast.warning('تم الإلغاء لكن فشل الاسترداد التلقائي')
+      }
+      return
+    }
+    
+    // 🔔 إرسال إشعارات ذكية للعميل
+    if (order) {
+      const restaurantName = order.restaurantName || 'المطعم'
+      
+      if (status === 'accepted') {
+        // إشعار: تم قبول طلبك
+        notifyOrderAccepted(order.customerId, id, restaurantName)
+      } else if (status === 'ready') {
+        // إشعار: طلبك جاهز
+        const deliveryType = order.deliveryType || 'delivery'
+        notifyOrderReady(order.customerId, id, restaurantName, deliveryType)
+      }
+    }
+    
     toast.success('تم تحديث حالة الطلب')
+  }
+
+  // إرسال تقييم العميل
+  const submitCustomerRating = async (orderId: string, rating: { stars: number; comment: string }) => {
+    const ratingData: Rating = {
+      stars: rating.stars,
+      comment: rating.comment || undefined,
+      createdAt: new Date()
+    }
+
+    await updateDoc(doc(db, 'orders', orderId), {
+      'ratings.restaurantToCustomer': ratingData,
+      updatedAt: serverTimestamp()
+    })
+
+    toast.success('شكراً لتقييمك للعميل! ⭐')
   }
 
   // تحديد رسوم التوصيل
@@ -64,7 +162,9 @@ export const RestaurantOrders: React.FC = () => {
     const order = orders.find(o => o.id === orderId)
     if (!order) return
 
-    const newTotal = order.subtotal + fee
+    // حساب الإجمالي: نستخدم total الحالي (يشمل الخصومات والرسوم) + رسوم التوصيل
+    const currentTotal = order.total || order.subtotal
+    const newTotal = currentTotal + fee
 
     await updateDoc(doc(db, 'orders', orderId), {
       deliveryFee: fee,
@@ -106,6 +206,21 @@ export const RestaurantOrders: React.FC = () => {
             <p className="text-sky-700 font-semibold">لا توجد طلبات حالياً</p>
             <p className="text-sky-500 text-sm mt-1">ستظهر الطلبات الجديدة هنا</p>
           </div>
+        )}
+
+        {/* نافذة تقييم العميل */}
+        {ratingModal && (
+          <RatingModal
+            isOpen={ratingModal.isOpen}
+            onClose={() => setRatingModal(null)}
+            onSubmit={async (rating) => {
+              await submitCustomerRating(ratingModal.orderId, rating)
+              setRatingModal(null)
+            }}
+            type="customer"
+            targetName={ratingModal.targetName}
+            orderId={ratingModal.orderId}
+          />
         )}
 
         <div className="space-y-4">
@@ -151,6 +266,18 @@ export const RestaurantOrders: React.FC = () => {
                     <MapPin className="w-4 h-4 text-sky-500 mt-0.5" />
                     <span className="text-gray-700">{o.address}</span>
                   </div>
+
+                  {/* عداد الوقت - يظهر للطلبات النشطة */}
+                  {(o.status === 'accepted' || o.status === 'preparing') && (
+                    <div className="mb-3">
+                      <OrderTimer order={o} type="preparation" />
+                    </div>
+                  )}
+                  {o.status === 'ready' && o.deliveryType === 'delivery' && (
+                    <div className="mb-3">
+                      <OrderTimer order={o} type="pickup" />
+                    </div>
+                  )}
 
                   {/* الأسعار */}
                   <div className="bg-sky-50 rounded-xl p-3 mb-4 space-y-1">
@@ -253,6 +380,47 @@ export const RestaurantOrders: React.FC = () => {
                       </button>
                     )}
                   </div>
+
+                  {/* تقييم العميل - يظهر للطلبات المكتملة فقط */}
+                  {o.status === 'delivered' && !o.ratings?.restaurantToCustomer?.stars && (
+                    <div className="bg-gradient-to-r from-sky-50 to-blue-50 border-2 border-sky-200 rounded-2xl p-4 mt-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Star className="w-5 h-5 text-sky-500 fill-sky-500" />
+                        <span className="font-bold text-sky-800">قيّم العميل ⭐</span>
+                      </div>
+                      <button
+                        onClick={() => setRatingModal({
+                          isOpen: true,
+                          orderId: o.id,
+                          targetName: (o as any).customerName || 'العميل'
+                        })}
+                        className="w-full flex items-center justify-between px-4 py-3 bg-white border-2 border-sky-300 
+                                   rounded-xl hover:bg-sky-50 transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <User className="w-5 h-5 text-sky-600" />
+                          <span className="font-medium text-gray-800">قيّم تعامل العميل</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {[1,2,3,4,5].map(n => (
+                            <Star key={n} className="w-4 h-4 text-gray-300 group-hover:text-sky-400 transition" />
+                          ))}
+                        </div>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* عرض التقييم المكتمل */}
+                  {o.ratings?.restaurantToCustomer?.stars && (
+                    <div className="mt-4 bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
+                      <span className="text-sm text-green-700">تقييمك للعميل:</span>
+                      <div className="flex items-center gap-0.5">
+                        {[1,2,3,4,5].map(n => (
+                          <Star key={n} className={`w-4 h-4 ${n <= (o.ratings?.restaurantToCustomer?.stars || 0) ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )

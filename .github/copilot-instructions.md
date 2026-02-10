@@ -1,82 +1,89 @@
 # Copilot Instructions - سفرة البيت (Albyt)
 
-## Overview
-Arabic RTL food delivery PWA connecting home-based restaurants ("أسرة منتجة") with customers/couriers. Stack: **React 18 + TypeScript + Vite + TailwindCSS + Firebase**.
-
 ## Architecture
+Arabic RTL food delivery PWA: home-based restaurants (الأسر المنتجة) → couriers → customers.
+**Stack**: React 18 + TypeScript + Vite + TailwindCSS + Firebase (Auth/Firestore/Storage)
 
-### Role-Based Access (5 roles in [src/types/index.ts](src/types/index.ts))
-| Role | Access | Key Pages |
-|------|--------|-----------|
-| `customer` | Order, track, profile | `/checkout`, `/orders` |
-| `courier` | Deliver orders | `/courier` |
-| `owner` | Manage restaurant/menu | `/owner/*` |
-| `admin` | Oversee referred restaurants | `/admin/*` |
-| `developer` | Full superuser access | All routes |
+## Critical Patterns
 
-**Route protection pattern** (always include `developer` in allowed roles):
+### ⚠️ Role-Based Access (ALWAYS include `developer`)
 ```tsx
 <ProtectedRoute>
-  <RoleGate allow={['owner', 'developer']}>
+  <RoleGate allow={['owner', 'developer']}>  {/* developer = superuser */}
     <Component />
   </RoleGate>
 </ProtectedRoute>
 ```
+Roles: `customer` | `courier` | `owner` | `admin` | `developer`
+
+### Imports - Use `@/` alias (configured in vite.config.ts + tsconfig.json)
+```tsx
+import { useAuth } from '@/auth'           // { user, role, userLocation, logout, refreshUserData }
+import { db, storage } from '@/firebase'
+import { Order, MenuItem } from '@/types'  // ALL types centralized in src/types/index.ts
+import { useCart } from '@/hooks/useCart'  // localStorage-based, NOT Context
+```
 
 ### Firebase Data Model
-| Collection | Doc ID Pattern | Key Relationships |
-|------------|----------------|-------------------|
-| `users/{uid}` | Firebase Auth UID | `role` field determines access |
-| `restaurants/{ownerId}` | Owner's UID | `referredBy` → admin UID |
-| `menuItems/{id}` | Auto-generated | `ownerId` → restaurant |
-| `orders/{id}` | Auto-generated | `customerId`, `courierId`, `restaurantId` |
-| `settings/general` | Fixed ID | Global app config |
+```
+users/{uid}              → { role, name, email, phone, location, savedLocation }
+restaurants/{ownerId}    → doc ID = owner's UID (one-to-one)
+menuItems/{id}           → { ownerId, name, price, available, discountPercent? }
+orders/{id}              → status flow: pending→accepted→preparing→ready→out_for_delivery→delivered
+couriers/{courierId}     → courier profile data
+supportTickets/{id}      → customer complaints/support
+```
 
-**Firestore rules** use helper functions: `isOwner()`, `isCourier()`, `isCustomer()`, `isAdmin()`, `isDeveloper()` in [firestore.rules](firestore.rules).
-
-### Order Status Flow
-`pending` → `accepted` → `preparing` → `ready` → `out_for_delivery` → `delivered` (or `cancelled`)
-
-## Key Conventions
-
-### Imports - Use `@/` alias exclusively
+### Real-time vs One-time Reads
 ```tsx
-import { useAuth } from '@/auth'
-import { db, storage } from '@/firebase'
-import { MenuItem, Order } from '@/types'
-import { useCart } from '@/hooks/useCart'
+// Real-time: orders, chat, notifications
+const unsub = onSnapshot(query(collection(db, 'orders'), where(...)), (snap) => {...})
+useEffect(() => unsub, [])
+
+// One-time: restaurant profile, menu items
+const doc = await getDoc(doc(db, 'restaurants', ownerId))
 ```
 
-### State Management
-- **Auth**: `useAuth()` hook → `{ user, role, loading, logout, userLocation, locationRequired }`
-- **Cart**: `useCart()` hook (localStorage, NOT Context) → `{ items, add, remove, clear, subtotal }`
-- **Settings**: Fetch from `settings/general` via `getAppSettings()` in [src/utils/config.ts](src/utils/config.ts)
+### Cart System
+`useCart()` hook uses localStorage (key: `broast_cart`), NOT React Context. Each cart item includes `ownerId` for multi-restaurant support.
 
-### Styling Patterns
-- **Colors**: Sky palette (`sky-50` to `sky-900`), gradients like `bg-gradient-to-b from-sky-50 via-white to-sky-50`
-- **Icons**: `lucide-react` only
-- **RTL**: Layout is right-to-left by default
-- **Responsive**: Mobile-first with `sm:` breakpoints
+### Location Handling
+- Customers/Admins: `savedLocation` field (persists in Firestore)
+- Owners/Couriers: `location` field
+- Auto-detect via `navigator.geolocation` with fallback to manual picker
 
-### Arabic Code Comments
-Codebase uses Arabic comments extensively. Maintain bilingual readability when adding new code.
+## Styling Rules
+- **Colors**: Sky palette only (`sky-50` to `sky-900`)
+- **Icons**: `lucide-react` exclusively
+- **RTL**: Default in `index.html`, no `dir` needed
+- **Comments**: Arabic for domain logic, English for technical
 
-## Development
-
+## Commands
 ```bash
-npm run dev      # Vite dev server on port 5173
-npm run build    # TypeScript check + production build
+npm run dev    # Port 5173, HMR enabled
+npm run build  # tsc -b && vite build (TypeScript errors block build!)
+npm run preview # Preview production build
 ```
 
-## Common Tasks
+## Key Files
+| File | Purpose |
+|------|---------|
+| [src/types/index.ts](src/types/index.ts) | ALL interfaces + `POINTS_CONFIG`, `ORDER_TIME_LIMITS` constants |
+| [src/auth.tsx](src/auth.tsx) | Auth context, auto-location detection, session persistence |
+| [src/routes/RoleGate.tsx](src/routes/RoleGate.tsx) | Role-based component gating |
+| [src/routes/ProtectedRoute.tsx](src/routes/ProtectedRoute.tsx) | Auth required wrapper |
+| [src/App.tsx](src/App.tsx) | All routes defined here with role gates |
+| [firestore.rules](firestore.rules) | Security helpers: `isOwner()`, `isDeveloper()`, etc. |
+| [src/hooks/useCart.ts](src/hooks/useCart.ts) | localStorage cart with `ownerId` per item |
 
-### Adding a new page
-1. Create in `src/pages/NewPage.tsx`
-2. Add route in [src/App.tsx](src/App.tsx) with `ProtectedRoute`/`RoleGate`
-3. Add nav link in [src/components/Header.tsx](src/components/Header.tsx)
+## Adding Features
+1. **New page**: Create in `src/pages/`, add route in `src/App.tsx` with `ProtectedRoute` + `RoleGate`
+2. **New type**: Add to `src/types/index.ts`, import from `@/types`
+3. **Real-time data**: Use `onSnapshot` for orders/chat, `getDoc` for one-time reads
+4. **Firestore rules**: Update [firestore.rules](firestore.rules) if new collection
 
-### Adding new types
-Add to [src/types/index.ts](src/types/index.ts) - never define inline
-
-### Modifying Firestore rules
-Edit [firestore.rules](firestore.rules) - use existing helper functions, `isDeveloper()` for admin-only ops
+## Business Logic Notes
+- **Points System**: Restaurants/couriers start at 100 points, deductions for complaints, suspension at <30
+- **Order Flow**: Customer creates → Owner accepts → Prepares → Ready → Courier delivers
+- **Time Limits**: `ORDER_TIME_LIMITS` in types defines prep/pickup/delivery timeouts
+- **Packages**: Free vs Premium restaurant tiers (`packageType` field)

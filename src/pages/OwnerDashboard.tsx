@@ -13,9 +13,11 @@ import {
   Briefcase, Eye, MessageCircle, Plus, Edit3, BarChart3, 
   Users, Gift, Zap, Shield, Camera, Globe, Bell, ArrowRight,
   Store, Layers, PieChart, Target, Award, Flame, Heart, Share2, Copy, Link2,
-  UserPlus, Download, ExternalLink
+  UserPlus, Download, ExternalLink, MinusCircle
 } from 'lucide-react'
 import { useToast } from '@/components/ui/Toast'
+import { POINTS_CONFIG, Story } from '@/types'
+import { isRamadan } from '@/utils/ramadanConfig'
 
 type Restaurant = {
   name: string
@@ -42,6 +44,12 @@ type Restaurant = {
   licenseStatus?: 'pending' | 'approved' | 'rejected'
   licenseNotes?: string
   isOpen?: boolean
+  // نظام النقاط
+  points?: {
+    currentPoints: number
+    isSuspended: boolean
+    warningCount: number
+  }
 }
 
 type Order = {
@@ -213,6 +221,7 @@ export const OwnerDashboard: React.FC = () => {
   }
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
   const [topItems, setTopItems] = useState<{ name: string; count: number }[]>([])
+  const [stories, setStories] = useState<Story[]>([])
 
   // تحميل البيانات
   const loadData = async () => {
@@ -236,7 +245,7 @@ export const OwnerDashboard: React.FC = () => {
       // جلب الطلبات
       const ordersQuery = query(
         collection(db, 'orders'),
-        where('ownerId', '==', user.uid),
+        where('restaurantId', '==', user.uid),
         orderBy('createdAt', 'desc')
       )
       const ordersSnap = await getDocs(ordersQuery)
@@ -346,6 +355,27 @@ export const OwnerDashboard: React.FC = () => {
         const followersSnap = await getDocs(followersQuery)
         followersCount = followersSnap.size
       } catch (e) {}
+
+      // جلب الستوري النشطة
+      try {
+        const storiesQuery = query(
+          collection(db, 'stories'),
+          where('ownerId', '==', user.uid)
+        )
+        const storiesSnap = await getDocs(storiesQuery)
+        const storiesData = storiesSnap.docs
+          .map(d => ({
+            id: d.id,
+            ...d.data(),
+            expiresAt: d.data().expiresAt?.toDate?.(),
+            createdAt: d.data().createdAt?.toDate?.(),
+          } as Story))
+          .filter(s => s.expiresAt && new Date(s.expiresAt) > now)
+          .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0))
+        setStories(storiesData)
+      } catch (e) {
+        console.warn('خطأ في جلب الستوري:', e)
+      }
       
       setStats({
         todayOrders: todayOrders.length,
@@ -530,6 +560,95 @@ export const OwnerDashboard: React.FC = () => {
           </Link>
         )}
 
+        {/* ========== نظام النقاط والتقييم ========== */}
+        {restaurant?.points && (
+          <div className={`rounded-2xl p-4 border-2 ${
+            restaurant.points.isSuspended 
+              ? 'bg-red-50 border-red-300' 
+              : restaurant.points.currentPoints < POINTS_CONFIG.WARNING_THRESHOLD
+              ? 'bg-amber-50 border-amber-300'
+              : 'bg-sky-50 border-sky-200'
+          }`}>
+            <div className="flex items-center gap-3 mb-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                restaurant.points.isSuspended 
+                  ? 'bg-red-500' 
+                  : restaurant.points.currentPoints < POINTS_CONFIG.WARNING_THRESHOLD
+                  ? 'bg-amber-500'
+                  : 'bg-sky-500'
+              }`}>
+                <Shield className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className={`font-bold ${
+                  restaurant.points.isSuspended 
+                    ? 'text-red-700' 
+                    : restaurant.points.currentPoints < POINTS_CONFIG.WARNING_THRESHOLD
+                    ? 'text-amber-700'
+                    : 'text-sky-700'
+                }`}>
+                  {restaurant.points.isSuspended ? '⛔ حسابك موقوف!' : '🛡️ رصيد النقاط'}
+                </h3>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className={`text-3xl font-bold ${
+                  restaurant.points.isSuspended 
+                    ? 'text-red-600' 
+                    : restaurant.points.currentPoints < POINTS_CONFIG.WARNING_THRESHOLD
+                    ? 'text-amber-600'
+                    : 'text-sky-600'
+                }`}>
+                  {restaurant.points.currentPoints}
+                </div>
+                <div className="text-sm text-gray-500">
+                  / {POINTS_CONFIG.STARTING_POINTS} نقطة
+                </div>
+              </div>
+              
+              {/* شريط التقدم */}
+              <div className="flex-1 max-w-[150px] mr-4">
+                <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all ${
+                      restaurant.points.isSuspended 
+                        ? 'bg-red-500' 
+                        : restaurant.points.currentPoints < POINTS_CONFIG.WARNING_THRESHOLD
+                        ? 'bg-amber-500'
+                        : 'bg-sky-500'
+                    }`}
+                    style={{ width: `${Math.min(100, restaurant.points.currentPoints)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+            
+            {restaurant.points.isSuspended && (
+              <div className="mt-3 bg-red-100 rounded-xl p-3">
+                <p className="text-sm text-red-700">
+                  ⛔ حسابك موقوف بسبب انخفاض النقاط. تواصل مع الدعم الفني لإعادة تفعيله.
+                </p>
+                <Link 
+                  to="/support" 
+                  className="inline-block mt-2 text-red-600 font-bold underline text-sm"
+                >
+                  تواصل مع الدعم ←
+                </Link>
+              </div>
+            )}
+            
+            {!restaurant.points.isSuspended && restaurant.points.currentPoints < POINTS_CONFIG.WARNING_THRESHOLD && (
+              <div className="mt-3 bg-amber-100 rounded-xl p-3">
+                <p className="text-sm text-amber-700">
+                  ⚠️ تنبيه: نقاطك منخفضة! حافظ على جودة الخدمة لتجنب الإيقاف.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ========== ملخص الأرباح ========== */}
         <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-4 border-2 border-green-200">
           <div className="flex items-center gap-3 mb-3">
@@ -661,6 +780,57 @@ export const OwnerDashboard: React.FC = () => {
               <h3 className="text-lg font-extrabold text-gray-900">الإعدادات</h3>
             </div>
             <p className="text-sm text-gray-600">تعديل بيانات المتجر.</p>
+          </Link>
+
+          <Link to="/owner/wallet" className="rounded-2xl shadow-lg hover:shadow-2xl transition transform hover:-translate-y-1 bg-gradient-to-br from-emerald-50 to-white p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <Wallet className="w-8 h-8 text-emerald-500" />
+              <h3 className="text-lg font-extrabold text-gray-900">محفظتي</h3>
+            </div>
+            <p className="text-sm text-gray-600">عرض المبيعات والأرباح.</p>
+          </Link>
+
+          <Link to="/owner/offers" className="rounded-2xl shadow-lg hover:shadow-2xl transition transform hover:-translate-y-1 bg-gradient-to-br from-pink-50 to-white p-5 relative overflow-hidden">
+            <div className="absolute -top-1 -left-1 bg-gradient-to-r from-pink-500 to-red-500 text-white text-xs font-bold px-3 py-1 rounded-br-xl">
+              جديد ✨
+            </div>
+            <div className="flex items-center gap-3 mb-3">
+              <Gift className="w-8 h-8 text-pink-500" />
+              <h3 className="text-lg font-extrabold text-gray-900">العروض الخاصة</h3>
+            </div>
+            <p className="text-sm text-gray-600">أضف خصومات وعروض لجذب العملاء.</p>
+          </Link>
+
+          {/* قسم عروض رمضان */}
+          {isRamadan() && (
+            <Link to="/owner/offers?type=ramadan" className="rounded-2xl shadow-lg hover:shadow-2xl transition transform hover:-translate-y-1 bg-gradient-to-br from-purple-900 via-purple-800 to-emerald-900 p-5 relative overflow-hidden">
+              <div className="absolute -top-1 -left-1 bg-gradient-to-r from-amber-400 to-amber-500 text-purple-900 text-xs font-bold px-3 py-1 rounded-br-xl">
+                🌙 رمضان
+              </div>
+              <div className="absolute top-2 right-2 text-2xl animate-pulse">🌙</div>
+              <div className="absolute bottom-2 left-2 text-xl opacity-50">✨</div>
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-3xl">🏘️</span>
+                <h3 className="text-lg font-extrabold text-white">عروض رمضان</h3>
+              </div>
+              <p className="text-sm text-purple-200">أضف باقات إفطار وسحور وعروض خاصة</p>
+              <div className="mt-3 flex items-center gap-2">
+                <span className="bg-amber-400/20 text-amber-300 text-xs px-2 py-1 rounded-full">باقة إفطار</span>
+                <span className="bg-purple-400/20 text-purple-300 text-xs px-2 py-1 rounded-full">باقة سحور</span>
+                <span className="bg-emerald-400/20 text-emerald-300 text-xs px-2 py-1 rounded-full">عرض عائلي</span>
+              </div>
+            </Link>
+          )}
+
+          <Link to="/owner/stories" className="rounded-2xl shadow-lg hover:shadow-2xl transition transform hover:-translate-y-1 bg-gradient-to-br from-purple-50 to-white p-5 relative overflow-hidden">
+            <div className="absolute -top-1 -left-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-bold px-3 py-1 rounded-br-xl">
+              جديد ✨
+            </div>
+            <div className="flex items-center gap-3 mb-3">
+              <Camera className="w-8 h-8 text-purple-500" />
+              <h3 className="text-lg font-extrabold text-gray-900">ستوري الأسرة</h3>
+            </div>
+            <p className="text-sm text-gray-600">شارك طبخ اليوم وعروضك مع العملاء.</p>
           </Link>
         </div>
 
@@ -1020,6 +1190,124 @@ export const OwnerDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* ========== ستوري الأسرة ========== */}
+      <div className="px-4">
+        <div className="bg-gradient-to-br from-purple-600 via-fuchsia-600 to-pink-600 rounded-2xl p-5 text-white shadow-xl relative overflow-hidden">
+          {/* خلفية زخرفية */}
+          <div className="absolute inset-0 opacity-20">
+            <div className="absolute top-0 right-0 w-20 h-20 bg-white rounded-full -translate-y-1/2 translate-x-1/2" />
+            <div className="absolute bottom-0 left-0 w-16 h-16 bg-white rounded-full translate-y-1/2 -translate-x-1/2" />
+          </div>
+
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Camera className="w-6 h-6" />
+                <h2 className="text-lg font-bold">📸 ستوري الأسرة</h2>
+              </div>
+              <Link 
+                to="/owner/stories" 
+                className="bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg text-sm font-bold transition"
+              >
+                + أضف ستوري
+              </Link>
+            </div>
+            
+            <p className="text-white/80 text-sm mb-4">
+              شاركي قصتك مع عملائك! صور أكلاتك، مطبخك، وأجواء التحضير 🍳
+            </p>
+
+            {/* عرض الستوري الحالية */}
+            {stories.length === 0 ? (
+              <Link 
+                to="/owner/stories"
+                className="block bg-white/10 backdrop-blur rounded-xl p-6 text-center hover:bg-white/20 transition"
+              >
+                <div className="w-16 h-16 mx-auto mb-3 bg-white/20 rounded-full flex items-center justify-center">
+                  <Plus className="w-8 h-8" />
+                </div>
+                <p className="font-bold">أضيفي أول ستوري!</p>
+                <p className="text-white/70 text-sm mt-1">اجذبي عملاء جدد بصور لذيذة</p>
+              </Link>
+            ) : (
+              <div className="flex gap-3 overflow-x-auto pb-2 -mx-2 px-2">
+                {/* زر إضافة ستوري */}
+                <Link 
+                  to="/owner/stories"
+                  className="flex-shrink-0 w-20 h-28 bg-white/20 rounded-xl flex flex-col items-center justify-center hover:bg-white/30 transition"
+                >
+                  <div className="w-10 h-10 bg-white/30 rounded-full flex items-center justify-center mb-1">
+                    <Plus className="w-5 h-5" />
+                  </div>
+                  <span className="text-xs">جديد</span>
+                </Link>
+                
+                {/* الستوري الموجودة */}
+                {stories.slice(0, 4).map((story) => (
+                  <Link
+                    key={story.id}
+                    to="/owner/stories"
+                    className="flex-shrink-0 w-20 h-28 rounded-xl overflow-hidden relative group"
+                  >
+                    {story.type === 'text' ? (
+                      <div 
+                        className="w-full h-full flex items-center justify-center p-2"
+                        style={{ backgroundColor: story.backgroundColor || '#0ea5e9' }}
+                      >
+                        <p className="text-[10px] text-center line-clamp-3" style={{ color: story.textColor || '#fff' }}>
+                          {story.caption}
+                        </p>
+                      </div>
+                    ) : (
+                      <img 
+                        src={story.mediaUrl} 
+                        alt="" 
+                        className="w-full h-full object-cover"
+                      />
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                    <div className="absolute bottom-1 left-1 right-1">
+                      <div className="flex items-center gap-1 text-[10px]">
+                        <Eye className="w-3 h-3" />
+                        {story.viewsCount || 0}
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+                
+                {stories.length > 4 && (
+                  <Link 
+                    to="/owner/stories"
+                    className="flex-shrink-0 w-20 h-28 bg-white/20 rounded-xl flex flex-col items-center justify-center"
+                  >
+                    <span className="text-2xl font-bold">+{stories.length - 4}</span>
+                    <span className="text-xs">المزيد</span>
+                  </Link>
+                )}
+              </div>
+            )}
+
+            {/* إحصائيات الستوري */}
+            {stories.length > 0 && (
+              <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-white/20">
+                <div className="text-center">
+                  <p className="text-xl font-bold">{stories.length}</p>
+                  <p className="text-white/70 text-xs">ستوري نشطة</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xl font-bold">{stories.reduce((sum, s) => sum + (s.viewsCount || 0), 0)}</p>
+                  <p className="text-white/70 text-xs">إجمالي المشاهدات</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xl font-bold">24 س</p>
+                  <p className="text-white/70 text-xs">مدة الستوري</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* ========== الإحصائيات المالية ========== */}
       <div className="px-4">
         <div className="bg-gradient-to-br from-green-600 to-emerald-700 rounded-2xl p-5 text-white shadow-xl">
@@ -1185,6 +1473,7 @@ export const OwnerDashboard: React.FC = () => {
             <h3 className="font-bold text-gray-900">الإعدادات</h3>
             <p className="text-gray-500 text-xs mt-2">تعديل بيانات المتجر</p>
           </Link>
+
         </div>
       </div>
 
