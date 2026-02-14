@@ -146,15 +146,22 @@ export const RestaurantsPage: React.FC = () => {
       // 🔒 فلترة المطاعم المكتملة فقط (للعملاء والزوار)
       // الشروط: شعار + موقع + منتج واحد على الأقل
       const allRestaurants = rawRestaurants.filter(r => {
-        // المطور والمسؤول والمالك يرون كل المطاعم
+        // يجب أن يكون لديه منتج واحد على الأقل للظهور
+        const hasMenuItems = (menuItemsByRestaurant.get(r.id) || 0) > 0
+        
+        // إذا لا يوجد منتجات، لا يظهر لأحد
+        if (!hasMenuItems) {
+          return false
+        }
+        
+        // المطور والمسؤول والمالك يرون المطاعم التي لديها منتجات
         if (role === 'developer' || role === 'admin' || role === 'owner') {
           return true
         }
-        // للعملاء والمناديب: يجب أن يكون المطعم مكتمل
+        // للعملاء والمناديب: يجب أن يكون المطعم مكتمل (شعار + موقع + منتجات)
         const hasLogo = !!r.logoUrl
         const hasLocation = !!r.geoLocation
-        const hasMenuItems = (menuItemsByRestaurant.get(r.id) || 0) > 0
-        return hasLogo && hasLocation && hasMenuItems
+        return hasLogo && hasLocation
       })
       
       // ⭐ جلب المنتجات الأكثر طلبًا اليوم (أعلى 6 منتجات)
