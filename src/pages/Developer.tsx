@@ -7,17 +7,19 @@ import {
   Edit3, Save, X, ChevronDown, ChevronUp, Building2, Wallet, Package, Truck, UserPlus, Plus,
   FileCheck, AlertCircle, CheckCircle, Clock, ExternalLink, Search, Filter, SortAsc, SortDesc,
   Calendar, TrendingUp, TrendingDown, Activity, Zap, Crown, Star, Eye, BarChart3, PieChart,
-  ArrowUpRight, ArrowDownRight, Sparkles, Bell, Target, Award, Flame, Globe, Layers, Store
+  ArrowUpRight, ArrowDownRight, Sparkles, Bell, Target, Award, Flame, Globe, Layers, Store,
+  KeyRound, Mail, History
 } from 'lucide-react'
 import { useToast } from '@/components/ui/Toast'
 import { useDialog } from '@/components/ui/ConfirmDialog'
 import { db, app, auth } from '@/firebase'
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth'
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth'
 import { 
   collection, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, 
   serverTimestamp, addDoc, query, where, orderBy, limit 
 } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL, getStorage } from 'firebase/storage'
+import { addAuditLog, getUserLoginHistory, type LoginAttempt } from '@/utils/authService'
 
 // Firebase config للعرض
 const firebaseConfig = {
@@ -60,6 +62,14 @@ type User = {
   role: string
   phone?: string
   createdAt?: any
+  // معلومات الأمان وآخر تسجيل دخول
+  security?: {
+    lastLogin?: any
+    failedAttempts?: number
+    isDeactivated?: boolean
+    lockedUntil?: any
+  }
+  isActive?: boolean
 }
 
 type Restaurant = {
@@ -92,6 +102,7 @@ type Order = {
   courierId?: string
   platformFee?: number
   adminCommission?: number
+  courierPlatformFee?: number
   referredBy?: string
   createdAt?: any
 }
@@ -434,6 +445,74 @@ export const Developer: React.FC = () => {
     } catch (err) {
       console.error('خطأ:', err)
       toast.error(`فشل ${action} الحساب`)
+    }
+  }
+
+  // ===== إعادة تعيين كلمة المرور =====
+  const handleResetPassword = async (targetUser: User) => {
+    const confirmed = await dialog.confirm(
+      `سيتم إرسال رابط إعادة تعيين كلمة المرور إلى: ${targetUser.email}`,
+      { title: '🔑 إعادة تعيين كلمة المرور' }
+    )
+    if (!confirmed) return
+
+    try {
+      await sendPasswordResetEmail(auth, targetUser.email)
+      
+      // تسجيل في Audit Log
+      await addAuditLog({
+        action: 'password_reset_requested',
+        performedBy: user?.uid || '',
+        performedByName: user?.email || 'مطور',
+        targetUserId: targetUser.uid,
+        targetUserName: targetUser.name || targetUser.email,
+        details: 'تم إرسال رابط إعادة تعيين كلمة المرور من لوحة المطور'
+      })
+      
+      await logActivity(
+        'update',
+        'user',
+        targetUser.uid,
+        targetUser.name || targetUser.email,
+        'تم إرسال رابط إعادة تعيين كلمة المرور'
+      )
+      
+      toast.success('تم إرسال رابط إعادة تعيين كلمة المرور بنجاح 📧')
+    } catch (err: any) {
+      console.error('خطأ:', err)
+      if (err.code === 'auth/user-not-found') {
+        toast.error('لا يوجد حساب بهذا البريد الإلكتروني')
+      } else {
+        toast.error('فشل إرسال رابط إعادة التعيين')
+      }
+    }
+  }
+
+  // ===== عرض سجل تسجيل الدخول =====
+  const [loginHistoryModal, setLoginHistoryModal] = useState<{
+    isOpen: boolean
+    userId: string
+    userName: string
+    history: LoginAttempt[]
+    loading: boolean
+  }>({ isOpen: false, userId: '', userName: '', history: [], loading: false })
+
+  const handleViewLoginHistory = async (targetUser: User) => {
+    setLoginHistoryModal({
+      isOpen: true,
+      userId: targetUser.uid,
+      userName: targetUser.name || targetUser.email,
+      history: [],
+      loading: true
+    })
+    
+    try {
+      const history = await getUserLoginHistory(targetUser.uid, 20)
+      setLoginHistoryModal(prev => ({ ...prev, history, loading: false }))
+    } catch (err) {
+      console.error('خطأ في جلب سجل الدخول:', err)
+      setLoginHistoryModal(prev => ({ ...prev, loading: false }))
+      toast.error('فشل جلب سجل الدخول')
     }
   }
 
@@ -1388,6 +1467,148 @@ export const Developer: React.FC = () => {
                 </Link>
               </div>
             </div>
+
+            {/* أوقات الذروة */}
+            <div className="bg-white rounded-2xl shadow-lg p-6">
+              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-orange-500" />
+                أوقات الذروة
+              </h2>
+              <div className="grid grid-cols-6 md:grid-cols-12 gap-2">
+                {Array.from({ length: 24 }, (_, hour) => {
+                  const hourOrders = orders.filter(o => {
+                    const d = o.createdAt?.toDate?.() || new Date(o.createdAt)
+                    return d.getHours() === hour
+                  }).length
+                  const maxOrders = Math.max(...Array.from({ length: 24 }, (_, h) => 
+                    orders.filter(o => {
+                      const d = o.createdAt?.toDate?.() || new Date(o.createdAt)
+                      return d.getHours() === h
+                    }).length
+                  ), 1)
+                  const intensity = hourOrders / maxOrders
+                  return (
+                    <div 
+                      key={hour}
+                      className="text-center"
+                      title={`${hour}:00 - ${hourOrders} طلب`}
+                    >
+                      <div
+                        className={`h-16 rounded-lg mb-1 ${
+                          intensity > 0.8 ? 'bg-red-500' :
+                          intensity > 0.6 ? 'bg-orange-500' :
+                          intensity > 0.4 ? 'bg-yellow-500' :
+                          intensity > 0.2 ? 'bg-green-400' :
+                          intensity > 0 ? 'bg-green-200' : 'bg-gray-100'
+                        }`}
+                        style={{ opacity: Math.max(0.3, intensity) }}
+                      />
+                      <span className="text-xs text-gray-500">{hour}</span>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="flex items-center justify-center gap-4 mt-4 text-sm">
+                <span className="flex items-center gap-1"><div className="w-4 h-4 bg-red-500 rounded" /> ذروة عالية</span>
+                <span className="flex items-center gap-1"><div className="w-4 h-4 bg-orange-500 rounded" /> نشاط مرتفع</span>
+                <span className="flex items-center gap-1"><div className="w-4 h-4 bg-yellow-500 rounded" /> متوسط</span>
+                <span className="flex items-center gap-1"><div className="w-4 h-4 bg-green-400 rounded" /> منخفض</span>
+              </div>
+            </div>
+
+            {/* أفضل المطاعم */}
+            <div className="bg-white rounded-2xl shadow-lg p-6">
+              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <Award className="w-5 h-5 text-amber-500" />
+                أفضل 5 مطاعم (حسب الطلبات)
+              </h2>
+              <div className="space-y-3">
+                {restaurants
+                  .map(r => ({
+                    ...r,
+                    orderCount: orders.filter(o => o.restaurantId === r.id && o.status === 'delivered').length,
+                    revenue: orders.filter(o => o.restaurantId === r.id && o.status === 'delivered')
+                      .reduce((sum, o) => sum + (o.subtotal || 0), 0)
+                  }))
+                  .sort((a, b) => b.orderCount - a.orderCount)
+                  .slice(0, 5)
+                  .map((r, idx) => (
+                    <div key={r.id} className="flex items-center gap-4 p-3 bg-gray-50 rounded-xl">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${
+                        idx === 0 ? 'bg-amber-500' : idx === 1 ? 'bg-gray-400' : idx === 2 ? 'bg-amber-700' : 'bg-gray-300'
+                      }`}>
+                        {idx + 1}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-bold">{r.name}</p>
+                        <p className="text-sm text-gray-500">{r.city || 'غير محدد'}</p>
+                      </div>
+                      <div className="text-left">
+                        <p className="font-bold text-emerald-600">{r.orderCount} طلب</p>
+                        <p className="text-xs text-gray-500">{r.revenue.toFixed(0)} ر.س</p>
+                      </div>
+                    </div>
+                  ))
+                }
+                {restaurants.length === 0 && (
+                  <p className="text-center text-gray-500 py-4">لا توجد بيانات كافية</p>
+                )}
+              </div>
+            </div>
+
+            {/* إحصائيات المناديب */}
+            <div className="bg-white rounded-2xl shadow-lg p-6">
+              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <Truck className="w-5 h-5 text-cyan-500" />
+                أفضل 5 مناديب (حسب التوصيلات)
+              </h2>
+              <div className="space-y-3">
+                {(() => {
+                  // حساب توصيلات كل مندوب
+                  const courierStats = orders
+                    .filter(o => o.courierId && o.status === 'delivered')
+                    .reduce((acc, o) => {
+                      if (!acc[o.courierId!]) {
+                        acc[o.courierId!] = { deliveries: 0, earnings: 0 }
+                      }
+                      acc[o.courierId!].deliveries++
+                      acc[o.courierId!].earnings += (o.deliveryFee || 0) - (o.courierPlatformFee || 0)
+                      return acc
+                    }, {} as Record<string, { deliveries: number, earnings: number }>)
+
+                  const courierList = users
+                    .filter(u => u.role === 'courier' && courierStats[u.uid])
+                    .map(u => ({
+                      ...u,
+                      ...courierStats[u.uid]
+                    }))
+                    .sort((a, b) => b.deliveries - a.deliveries)
+                    .slice(0, 5)
+
+                  if (courierList.length === 0) {
+                    return <p className="text-center text-gray-500 py-4">لا توجد بيانات كافية</p>
+                  }
+
+                  return courierList.map((c, idx) => (
+                    <div key={c.uid} className="flex items-center gap-4 p-3 bg-gray-50 rounded-xl">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${
+                        idx === 0 ? 'bg-cyan-500' : idx === 1 ? 'bg-gray-400' : idx === 2 ? 'bg-cyan-700' : 'bg-gray-300'
+                      }`}>
+                        {idx + 1}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-bold">{c.name || 'مندوب'}</p>
+                        <p className="text-sm text-gray-500">{c.phone || c.email}</p>
+                      </div>
+                      <div className="text-left">
+                        <p className="font-bold text-cyan-600">{c.deliveries} توصيلة</p>
+                        <p className="text-xs text-gray-500">{c.earnings.toFixed(0)} ر.س</p>
+                      </div>
+                    </div>
+                  ))
+                })()}
+              </div>
+            </div>
           </div>
         )}
 
@@ -2326,48 +2547,83 @@ export const Developer: React.FC = () => {
                     ) : (
                       <>
                         <div className="flex items-start justify-between">
-                          <div>
-                            <div className="flex items-center gap-2">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <h3 className="font-bold">{u.name || 'بدون اسم'}</h3>
                               {(u as any).isActive === false && (
                                 <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">موقوف</span>
                               )}
+                              {u.security?.isDeactivated && (
+                                <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">🔒 محظور</span>
+                              )}
+                              {u.security?.lockedUntil && new Date(u.security.lockedUntil.toDate?.() || u.security.lockedUntil) > new Date() && (
+                                <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">⏱️ مقفل مؤقتاً</span>
+                              )}
                             </div>
                             <p className="text-sm text-gray-600">{u.email}</p>
+                            {u.phone && <p className="text-xs text-gray-500">📱 {u.phone}</p>}
                             <p className="text-xs mt-1">{roleLabel(u.role)}</p>
+                            {/* عرض آخر تسجيل دخول */}
+                            {u.security?.lastLogin && (
+                              <p className="text-xs text-gray-400 mt-1">
+                                🕐 آخر دخول: {new Date(u.security.lastLogin.toDate?.() || u.security.lastLogin).toLocaleString('ar-SA')}
+                              </p>
+                            )}
                           </div>
-                          <div className="flex gap-1">
-                            {/* زر تفعيل/إيقاف */}
-                            <button
-                              onClick={() => handleToggleUserStatus(u, (u as any).isActive !== false)}
-                              className={`p-1.5 rounded-lg ${
-                                (u as any).isActive === false 
-                                  ? 'bg-green-100 text-green-600' 
-                                  : 'bg-orange-100 text-orange-600'
-                              }`}
-                              title={(u as any).isActive === false ? 'تفعيل الحساب' : 'تعليق الحساب'}
-                            >
-                              {(u as any).isActive === false ? (
-                                <CheckCircle className="w-4 h-4" />
-                              ) : (
-                                <AlertCircle className="w-4 h-4" />
-                              )}
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEditingUser(u.uid)
-                                setUserForm(u)
-                              }}
-                              className="p-1.5 bg-blue-100 text-blue-600 rounded-lg"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteUser(u.uid)}
-                              className="p-1.5 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                          <div className="flex flex-col gap-1">
+                            <div className="flex gap-1">
+                              {/* زر تفعيل/إيقاف */}
+                              <button
+                                onClick={() => handleToggleUserStatus(u, (u as any).isActive !== false)}
+                                className={`p-1.5 rounded-lg ${
+                                  (u as any).isActive === false 
+                                    ? 'bg-green-100 text-green-600' 
+                                    : 'bg-orange-100 text-orange-600'
+                                }`}
+                                title={(u as any).isActive === false ? 'تفعيل الحساب' : 'تعليق الحساب'}
+                              >
+                                {(u as any).isActive === false ? (
+                                  <CheckCircle className="w-4 h-4" />
+                                ) : (
+                                  <AlertCircle className="w-4 h-4" />
+                                )}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingUser(u.uid)
+                                  setUserForm(u)
+                                }}
+                                className="p-1.5 bg-blue-100 text-blue-600 rounded-lg"
+                                title="تعديل"
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteUser(u.uid)}
+                                className="p-1.5 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
+                                title="حذف"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <div className="flex gap-1">
+                              {/* زر إعادة تعيين كلمة المرور */}
+                              <button
+                                onClick={() => handleResetPassword(u)}
+                                className="p-1.5 bg-amber-100 text-amber-600 rounded-lg hover:bg-amber-200 transition-colors"
+                                title="إعادة تعيين كلمة المرور"
+                              >
+                                <KeyRound className="w-4 h-4" />
+                              </button>
+                              {/* زر عرض سجل الدخول */}
+                              <button
+                                onClick={() => handleViewLoginHistory(u)}
+                                className="p-1.5 bg-violet-100 text-violet-600 rounded-lg hover:bg-violet-200 transition-colors"
+                                title="سجل تسجيل الدخول"
+                              >
+                                <History className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </>
@@ -2376,6 +2632,86 @@ export const Developer: React.FC = () => {
                 ))
               }
             </div>
+            )}
+
+            {/* نافذة سجل تسجيل الدخول */}
+            {loginHistoryModal.isOpen && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
+                  <div className="p-6 bg-gradient-to-r from-violet-500 to-purple-600 text-white">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <History className="w-6 h-6" />
+                        <div>
+                          <h2 className="text-xl font-bold">سجل تسجيل الدخول</h2>
+                          <p className="text-sm text-violet-100">{loginHistoryModal.userName}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setLoginHistoryModal(prev => ({ ...prev, isOpen: false }))}
+                        className="p-2 hover:bg-white/20 rounded-xl transition"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="p-6 overflow-y-auto max-h-[60vh]">
+                    {loginHistoryModal.loading ? (
+                      <div className="text-center py-8">
+                        <RefreshCw className="w-8 h-8 animate-spin mx-auto text-violet-500 mb-2" />
+                        <p className="text-gray-500">جارٍ التحميل...</p>
+                      </div>
+                    ) : loginHistoryModal.history.length === 0 ? (
+                      <div className="text-center py-8">
+                        <History className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                        <p className="text-gray-500">لا توجد سجلات دخول</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {loginHistoryModal.history.map((entry, idx) => (
+                          <div 
+                            key={entry.id || idx}
+                            className={`p-4 rounded-2xl border ${
+                              entry.status === 'success' 
+                                ? 'bg-green-50 border-green-200' 
+                                : entry.status === 'blocked'
+                                ? 'bg-red-50 border-red-200'
+                                : 'bg-orange-50 border-orange-200'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                {entry.status === 'success' ? (
+                                  <CheckCircle className="w-5 h-5 text-green-600" />
+                                ) : entry.status === 'blocked' ? (
+                                  <Shield className="w-5 h-5 text-red-600" />
+                                ) : (
+                                  <AlertCircle className="w-5 h-5 text-orange-600" />
+                                )}
+                                <span className={`font-medium ${
+                                  entry.status === 'success' 
+                                    ? 'text-green-700' 
+                                    : entry.status === 'blocked'
+                                    ? 'text-red-700'
+                                    : 'text-orange-700'
+                                }`}>
+                                  {entry.status === 'success' ? 'دخول ناجح' : entry.status === 'blocked' ? 'محظور' : 'محاولة فاشلة'}
+                                </span>
+                              </div>
+                              <span className="text-xs text-gray-500">
+                                {entry.timestamp ? new Date(entry.timestamp).toLocaleString('ar-SA') : '-'}
+                              </span>
+                            </div>
+                            {entry.errorMessage && (
+                              <p className="text-sm text-gray-600 mt-2">{entry.errorMessage}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         )}

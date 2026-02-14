@@ -1,12 +1,19 @@
 // src/pages/Login.tsx
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth'
 import { auth, db } from '@/firebase'
 import { doc, getDoc } from 'firebase/firestore'
 import { Link, useNavigate } from 'react-router-dom'
-import { Mail, Lock, LogIn, Sparkles, KeyRound, ArrowRight, Loader2 } from 'lucide-react'
+import { Mail, Lock, LogIn, Sparkles, KeyRound, ArrowRight, Loader2, AlertTriangle, Shield } from 'lucide-react'
 import { useDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
+import { 
+  checkRateLimitStatus, 
+  logLoginAttempt, 
+  recordFailedAttempt, 
+  resetFailedAttempts,
+  addAuditLog 
+} from '@/utils/authService'
 
 export const Login: React.FC = () => {
   const [email, setEmail] = useState('')
@@ -15,20 +22,76 @@ export const Login: React.FC = () => {
   const [showForgotPassword, setShowForgotPassword] = useState(false)
   const [resetEmail, setResetEmail] = useState('')
   const [resetLoading, setResetLoading] = useState(false)
+  // Rate limiting states
+  const [isBlocked, setIsBlocked] = useState(false)
+  const [blockedMessage, setBlockedMessage] = useState('')
+  const [remainingAttempts, setRemainingAttempts] = useState(5)
   const nav = useNavigate()
   const dialog = useDialog()
   const toast = useToast()
 
+  // التحقق من حالة Rate Limit عند تغيير الإيميل
+  useEffect(() => {
+    const checkStatus = async () => {
+      if (email && email.includes('@')) {
+        const status = await checkRateLimitStatus(email)
+        setIsBlocked(status.isBlocked)
+        setBlockedMessage(status.message || '')
+        setRemainingAttempts(status.remainingAttempts)
+      }
+    }
+    const debounce = setTimeout(checkStatus, 500)
+    return () => clearTimeout(debounce)
+  }, [email])
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // التحقق من Rate Limiting قبل المحاولة
+    const status = await checkRateLimitStatus(email)
+    if (status.isBlocked) {
+      dialog.error(status.message || 'تم تجاوز الحد الأقصى لمحاولات الدخول', {
+        title: 'الحساب محظور مؤقتاً'
+      })
+      setIsBlocked(true)
+      setBlockedMessage(status.message || '')
+      return
+    }
+    
     setLoading(true)
     try {
       const userCred = await signInWithEmailAndPassword(auth, email, password)
       const uid = userCred.user.uid
 
+      // تسجيل محاولة دخول ناجحة
+      await logLoginAttempt({
+        email: email.toLowerCase(),
+        status: 'success',
+        userId: uid,
+        userAgent: navigator.userAgent
+      })
+      
+      // إعادة تعيين عداد المحاولات الفاشلة
+      await resetFailedAttempts(uid)
+      
+      // تسجيل في Audit Log
+      await addAuditLog({
+        action: 'login_success',
+        performedBy: uid,
+        performedByName: email,
+        details: 'تسجيل دخول ناجح'
+      })
+
       const snap = await getDoc(doc(db, "users", uid))
       if (snap.exists()) {
         const userData = snap.data()
+        
+        // التحقق من إيقاف الحساب
+        if (userData.security?.isDeactivated) {
+          toast.error('هذا الحساب موقوف. تواصل مع الدعم للمساعدة.')
+          await auth.signOut()
+          return
+        }
 
         if (userData.role === "owner") {
           nav("/owner")
@@ -45,7 +108,46 @@ export const Login: React.FC = () => {
         dialog.warning('الحساب موجود في Auth لكن لا توجد له بيانات في Firestore')
       }
     } catch (e: any) {
-      dialog.error(e.message, { title: 'خطأ في تسجيل الدخول' })
+      // تسجيل محاولة دخول فاشلة
+      await logLoginAttempt({
+        email: email.toLowerCase(),
+        status: 'failed',
+        errorCode: e.code,
+        errorMessage: e.message,
+        userAgent: navigator.userAgent
+      })
+      
+      // تحديث عداد المحاولات الفاشلة
+      await recordFailedAttempt(email)
+      
+      // رسائل خطأ مخصصة باللغة العربية
+      let errorMessage = e.message
+      if (e.code === 'auth/user-not-found') {
+        errorMessage = 'لا يوجد حساب مسجل بهذا البريد الإلكتروني'
+      } else if (e.code === 'auth/wrong-password') {
+        errorMessage = 'كلمة المرور غير صحيحة'
+      } else if (e.code === 'auth/invalid-email') {
+        errorMessage = 'البريد الإلكتروني غير صحيح'
+      } else if (e.code === 'auth/too-many-requests') {
+        errorMessage = 'تم تجاوز الحد الأقصى لمحاولات الدخول. حاول لاحقاً.'
+      } else if (e.code === 'auth/invalid-credential') {
+        errorMessage = 'بيانات الدخول غير صحيحة. تحقق من البريد وكلمة المرور.'
+      }
+      
+      // تحديث حالة Rate Limiting
+      const newStatus = await checkRateLimitStatus(email)
+      setRemainingAttempts(newStatus.remainingAttempts)
+      if (newStatus.isBlocked) {
+        setIsBlocked(true)
+        setBlockedMessage(newStatus.message || '')
+      }
+      
+      dialog.error(errorMessage, { 
+        title: 'خطأ في تسجيل الدخول',
+        ...(newStatus.remainingAttempts > 0 && newStatus.remainingAttempts < 3 && {
+          description: `تبقى ${newStatus.remainingAttempts} محاولة قبل حظر الحساب مؤقتاً`
+        })
+      })
     } finally {
       setLoading(false)
     }
@@ -106,6 +208,30 @@ export const Login: React.FC = () => {
 
         {/* نموذج تسجيل الدخول */}
         <form onSubmit={submit} className="space-y-4">
+          {/* تحذير Rate Limiting */}
+          {isBlocked && (
+            <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 flex items-start gap-3">
+              <Shield className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-red-700 font-semibold text-sm">الحساب محظور مؤقتاً</p>
+                <p className="text-red-600 text-xs mt-1">{blockedMessage}</p>
+              </div>
+            </div>
+          )}
+          
+          {/* تحذير المحاولات المتبقية */}
+          {!isBlocked && remainingAttempts < 3 && remainingAttempts > 0 && (
+            <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-amber-700 font-semibold text-sm">تنبيه أمني</p>
+                <p className="text-amber-600 text-xs mt-1">
+                  تبقى {remainingAttempts} محاولة فقط قبل حظر الحساب مؤقتاً
+                </p>
+              </div>
+            </div>
+          )}
+          
           <div className="relative">
             <Mail className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-sky-400" />
             <input
@@ -144,12 +270,20 @@ export const Login: React.FC = () => {
           </div>
 
           <button
-            disabled={loading}
+            disabled={loading || isBlocked}
             className="w-full flex items-center justify-center gap-3 bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white font-bold p-4 rounded-2xl 
-                       shadow-xl shadow-sky-300/50 transition-all hover:scale-[1.02] hover:shadow-sky-400/50"
+                       shadow-xl shadow-sky-300/50 transition-all hover:scale-[1.02] hover:shadow-sky-400/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
             {loading ? (
-              <>جارٍ الدخول...</>
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                جارٍ الدخول...
+              </>
+            ) : isBlocked ? (
+              <>
+                <Shield className="w-5 h-5" />
+                محظور مؤقتاً
+              </>
             ) : (
               <>
                 <LogIn className="w-5 h-5" />

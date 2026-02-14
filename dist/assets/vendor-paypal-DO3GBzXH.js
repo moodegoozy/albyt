@@ -1,4 +1,4 @@
-import{r as f,R as A}from"./vendor-react-C_wfuX_s.js";/*!
+import{r as f,R as A}from"./vendor-react-COcEUdcw.js";/*!
  * react-paypal-js v8.9.2 (2025-10-02T20:17:55.069Z)
  * Copyright 2020-present, PayPal, Inc. All rights reserved.
  *

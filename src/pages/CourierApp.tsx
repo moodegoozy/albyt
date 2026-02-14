@@ -43,6 +43,8 @@ type CourierProfile = {
   bankAccountNumber?: string
   // حالة التوفر
   isAvailable?: boolean
+  // إعدادات الطاقة الاستيعابية
+  maxActiveOrders?: number // الحد الأقصى للطلبات النشطة (افتراضي: 3)
   // إحصائيات
   totalDeliveries?: number
   rating?: number
@@ -54,6 +56,9 @@ type CourierProfile = {
     warningCount: number
   }
 }
+
+// الحد الأقصى الافتراضي للطلبات النشطة للمندوب
+const DEFAULT_MAX_ACTIVE_ORDERS = 3
 
 type TabType = 'dashboard' | 'orders' | 'history' | 'earnings' | 'profile'
 
@@ -305,6 +310,20 @@ export const CourierApp: React.FC = () => {
       return
     }
     
+    // 🚫 التحقق من عدم تجاوز الحد الأقصى للطلبات النشطة
+    const maxOrders = profile?.maxActiveOrders || DEFAULT_MAX_ACTIVE_ORDERS
+    const activeOrdersCount = mine.filter(o => 
+      o.status === 'out_for_delivery' || o.status === 'accepted'
+    ).length
+    
+    if (activeOrdersCount >= maxOrders) {
+      dialog.warning(
+        `لديك ${activeOrdersCount} طلب نشط حالياً. الحد الأقصى هو ${maxOrders} طلبات.\n\nأكمل التوصيلات الحالية قبل استلام طلبات جديدة.`,
+        { title: '⚠️ تجاوزت الحد الأقصى للطلبات' }
+      )
+      return
+    }
+    
     const feeStr = deliveryFees[id]
     const fee = order.deliveryFeeSetBy ? (order.deliveryFee || 0) : parseFloat(feeStr)
     
@@ -312,6 +331,29 @@ export const CourierApp: React.FC = () => {
       toast.error('حدد رسوم التوصيل أولاً')
       return
     }
+
+    // ✅ الخطوة الأولى: التأكيد الأولي
+    const confirmStep1 = await dialog.confirm(
+      `هل تريد استلام هذا الطلب؟\n\n📍 ${order.address}\n💰 رسوم التوصيل: ${order.deliveryFeeSetBy ? order.deliveryFee : fee} ر.س`,
+      { 
+        title: '🚗 تأكيد استلام الطلب',
+        confirmText: 'نعم، متابعة',
+        cancelText: 'إلغاء'
+      }
+    )
+    if (!confirmStep1) return
+
+    // ✅ الخطوة الثانية: التأكيد النهائي
+    const confirmStep2 = await dialog.confirm(
+      `⚠️ تأكيد نهائي:\n\nباستلامك لهذا الطلب، أنت ملتزم بتوصيله في الوقت المحدد.\n\n• رسوم المنصة: ${COURIER_PLATFORM_FEE} ر.س ستُخصم من أرباحك\n• لديك حالياً ${activeOrdersCount + 1} من ${maxOrders} طلبات نشطة`,
+      { 
+        title: '⚡ التزام نهائي',
+        confirmText: '✓ أستلم الطلب الآن',
+        cancelText: 'تراجع',
+        dangerous: false
+      }
+    )
+    if (!confirmStep2) return
 
     setSavingFee(id)
     
@@ -510,6 +552,7 @@ export const CourierApp: React.FC = () => {
       bankName: profile?.bankName || '',
       bankAccountName: profile?.bankAccountName || '',
       bankAccountNumber: profile?.bankAccountNumber || '',
+      maxActiveOrders: profile?.maxActiveOrders || DEFAULT_MAX_ACTIVE_ORDERS,
     })
     setEditingProfile(true)
   }
@@ -1204,6 +1247,31 @@ export const CourierApp: React.FC = () => {
               />
             </div>
             
+            {/* إعدادات الطاقة الاستيعابية */}
+            <div className="border-t pt-4">
+              <h4 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
+                <Package className="w-4 h-4 text-orange-500" />
+                الطاقة الاستيعابية
+              </h4>
+              <div className="space-y-2">
+                <label className="text-sm text-gray-600">الحد الأقصى للطلبات النشطة</label>
+                <select
+                  value={tempProfile.maxActiveOrders || DEFAULT_MAX_ACTIVE_ORDERS}
+                  onChange={(e) => setTempProfile({ ...tempProfile, maxActiveOrders: parseInt(e.target.value) })}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-sky-400"
+                >
+                  <option value={1}>طلب واحد</option>
+                  <option value={2}>طلبان</option>
+                  <option value={3}>3 طلبات (افتراضي)</option>
+                  <option value={4}>4 طلبات</option>
+                  <option value={5}>5 طلبات</option>
+                </select>
+                <p className="text-xs text-gray-500">
+                  لن تتمكن من استلام طلبات جديدة حتى تنهي الطلبات النشطة
+                </p>
+              </div>
+            </div>
+
             <div className="border-t pt-4">
               <h4 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-green-500" />

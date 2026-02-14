@@ -245,7 +245,7 @@ export const OwnerDashboard: React.FC = () => {
       // جلب الطلبات
       const ordersQuery = query(
         collection(db, 'orders'),
-        where('restaurantId', '==', user.uid),
+        where('ownerId', '==', user.uid),
         orderBy('createdAt', 'desc')
       )
       const ordersSnap = await getDocs(ordersQuery)
