@@ -1,5 +1,5 @@
 // src/pages/EditRestaurant.tsx
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useMemo, useState, useRef } from "react"
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
 import { doc, getDoc, setDoc } from "firebase/firestore"
 import { db, storage } from "@/firebase"
@@ -72,6 +72,8 @@ export const EditRestaurant: React.FC = () => {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string>("")
   const [commercialFile, setCommercialFile] = useState<File | null>(null)
+  const [commercialPreview, setCommercialPreview] = useState<string>("") // معاينة صورة الترخيص
+  const licenseInputRef = useRef<HTMLInputElement>(null)
   const [loading, setLoading] = useState<boolean>(true)
   const [saving, setSaving] = useState<boolean>(false)
   const canSave = useMemo(() => !saving && !!user, [saving, user])
@@ -140,6 +142,13 @@ export const EditRestaurant: React.FC = () => {
     }
   }, [preview])
 
+  // نظافة معاينة الترخيص blob
+  useEffect(() => {
+    return () => {
+      if (commercialPreview) URL.revokeObjectURL(commercialPreview)
+    }
+  }, [commercialPreview])
+
   // ====== Handlers ======
   const onChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -154,6 +163,49 @@ export const EditRestaurant: React.FC = () => {
       setPreview(url)
     } else {
       setPreview("")
+    }
+  }
+
+  // 📱 معالج محسّن لاختيار صورة الترخيص (متوافق مع الجوال)
+  const onPickLicense = (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const f = e.target.files?.[0]
+      if (!f) {
+        setCommercialFile(null)
+        setCommercialPreview("")
+        return
+      }
+
+      // التحقق من نوع الملف
+      const isValidType = /^(image\/|application\/pdf)/.test(f.type)
+      if (!isValidType) {
+        toast.warning("📄 الملف يجب أن يكون صورة أو PDF")
+        if (licenseInputRef.current) licenseInputRef.current.value = ""
+        return
+      }
+
+      // التحقق من حجم الملف (5MB max)
+      const MAX_SIZE = 5 * 1024 * 1024
+      if (f.size > MAX_SIZE) {
+        toast.warning("📁 حجم الملف كبير، يرجى اختيار ملف أقل من 5MB")
+        if (licenseInputRef.current) licenseInputRef.current.value = ""
+        return
+      }
+
+      setCommercialFile(f)
+
+      // إنشاء معاينة للصور فقط
+      if (f.type.startsWith('image/')) {
+        const url = URL.createObjectURL(f)
+        setCommercialPreview(url)
+      } else {
+        setCommercialPreview("")
+      }
+
+      toast.success("✅ تم اختيار الملف بنجاح")
+    } catch (err) {
+      console.error('❌ خطأ في اختيار الملف:', err)
+      toast.error("حدث خطأ أثناء اختيار الملف")
     }
   }
 
@@ -279,7 +331,9 @@ export const EditRestaurant: React.FC = () => {
 
       // تنظيف الملفات
       if (preview) URL.revokeObjectURL(preview)
+      if (commercialPreview) URL.revokeObjectURL(commercialPreview)
       setPreview("")
+      setCommercialPreview("")
       setFile(null)
       setCommercialFile(null)
 
@@ -529,26 +583,52 @@ export const EditRestaurant: React.FC = () => {
               <ShieldCheck className="w-4 h-4 text-orange-500" />
               الرخصة التجارية
             </label>
-            <div className="flex items-center gap-3">
-              {form.commercialLicenseUrl && (
+            {/* عرض الترخيص الحالي أو المعاينة */}
+            <div className="flex flex-wrap items-center gap-3 mb-2">
+              {commercialPreview && (
+                <div className="w-20 h-20 rounded-lg overflow-hidden border bg-gray-100">
+                  <img
+                    src={commercialPreview}
+                    alt="معاينة الترخيص"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+              {form.commercialLicenseUrl && !commercialPreview && (
                 <a 
                   href={form.commercialLicenseUrl} 
                   target="_blank" 
                   rel="noopener noreferrer"
-                  className="text-sky-500 hover:text-sky-700 text-sm underline"
+                  className="flex items-center gap-2 bg-sky-50 text-sky-600 px-3 py-2 rounded-lg text-sm hover:bg-sky-100"
                 >
+                  <FileText className="w-4 h-4" />
                   عرض الملف الحالي
                 </a>
               )}
-              <input 
-                type="file" 
-                accept="image/*,.pdf" 
-                onChange={(e) => setCommercialFile(e.target.files?.[0] || null)}
-                className="text-sm"
-              />
             </div>
+
+            {/* زر اختيار الملف - محسّن للجوال */}
+            <div className="flex flex-col gap-2">
+              <label className="relative cursor-pointer">
+                <input 
+                  ref={licenseInputRef}
+                  type="file" 
+                  accept="image/*,application/pdf"
+                  capture="environment"
+                  onChange={onPickLicense}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                />
+                <div className="flex items-center justify-center gap-2 bg-sky-100 hover:bg-sky-200 text-sky-700 px-4 py-3 rounded-xl text-sm font-medium transition-colors">
+                  <FileText className="w-5 h-5" />
+                  {commercialFile ? 'تغيير الملف' : 'اختر صورة الترخيص'}
+                </div>
+              </label>
+              <p className="text-xs text-gray-500">📷 يمكنك التقاط صورة أو اختيار ملف (صورة أو PDF بحد أقصى 5MB)</p>
+            </div>
+
             {commercialFile && (
-              <div className="text-xs text-gray-600">
+              <div className="flex items-center gap-2 bg-green-50 text-green-700 px-3 py-2 rounded-lg text-sm mt-2">
+                <CheckCircle className="w-4 h-4" />
                 سيتم رفع: <span className="font-semibold">{commercialFile.name}</span>
               </div>
             )}

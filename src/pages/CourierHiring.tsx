@@ -74,7 +74,7 @@ export const CourierHiring: React.FC = () => {
   if (loading) return <div className="text-center py-10 text-sky-600">⏳ تحميل المطاعم...</div>
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-100 py-8 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-200 via-slate-100 to-slate-200 py-8 px-4">
       <h1 className="text-2xl sm:text-3xl font-extrabold text-sky-600 text-center mb-8 flex items-center justify-center gap-2">
         <Briefcase className="w-7 h-7 text-sky-500" />
         طلبات التوظيف

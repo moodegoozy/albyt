@@ -371,6 +371,32 @@ export const CheckoutPage: React.FC = () => {
       }
     }
 
+    // 🔔 إرسال إشعارات للمطعم والعميل
+    try {
+      const { notifyRestaurantNewOrder, notifyOrderCreated } = await import('@/utils/notificationService')
+      
+      // إشعار للمطعم
+      await notifyRestaurantNewOrder(
+        restId,
+        orderRef.id,
+        user.displayName || 'عميل',
+        total,
+        items.reduce((sum, i) => sum + i.qty, 0)
+      )
+      
+      // إشعار للعميل
+      await notifyOrderCreated(
+        user.uid,
+        orderRef.id,
+        restaurant?.name || 'المطعم',
+        total
+      )
+      
+      console.log('✅ تم إرسال إشعارات الطلب الجديد')
+    } catch (notifErr) {
+      console.warn('⚠️ فشل إرسال الإشعارات:', notifErr)
+    }
+
     clear()
     nav('/orders')
     } catch (err) {
@@ -548,6 +574,32 @@ export const CheckoutPage: React.FC = () => {
         } catch (err) {
           console.warn('Error updating offer usage count:', err)
         }
+      }
+
+      // 🔔 إرسال إشعارات للمطعم والعميل
+      try {
+        const { notifyRestaurantNewOrder, notifyOrderCreated } = await import('@/utils/notificationService')
+        
+        // إشعار للمطعم
+        await notifyRestaurantNewOrder(
+          restId,
+          orderRef.id,
+          user.displayName || 'عميل',
+          total,
+          items.reduce((sum, i) => sum + i.qty, 0)
+        )
+        
+        // إشعار للعميل
+        await notifyOrderCreated(
+          user.uid,
+          orderRef.id,
+          restaurant?.name || 'المطعم',
+          total
+        )
+        
+        console.log('✅ تم إرسال إشعارات الطلب الجديد')
+      } catch (notifErr) {
+        console.warn('⚠️ فشل إرسال الإشعارات:', notifErr)
       }
 
       clear()

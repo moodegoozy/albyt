@@ -495,3 +495,50 @@ export async function notifyOrderCreated(
     priority: 'high',
   })
 }
+
+/**
+ * 🔔 إشعار للمطعم: طلب جديد 📦
+ * يُرسل عند إنشاء طلب جديد من عميل
+ */
+export async function notifyRestaurantNewOrder(
+  restaurantId: string,
+  orderId: string,
+  customerName: string,
+  totalAmount: number,
+  itemsCount: number
+): Promise<void> {
+  await sendSmartNotification({
+    type: 'order_new',
+    recipientId: restaurantId,
+    recipientType: 'owner',
+    title: '🔔 طلب جديد!',
+    message: `${customerName} طلب ${itemsCount} منتج بقيمة ${totalAmount.toFixed(2)} ر.س`,
+    orderId,
+    actionType: 'order',
+    actionUrl: `/restaurant/orders`,
+    priority: 'high',
+  })
+}
+
+/**
+ * 💬 إشعار: رسالة جديدة في المحادثة
+ */
+export async function notifyNewMessage(
+  recipientId: string,
+  recipientType: 'customer' | 'owner' | 'courier',
+  senderName: string,
+  orderId: string,
+  messagePreview: string
+): Promise<void> {
+  await sendSmartNotification({
+    type: 'order_new', // نستخدم نفس النوع للرسائل
+    recipientId,
+    recipientType,
+    title: `💬 رسالة من ${senderName}`,
+    message: messagePreview.length > 50 ? messagePreview.substring(0, 50) + '...' : messagePreview,
+    orderId,
+    actionType: 'order',
+    actionUrl: `/chat?orderId=${orderId}`,
+    priority: 'high',
+  })
+}

@@ -112,7 +112,7 @@ export const OwnerRegister: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-orange-50 px-4 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-200 via-slate-100 to-slate-200 px-4 py-8">
       <div className="max-w-md mx-auto">
         
         {/* ═══════════════════════════════════════════════════ */}

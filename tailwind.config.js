@@ -7,6 +7,8 @@ export default {
         sans: ['Cairo', 'Tajawal', 'system-ui', 'sans-serif'],
       },
       colors: {
+        // تغيير الأبيض إلى رمادي فاتح
+        white: '#f1f5f9', // slate-100
         primary: '#0EA5E9',      // 💎 سماوي فاخر
         secondary: '#F0F9FF',    // ⚪ أبيض سماوي خفيف
         accent: '#38BDF8',       // ✨ سماوي لامع

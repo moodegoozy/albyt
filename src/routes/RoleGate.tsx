@@ -4,7 +4,7 @@ import { Navigate } from 'react-router-dom'
 import { useAuth } from '@/auth'
 
 // وحّد نوع الدور مع كل الأدوار المستخدمة في التطبيق
-export type Role = 'owner' | 'courier' | 'customer' | 'admin' | 'developer'
+export type Role = 'owner' | 'courier' | 'customer' | 'admin' | 'developer' | 'supervisor' | 'social_media' | 'support' | 'accountant'
 
 type Props = {
   allow: Role[]

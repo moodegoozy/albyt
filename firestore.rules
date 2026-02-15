@@ -457,6 +457,15 @@ service cloud.firestore {
       // الحذف: صاحب الأسرة أو المطور
       allow delete: if isDeveloper() || (isOwner() && resource.data.ownerId == request.auth.uid);
     }
+
+    /* ===== activityLogs (سجل نشاطات الموظفين) ===== */
+    match /activityLogs/{logId} {
+      // القراءة: المطور والمشرفين فقط
+      allow read: if isDeveloper() || isAdmin();
+      // الكتابة: المطور فقط
+      allow create: if isDeveloper();
+      allow update, delete: if isDeveloper();
+    }
   }
 }
 

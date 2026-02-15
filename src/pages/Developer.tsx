@@ -150,7 +150,24 @@ type ActivityLog = {
 }
 
 // تبويبات اللوحة
-type Tab = 'overview' | 'restaurants' | 'orders' | 'users' | 'couriers' | 'admins' | 'settings' | 'finance' | 'tools' | 'tasks' | 'licenses' | 'packages' | 'storeAnalytics' | 'packageSettings' | 'activityLog'
+type Tab = 'overview' | 'restaurants' | 'orders' | 'users' | 'couriers' | 'admins' | 'employees' | 'settings' | 'finance' | 'tools' | 'tasks' | 'licenses' | 'packages' | 'storeAnalytics' | 'packageSettings' | 'activityLog'
+
+// أدوار الموظفين
+type EmployeeRole = 'supervisor' | 'support' | 'social_media' | 'admin' | 'accountant'
+
+// نوع الموظف
+type Employee = {
+  uid: string
+  email: string
+  name?: string
+  phone?: string
+  role: EmployeeRole
+  isActive: boolean
+  permissions?: string[]
+  createdAt?: any
+  createdBy?: string
+  updatedAt?: any
+}
 
 // نوع طلب الباقة
 type PackageRequest = {
@@ -261,11 +278,24 @@ export const Developer: React.FC = () => {
   const [loadingLogs, setLoadingLogs] = useState(false)
   const [logFilter, setLogFilter] = useState<string>('all')
 
+  // إدارة الموظفين
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [showAddEmployee, setShowAddEmployee] = useState(false)
+  const [newEmployeeEmail, setNewEmployeeEmail] = useState('')
+  const [newEmployeeName, setNewEmployeeName] = useState('')
+  const [newEmployeePassword, setNewEmployeePassword] = useState('')
+  const [newEmployeePhone, setNewEmployeePhone] = useState('')
+  const [newEmployeeRole, setNewEmployeeRole] = useState<EmployeeRole>('support')
+  const [creatingEmployee, setCreatingEmployee] = useState(false)
+  const [editingEmployee, setEditingEmployee] = useState<string | null>(null)
+  const [selectedNewRole, setSelectedNewRole] = useState<EmployeeRole>('support')
+  const [employeeFilter, setEmployeeFilter] = useState<string>('all')
+
   // ===== فلاتر وبحث متقدم =====
   const [searchQuery, setSearchQuery] = useState('')
   const [restaurantFilter, setRestaurantFilter] = useState<'all' | 'premium' | 'free' | 'verified' | 'unverified'>('all')
   const [orderFilter, setOrderFilter] = useState<'all' | 'pending' | 'delivered' | 'cancelled'>('all')
-  const [userFilter, setUserFilter] = useState<'all' | 'customer' | 'owner' | 'courier' | 'admin'>('all')
+  const [userFilter, setUserFilter] = useState<'all' | 'customer' | 'owner' | 'courier' | 'admin' | 'supervisor' | 'social_media' | 'support' | 'accountant'>('all')
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'name' | 'revenue'>('newest')
   const [dateRange, setDateRange] = useState<'today' | 'week' | 'month' | 'all'>('all')
   
@@ -603,6 +633,210 @@ export const Developer: React.FC = () => {
       console.warn('فشل تحميل سجل العمليات:', err)
     } finally {
       setLoadingLogs(false)
+    }
+  }
+
+  // ===== تحميل الموظفين =====
+  const loadEmployees = async () => {
+    try {
+      const employeeRoles = ['supervisor', 'support', 'social_media', 'admin', 'accountant']
+      const allEmployees: Employee[] = []
+      
+      for (const u of users) {
+        if (employeeRoles.includes(u.role)) {
+          allEmployees.push({
+            uid: u.uid,
+            email: u.email,
+            name: u.name,
+            phone: u.phone,
+            role: u.role as EmployeeRole,
+            isActive: u.isActive !== false && !u.security?.isDeactivated,
+            createdAt: u.createdAt,
+          })
+        }
+      }
+      setEmployees(allEmployees)
+    } catch (err) {
+      console.warn('خطأ في تحميل الموظفين:', err)
+    }
+  }
+
+  // تحميل الموظفين عند تغيير المستخدمين
+  useEffect(() => {
+    if (users.length > 0) {
+      loadEmployees()
+    }
+  }, [users])
+
+  // ===== إنشاء موظف جديد =====
+  const handleCreateEmployee = async () => {
+    if (!newEmployeeEmail.trim() || !newEmployeePassword.trim()) {
+      toast.warning('أدخل البريد الإلكتروني وكلمة المرور')
+      return
+    }
+    if (newEmployeePassword.length < 6) {
+      toast.warning('كلمة المرور يجب أن تكون 6 أحرف على الأقل')
+      return
+    }
+
+    const roleLabels: Record<EmployeeRole, string> = {
+      supervisor: 'مشرف',
+      support: 'دعم فني',
+      social_media: 'سوشيال ميديا',
+      admin: 'إدارة',
+      accountant: 'محاسب'
+    }
+
+    const confirmed = await dialog.confirm(
+      `سيتم إنشاء حساب موظف جديد:\n\n📧 ${newEmployeeEmail}\n👤 ${newEmployeeName || 'بدون اسم'}\n🎭 ${roleLabels[newEmployeeRole]}\n\nملاحظة: سيتم تسجيل خروجك مؤقتاً.`,
+      { title: 'إنشاء موظف جديد' }
+    )
+    if (!confirmed) return
+
+    setCreatingEmployee(true)
+    try {
+      const userCred = await createUserWithEmailAndPassword(auth, newEmployeeEmail.trim(), newEmployeePassword)
+      const newUid = userCred.user.uid
+
+      await setDoc(doc(db, 'users', newUid), {
+        email: newEmployeeEmail.trim(),
+        name: newEmployeeName.trim() || 'موظف جديد',
+        phone: newEmployeePhone.trim() || '',
+        role: newEmployeeRole,
+        isActive: true,
+        createdAt: serverTimestamp(),
+        createdBy: user?.uid,
+      })
+
+      // إنشاء محفظة للموظف
+      if (['supervisor', 'admin', 'accountant'].includes(newEmployeeRole)) {
+        await setDoc(doc(db, 'wallets', newUid), {
+          balance: 0,
+          totalEarnings: 0,
+          totalWithdrawn: 0,
+          transactions: [],
+          updatedAt: serverTimestamp(),
+        })
+      }
+
+      // تسجيل العملية
+      await addDoc(collection(db, 'activityLogs'), {
+        action: 'create',
+        targetType: 'user',
+        targetId: newUid,
+        targetName: newEmployeeName.trim() || newEmployeeEmail,
+        performedBy: user?.uid,
+        performedByName: user?.email,
+        details: `إنشاء موظف جديد - ${roleLabels[newEmployeeRole]}`,
+        createdAt: serverTimestamp(),
+      })
+
+      toast.success('تم إنشاء حساب الموظف بنجاح ✅')
+      toast.info('⚠️ تم تسجيل خروجك، يرجى تسجيل الدخول مرة أخرى')
+      
+      setNewEmployeeEmail('')
+      setNewEmployeeName('')
+      setNewEmployeePassword('')
+      setNewEmployeePhone('')
+      setNewEmployeeRole('support')
+      setShowAddEmployee(false)
+      
+    } catch (err: any) {
+      console.error('خطأ في إنشاء الموظف:', err)
+      if (err.code === 'auth/email-already-in-use') {
+        toast.error('البريد الإلكتروني مستخدم مسبقاً')
+      } else if (err.code === 'auth/invalid-email') {
+        toast.error('البريد الإلكتروني غير صالح')
+      } else {
+        toast.error('فشل إنشاء الموظف')
+      }
+    } finally {
+      setCreatingEmployee(false)
+    }
+  }
+
+  // ===== تغيير دور الموظف =====
+  const handleChangeEmployeeRole = async (employeeUid: string, newRole: EmployeeRole) => {
+    const employee = employees.find(e => e.uid === employeeUid)
+    if (!employee) return
+
+    const roleLabels: Record<EmployeeRole, string> = {
+      supervisor: 'مشرف',
+      support: 'دعم فني',
+      social_media: 'سوشيال ميديا',
+      admin: 'إدارة',
+      accountant: 'محاسب'
+    }
+
+    try {
+      await updateDoc(doc(db, 'users', employeeUid), {
+        role: newRole,
+        updatedAt: serverTimestamp(),
+      })
+
+      await addDoc(collection(db, 'activityLogs'), {
+        action: 'role_change',
+        targetType: 'user',
+        targetId: employeeUid,
+        targetName: employee.name || employee.email,
+        performedBy: user?.uid,
+        performedByName: user?.email,
+        oldValue: employee.role,
+        newValue: newRole,
+        details: `تغيير الدور من ${roleLabels[employee.role]} إلى ${roleLabels[newRole]}`,
+        createdAt: serverTimestamp(),
+      })
+
+      setEmployees(prev => prev.map(e => 
+        e.uid === employeeUid ? { ...e, role: newRole } : e
+      ))
+      setEditingEmployee(null)
+      toast.success('تم تغيير الدور بنجاح ✅')
+    } catch (err) {
+      console.error('خطأ:', err)
+      toast.error('فشل تغيير الدور')
+    }
+  }
+
+  // ===== تفعيل/إيقاف الموظف =====
+  const handleToggleEmployeeStatus = async (employeeUid: string) => {
+    const employee = employees.find(e => e.uid === employeeUid)
+    if (!employee) return
+
+    const newStatus = !employee.isActive
+    const action = newStatus ? 'تفعيل' : 'إيقاف'
+
+    const confirmed = await dialog.confirm(
+      `هل تريد ${action} حساب ${employee.name || employee.email}؟`,
+      { title: `${action} الحساب` }
+    )
+    if (!confirmed) return
+
+    try {
+      await updateDoc(doc(db, 'users', employeeUid), {
+        isActive: newStatus,
+        'security.isDeactivated': !newStatus,
+        updatedAt: serverTimestamp(),
+      })
+
+      await addDoc(collection(db, 'activityLogs'), {
+        action: newStatus ? 'activate' : 'deactivate',
+        targetType: 'user',
+        targetId: employeeUid,
+        targetName: employee.name || employee.email,
+        performedBy: user?.uid,
+        performedByName: user?.email,
+        details: `${action} حساب الموظف`,
+        createdAt: serverTimestamp(),
+      })
+
+      setEmployees(prev => prev.map(e => 
+        e.uid === employeeUid ? { ...e, isActive: newStatus } : e
+      ))
+      toast.success(`تم ${action} الحساب بنجاح ✅`)
+    } catch (err) {
+      console.error('خطأ:', err)
+      toast.error(`فشل ${action} الحساب`)
     }
   }
 
@@ -1103,6 +1337,10 @@ export const Developer: React.FC = () => {
       case 'courier': return '🚗 مندوب'
       case 'admin': return '👑 مشرف'
       case 'developer': return '👨‍💻 مطور'
+      case 'supervisor': return '👩‍💼 مشرفة مطاعم'
+      case 'social_media': return '📱 سوشيال ميديا'
+      case 'support': return '🎧 دعم فني'
+      case 'accountant': return '💰 محاسب'
       default: return role
     }
   }
@@ -1210,6 +1448,7 @@ export const Developer: React.FC = () => {
               { id: 'users', label: 'المستخدمين', icon: <Users className="w-4 h-4" /> },
               { id: 'couriers', label: 'المناديب', icon: <Truck className="w-4 h-4" /> },
               { id: 'admins', label: 'المشرفين', icon: <Crown className="w-4 h-4" /> },
+              { id: 'employees', label: 'الموظفين', icon: <UserPlus className="w-4 h-4" /> },
               { id: 'tasks', label: 'المهام', icon: <Target className="w-4 h-4" /> },
               { id: 'activityLog', label: 'السجل', icon: <Clock className="w-4 h-4" /> },
               { id: 'settings', label: 'الإعدادات', icon: <Settings className="w-4 h-4" /> },
@@ -2451,7 +2690,11 @@ export const Developer: React.FC = () => {
                   { value: 'customer', label: 'عميل', icon: '🛒' },
                   { value: 'owner', label: 'مطعم', icon: '🏪' },
                   { value: 'courier', label: 'مندوب', icon: '🚗' },
-                  { value: 'admin', label: 'مشرف', icon: '👑' }
+                  { value: 'admin', label: 'مشرف', icon: '👑' },
+                  { value: 'supervisor', label: 'مشرفة مطاعم', icon: '👩‍💼' },
+                  { value: 'social_media', label: 'سوشيال ميديا', icon: '📱' },
+                  { value: 'support', label: 'دعم فني', icon: '🎧' },
+                  { value: 'accountant', label: 'محاسب', icon: '💰' }
                 ].map(filter => (
                   <button
                     key={filter.value}
@@ -2527,6 +2770,10 @@ export const Developer: React.FC = () => {
                           <option value="owner">صاحب مطعم</option>
                           <option value="courier">مندوب</option>
                           <option value="admin">مشرف</option>
+                          <option value="supervisor">مشرفة مطاعم</option>
+                          <option value="social_media">مسؤولة سوشيال ميديا</option>
+                          <option value="support">دعم فني</option>
+                          <option value="accountant">محاسب</option>
                           <option value="developer">مطور</option>
                         </select>
                         <div className="flex gap-2">
@@ -3252,6 +3499,349 @@ export const Developer: React.FC = () => {
                   <p className="mt-2">• <strong>إذا المطعم مضاف من المطور:</strong></p>
                   <ul className="mr-6 list-disc text-sm">
                     <li>التطبيق يحصل على كل شيء: 5 × 1.75 = <strong>{(5 * 1.75).toFixed(2)} ر.س</strong></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ===== الموظفين ===== */}
+        {activeTab === 'employees' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <h2 className="text-xl font-bold">👥 إدارة الموظفين ({employees.length})</h2>
+              <button
+                onClick={() => setShowAddEmployee(!showAddEmployee)}
+                className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-5 py-2.5 rounded-xl font-semibold transition shadow-lg"
+              >
+                <UserPlus className="w-5 h-5" />
+                {showAddEmployee ? 'إلغاء' : 'إضافة موظف'}
+              </button>
+            </div>
+
+            {/* نموذج إضافة موظف */}
+            {showAddEmployee && (
+              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-6 border-2 border-indigo-200 shadow-lg">
+                <h3 className="text-lg font-bold text-indigo-800 mb-4 flex items-center gap-2">
+                  <UserPlus className="w-6 h-6" />
+                  إنشاء حساب موظف جديد
+                </h3>
+                
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-sm font-semibold text-gray-700 block mb-1">البريد الإلكتروني *</label>
+                    <input
+                      type="email"
+                      placeholder="employee@example.com"
+                      value={newEmployeeEmail}
+                      onChange={e => setNewEmployeeEmail(e.target.value)}
+                      className="w-full border-2 border-indigo-200 rounded-xl p-3 text-gray-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-gray-700 block mb-1">كلمة المرور *</label>
+                    <input
+                      type="password"
+                      placeholder="6 أحرف على الأقل"
+                      value={newEmployeePassword}
+                      onChange={e => setNewEmployeePassword(e.target.value)}
+                      className="w-full border-2 border-indigo-200 rounded-xl p-3 text-gray-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-gray-700 block mb-1">الاسم</label>
+                    <input
+                      type="text"
+                      placeholder="اسم الموظف"
+                      value={newEmployeeName}
+                      onChange={e => setNewEmployeeName(e.target.value)}
+                      className="w-full border-2 border-indigo-200 rounded-xl p-3 text-gray-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-gray-700 block mb-1">رقم الهاتف</label>
+                    <input
+                      type="tel"
+                      placeholder="05xxxxxxxx"
+                      value={newEmployeePhone}
+                      onChange={e => setNewEmployeePhone(e.target.value)}
+                      className="w-full border-2 border-indigo-200 rounded-xl p-3 text-gray-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-sm font-semibold text-gray-700 block mb-2">الدور الوظيفي *</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      {[
+                        { id: 'supervisor', label: '👤 مشرف', color: 'amber' },
+                        { id: 'support', label: '🎧 دعم فني', color: 'blue' },
+                        { id: 'social_media', label: '📱 سوشيال', color: 'pink' },
+                        { id: 'admin', label: '🔧 إدارة', color: 'purple' },
+                        { id: 'accountant', label: '💰 محاسب', color: 'green' },
+                      ].map(role => (
+                        <button
+                          key={role.id}
+                          onClick={() => setNewEmployeeRole(role.id as EmployeeRole)}
+                          className={`px-4 py-2.5 rounded-xl font-medium transition-all ${
+                            newEmployeeRole === role.id
+                              ? `bg-${role.color}-500 text-white shadow-lg`
+                              : 'bg-white text-gray-700 border-2 border-gray-200 hover:border-indigo-300'
+                          }`}
+                        >
+                          {role.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleCreateEmployee}
+                  disabled={creatingEmployee || !newEmployeeEmail.trim() || !newEmployeePassword.trim()}
+                  className="mt-6 w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white py-3.5 rounded-xl font-bold transition disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg"
+                >
+                  {creatingEmployee ? (
+                    <>
+                      <RefreshCw className="w-5 h-5 animate-spin" />
+                      جاري الإنشاء...
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus className="w-5 h-5" />
+                      إنشاء الحساب
+                    </>
+                  )}
+                </button>
+                
+                <p className="text-xs text-orange-600 mt-3 bg-orange-50 p-2 rounded-lg">
+                  ⚠️ تنبيه: بعد إنشاء الموظف، سيتم تسجيل خروجك مؤقتاً. يرجى تسجيل الدخول مرة أخرى.
+                </p>
+              </div>
+            )}
+
+            {/* فلتر الموظفين */}
+            <div className="flex flex-wrap gap-2">
+              {[
+                { id: 'all', label: 'الكل' },
+                { id: 'supervisor', label: '👤 مشرفين' },
+                { id: 'support', label: '🎧 دعم فني' },
+                { id: 'social_media', label: '📱 سوشيال' },
+                { id: 'admin', label: '🔧 إدارة' },
+                { id: 'accountant', label: '💰 محاسبين' },
+                { id: 'active', label: '✅ نشط' },
+                { id: 'inactive', label: '⛔ متوقف' },
+              ].map(filter => (
+                <button
+                  key={filter.id}
+                  onClick={() => setEmployeeFilter(filter.id)}
+                  className={`px-4 py-2 rounded-xl font-medium transition ${
+                    employeeFilter === filter.id
+                      ? 'bg-indigo-500 text-white shadow'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:border-indigo-300'
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+
+            {/* قائمة الموظفين */}
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {employees
+                .filter(e => {
+                  if (employeeFilter === 'all') return true
+                  if (employeeFilter === 'active') return e.isActive
+                  if (employeeFilter === 'inactive') return !e.isActive
+                  return e.role === employeeFilter
+                })
+                .map(employee => {
+                  const roleInfo: Record<EmployeeRole, { label: string; emoji: string; color: string }> = {
+                    supervisor: { label: 'مشرف', emoji: '👤', color: 'amber' },
+                    support: { label: 'دعم فني', emoji: '🎧', color: 'blue' },
+                    social_media: { label: 'سوشيال ميديا', emoji: '📱', color: 'pink' },
+                    admin: { label: 'إدارة', emoji: '🔧', color: 'purple' },
+                    accountant: { label: 'محاسب', emoji: '💰', color: 'green' },
+                  }
+                  const info = roleInfo[employee.role] || { label: employee.role, emoji: '👤', color: 'gray' }
+
+                  return (
+                    <div 
+                      key={employee.uid}
+                      className={`bg-white rounded-2xl shadow-lg overflow-hidden border-2 transition-all ${
+                        employee.isActive ? 'border-gray-100 hover:border-indigo-200' : 'border-red-200 bg-red-50/50'
+                      }`}
+                    >
+                      {/* الهيدر */}
+                      <div className={`bg-gradient-to-r from-${info.color}-500 to-${info.color}-600 px-4 py-3 text-white`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl">{info.emoji}</span>
+                            <span className="font-bold">{info.label}</span>
+                          </div>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                            employee.isActive ? 'bg-white/20' : 'bg-red-100 text-red-700'
+                          }`}>
+                            {employee.isActive ? '✅ نشط' : '⛔ متوقف'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* المحتوى */}
+                      <div className="p-4">
+                        <h3 className="font-bold text-lg text-gray-900">{employee.name || 'بدون اسم'}</h3>
+                        <p className="text-sm text-gray-500 flex items-center gap-1">
+                          <Mail className="w-3.5 h-3.5" />
+                          {employee.email}
+                        </p>
+                        {employee.phone && (
+                          <p className="text-sm text-gray-500 mt-1">📱 {employee.phone}</p>
+                        )}
+
+                        {/* تغيير الدور */}
+                        {editingEmployee === employee.uid ? (
+                          <div className="mt-4 space-y-2">
+                            <label className="text-xs font-semibold text-gray-600">تغيير الدور:</label>
+                            <select
+                              value={selectedNewRole}
+                              onChange={e => setSelectedNewRole(e.target.value as EmployeeRole)}
+                              className="w-full border-2 border-indigo-200 rounded-xl p-2.5 text-gray-900 focus:border-indigo-400"
+                            >
+                              <option value="supervisor">👤 مشرف</option>
+                              <option value="support">🎧 دعم فني</option>
+                              <option value="social_media">📱 سوشيال ميديا</option>
+                              <option value="admin">🔧 إدارة</option>
+                              <option value="accountant">💰 محاسب</option>
+                            </select>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleChangeEmployeeRole(employee.uid, selectedNewRole)}
+                                disabled={selectedNewRole === employee.role}
+                                className={`flex-1 py-2 rounded-xl text-sm font-bold transition ${
+                                  selectedNewRole === employee.role
+                                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                    : 'bg-green-500 hover:bg-green-600 text-white'
+                                }`}
+                              >
+                                ✅ حفظ
+                              </button>
+                              <button
+                                onClick={() => setEditingEmployee(null)}
+                                className="flex-1 py-2 rounded-xl text-sm font-medium bg-gray-100 hover:bg-gray-200 text-gray-600 transition"
+                              >
+                                ❌ إلغاء
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-4 flex gap-2">
+                            <button
+                              onClick={() => { setEditingEmployee(employee.uid); setSelectedNewRole(employee.role); }}
+                              className="flex-1 flex items-center justify-center gap-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 py-2 rounded-xl text-sm font-medium transition"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                              تغيير الدور
+                            </button>
+                            <button
+                              onClick={() => handleToggleEmployeeStatus(employee.uid)}
+                              className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-xl text-sm font-medium transition ${
+                                employee.isActive
+                                  ? 'bg-red-50 hover:bg-red-100 text-red-600'
+                                  : 'bg-green-50 hover:bg-green-100 text-green-600'
+                              }`}
+                            >
+                              {employee.isActive ? (
+                                <>
+                                  <X className="w-4 h-4" />
+                                  إيقاف
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCircle className="w-4 h-4" />
+                                  تفعيل
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+            </div>
+
+            {employees.length === 0 && (
+              <div className="text-center py-16 bg-white rounded-2xl shadow">
+                <UserPlus className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 text-lg">لا يوجد موظفين حالياً</p>
+                <p className="text-gray-400 text-sm mt-2">ابدأ بإضافة موظف جديد</p>
+              </div>
+            )}
+
+            {/* شرح الصلاحيات */}
+            <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl p-6 border border-indigo-100">
+              <h3 className="font-bold text-indigo-900 mb-4 flex items-center gap-2">
+                <Shield className="w-5 h-5" />
+                صلاحيات كل دور
+              </h3>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="bg-white rounded-xl p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xl">👤</span>
+                    <span className="font-bold text-amber-700">مشرف</span>
+                  </div>
+                  <ul className="text-sm text-gray-600 space-y-1">
+                    <li>✓ إدارة المطاعم التابعة</li>
+                    <li>✓ متابعة الطلبات</li>
+                    <li>✓ عمولات على كل طلب</li>
+                    <li>✓ تقارير الأداء</li>
+                  </ul>
+                </div>
+                <div className="bg-white rounded-xl p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xl">🎧</span>
+                    <span className="font-bold text-blue-700">دعم فني</span>
+                  </div>
+                  <ul className="text-sm text-gray-600 space-y-1">
+                    <li>✓ الرد على الشكاوى</li>
+                    <li>✓ دعم العملاء</li>
+                    <li>✓ حل المشاكل</li>
+                    <li>✗ لا يرى المالية</li>
+                  </ul>
+                </div>
+                <div className="bg-white rounded-xl p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xl">📱</span>
+                    <span className="font-bold text-pink-700">سوشيال ميديا</span>
+                  </div>
+                  <ul className="text-sm text-gray-600 space-y-1">
+                    <li>✓ إدارة المحتوى</li>
+                    <li>✓ إحصائيات التفاعل</li>
+                    <li>✓ الحملات الإعلانية</li>
+                    <li>✗ لا يرى الطلبات</li>
+                  </ul>
+                </div>
+                <div className="bg-white rounded-xl p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xl">🔧</span>
+                    <span className="font-bold text-purple-700">إدارة</span>
+                  </div>
+                  <ul className="text-sm text-gray-600 space-y-1">
+                    <li>✓ جميع صلاحيات المشرف</li>
+                    <li>✓ إدارة المستخدمين</li>
+                    <li>✓ التقارير الشاملة</li>
+                    <li>✗ لا يغير الإعدادات</li>
+                  </ul>
+                </div>
+                <div className="bg-white rounded-xl p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xl">💰</span>
+                    <span className="font-bold text-green-700">محاسب</span>
+                  </div>
+                  <ul className="text-sm text-gray-600 space-y-1">
+                    <li>✓ التقارير المالية</li>
+                    <li>✓ العمولات والأرباح</li>
+                    <li>✓ طلبات السحب</li>
+                    <li>✗ لا يدير المستخدمين</li>
                   </ul>
                 </div>
               </div>

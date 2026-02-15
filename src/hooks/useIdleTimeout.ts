@@ -25,7 +25,7 @@ export const useIdleTimeout = (options: UseIdleTimeoutOptions = {}) => {
 
   // تحديد مدة الخمول حسب الدور
   const getIdleTimeout = useCallback(() => {
-    if (role === 'developer' || role === 'admin') {
+    if (role === 'developer' || role === 'admin' || role === 'supervisor' || role === 'social_media') {
       return IDLE_TIMEOUT_ADMIN
     }
     return IDLE_TIMEOUT_USER

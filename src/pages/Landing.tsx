@@ -11,7 +11,7 @@ import {
   Store, ShoppingCart, Package, User, Truck, Shield, Code2, 
   ChefHat, LogIn, UserPlus, Loader2, Star, Heart, ArrowLeft, 
   Utensils, MapPin, Flame, Gift, Percent, Tag, Building2,
-  Clock, Phone, Navigation
+  Clock, Phone, Navigation, Users, Megaphone
 } from "lucide-react";
 
 type Restaurant = {
@@ -119,7 +119,7 @@ export const Landing: React.FC = () => {
   // شاشة التحميل
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-sky-50 via-white to-sky-100">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-200 via-slate-100 to-slate-200">
         <div className="relative">
           <div className="w-20 h-20 mb-4 bg-gradient-to-br from-sky-400 to-sky-600 rounded-3xl flex items-center justify-center shadow-xl shadow-sky-500/30 animate-pulse">
             <span className="text-4xl">🍽️</span>
@@ -132,7 +132,7 @@ export const Landing: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-100 pb-24">
+    <div className="min-h-screen bg-gradient-to-br from-slate-200 via-slate-100 to-slate-200 pb-24">
       {/* الخلفية */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-0 right-0 w-72 h-72 bg-sky-200/30 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
@@ -466,6 +466,42 @@ export const Landing: React.FC = () => {
                 <div>
                   <h2 className="text-xl font-bold">لوحة المطور</h2>
                   <p className="text-white/60 text-sm">تحكم كامل</p>
+                </div>
+              </div>
+            </Link>
+            <button onClick={logout} className="w-full py-3 rounded-xl bg-white/70 text-gray-600 font-medium active:scale-[0.98] transition-all">
+              🚪 تسجيل خروج
+            </button>
+          </div>
+        )}
+
+        {/* ========== أقسام المشرفة ========== */}
+        {role === "supervisor" && (
+          <div className="space-y-3">
+            <Link to="/supervisor" className="block bg-gradient-to-r from-amber-500 to-amber-700 rounded-xl p-5 shadow-lg text-white active:scale-[0.98] transition-all">
+              <div className="flex items-center gap-3">
+                <Users className="w-8 h-8" />
+                <div>
+                  <h2 className="text-xl font-bold">لوحة المشرفة</h2>
+                  <p className="text-white/80 text-sm">إدارة المطاعم والطلبات</p>
+                </div>
+              </div>
+            </Link>
+            <button onClick={logout} className="w-full py-3 rounded-xl bg-white/70 text-gray-600 font-medium active:scale-[0.98] transition-all">
+              🚪 تسجيل خروج
+            </button>
+          </div>
+        )}
+
+        {/* ========== أقسام السوشيال ميديا ========== */}
+        {role === "social_media" && (
+          <div className="space-y-3">
+            <Link to="/social-media" className="block bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl p-5 shadow-lg text-white active:scale-[0.98] transition-all">
+              <div className="flex items-center gap-3">
+                <Megaphone className="w-8 h-8" />
+                <div>
+                  <h2 className="text-xl font-bold">لوحة السوشيال ميديا</h2>
+                  <p className="text-white/80 text-sm">إدارة المحتوى والتسويق</p>
                 </div>
               </div>
             </Link>

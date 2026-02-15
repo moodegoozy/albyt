@@ -65,6 +65,10 @@ import { AccountingDashboard } from './pages/AccountingDashboard'
 import { OwnerWalletPage } from './pages/OwnerWalletPage'
 import { CourierWalletPage } from './pages/CourierWalletPage'
 
+// صفحات المشرفة والسوشيال ميديا
+import { SupervisorDashboard } from './pages/SupervisorDashboard'
+import { SocialMediaDashboard } from './pages/SocialMediaDashboard'
+
 // مسارات محمية
 import { ProtectedRoute } from './routes/ProtectedRoute'
 import { RoleGate } from './routes/RoleGate'
@@ -81,8 +85,8 @@ import { FloatingCartButton } from './components/SimpleOrderFlow'
 export default function App() {
   const { locationRequired, refreshUserData, loading, user } = useAuth()
   
-  // 🔐 تفعيل تسجيل الخروج التلقائي بعد فترة خمول
-  useIdleTimeout({ disabled: !user })
+  // 🔐 تسجيل الخروج التلقائي معطّل - المستخدم يسجل خروج يدوياً فقط
+  useIdleTimeout({ disabled: true })
 
   // إذا كان الموقع مطلوب، نعرض صفحة تحديد الموقع
   if (!loading && locationRequired) {
@@ -420,6 +424,30 @@ export default function App() {
               <ProtectedRoute>
                 <RoleGate allow={['courier', 'developer']}>
                   <CourierWalletPage />
+                </RoleGate>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* لوحة تحكم المشرفة */}
+          <Route
+            path="/supervisor"
+            element={
+              <ProtectedRoute>
+                <RoleGate allow={['supervisor', 'developer']}>
+                  <SupervisorDashboard />
+                </RoleGate>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* لوحة تحكم السوشيال ميديا */}
+          <Route
+            path="/social-media"
+            element={
+              <ProtectedRoute>
+                <RoleGate allow={['social_media', 'developer']}>
+                  <SocialMediaDashboard />
                 </RoleGate>
               </ProtectedRoute>
             }

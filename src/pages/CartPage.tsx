@@ -25,7 +25,7 @@ export const CartPage: React.FC = () => {
 
   if (items.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-100 flex flex-col items-center justify-center py-20 px-4">
+      <div className="min-h-screen bg-gradient-to-br from-slate-200 via-slate-100 to-slate-200 flex flex-col items-center justify-center py-20 px-4">
         <div className="w-24 h-24 bg-white/80 backdrop-blur rounded-full flex items-center justify-center mb-6 shadow-lg">
           <ShoppingBag className="w-12 h-12 text-sky-400" />
         </div>
@@ -43,7 +43,7 @@ export const CartPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-100 py-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-200 via-slate-100 to-slate-200 py-6">
       <div className="max-w-3xl mx-auto space-y-4 px-2 sm:px-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">

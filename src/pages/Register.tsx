@@ -141,7 +141,7 @@ export const Register: React.FC = () => {
   ]
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sky-50 via-white to-sky-100 px-4 py-8">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-200 via-slate-100 to-slate-200 px-4 py-8">
       {/* 🔹 Modal الشروط والأحكام */}
       {showTermsModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">

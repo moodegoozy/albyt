@@ -4,7 +4,7 @@ import { auth, db } from './firebase'
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
 import { initializePushNotifications } from './utils/pushNotifications'
 
-type Role = 'owner' | 'courier' | 'customer' | 'admin' | 'developer'
+type Role = 'owner' | 'courier' | 'customer' | 'admin' | 'developer' | 'supervisor' | 'social_media' | 'support' | 'accountant'
 type GeoLocation = { lat: number; lng: number }
 
 // مفتاح للتحقق من تحديد الموقع في هذه الجلسة

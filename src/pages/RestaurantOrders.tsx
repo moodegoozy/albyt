@@ -188,7 +188,7 @@ export const RestaurantOrders: React.FC = () => {
   )
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-100 py-6 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-200 via-slate-100 to-slate-200 py-6 px-4">
       <div className="max-w-4xl mx-auto">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-12 h-12 bg-gradient-to-br from-sky-500 to-sky-600 rounded-xl flex items-center justify-center">

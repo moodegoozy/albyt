@@ -224,6 +224,44 @@ export const ChatPage: React.FC = () => {
         senderRole,
         createdAt: serverTimestamp(),
       })
+      
+      // 🔔 إرسال إشعار للطرف الآخر
+      try {
+        const { notifyNewMessage } = await import('@/utils/notificationService')
+        
+        // تحديد المستلم
+        let recipientId: string | undefined
+        let recipientType: 'customer' | 'owner' | 'courier' = 'customer'
+        
+        if (isCourier || isOwner) {
+          // المندوب أو المطعم يرسل للعميل
+          recipientId = order?.customerId
+          recipientType = 'customer'
+        } else if (isCustomer && order) {
+          // العميل يرسل للمندوب أو المطعم
+          if (order.courierId) {
+            recipientId = order.courierId
+            recipientType = 'courier'
+          } else if (order.restaurantId) {
+            recipientId = order.restaurantId
+            recipientType = 'owner'
+          }
+        }
+        
+        if (recipientId) {
+          const senderName = isOwner ? 'المطعم' : (isCourier ? 'المندوب' : 'العميل')
+          await notifyNewMessage(
+            recipientId,
+            recipientType,
+            senderName,
+            orderId,
+            text.trim()
+          )
+        }
+      } catch (notifErr) {
+        console.warn('⚠️ فشل إرسال إشعار الرسالة:', notifErr)
+      }
+      
       setNewMsg('')
       setShowEmoji(false)
     } catch (err) {

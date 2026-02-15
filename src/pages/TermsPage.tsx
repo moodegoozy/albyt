@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 
 export default function TermsPage() {
   return (
-    <div className="min-h-screen bg-gray-100 text-gray-800 px-4 py-10 leading-relaxed">
+    <div className="min-h-screen bg-slate-200 text-gray-800 px-4 py-10 leading-relaxed">
       <div className="max-w-3xl mx-auto bg-white shadow-lg rounded-2xl p-6 sm:p-8">
         <h1 className="text-2xl font-bold text-sky-600 mb-6 text-center">
           الشروط والأحكام - 🏠 سفرة البيت

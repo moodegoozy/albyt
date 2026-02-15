@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 
 export default function AccountDeleted() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 text-center">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-slate-200 text-center">
       <h1 className="text-2xl font-bold text-red-600 mb-4">
         تم حذف حسابك بنجاح
       </h1>

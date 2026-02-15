@@ -388,7 +388,7 @@ export const MenuPage: React.FC = () => {
   ]
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-sky-50 via-white to-sky-50 pb-32 -mx-4 -mt-4">
+    <div className="min-h-screen bg-gradient-to-b from-slate-200 via-slate-100 to-slate-200 pb-32 -mx-4 -mt-4">
       
       {/* ========== بانر المتجر مغلق ========== */}
       {!isStoreOpen && !isOwnStore && (
