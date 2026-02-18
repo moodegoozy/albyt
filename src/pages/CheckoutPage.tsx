@@ -616,7 +616,7 @@ export const CheckoutPage: React.FC = () => {
   }
 
   return (
-    <RoleGate allow={['customer', 'admin', 'developer']}>
+    <RoleGate allow={['customer', 'owner', 'admin', 'developer']}>
       <div className="max-w-xl mx-auto space-y-4">
         
         {/* العنوان الرئيسي */}
