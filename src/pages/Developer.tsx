@@ -83,6 +83,7 @@ type Restaurant = {
   logoUrl?: string
   referredBy?: string
   referrerType?: string
+  supervisorId?: string
   isVerified?: boolean
   verifiedAt?: any
   createdAt?: any
@@ -252,6 +253,7 @@ export const Developer: React.FC = () => {
   const [newRestaurantEmail, setNewRestaurantEmail] = useState('')
   const [newRestaurantOwnerEmail, setNewRestaurantOwnerEmail] = useState('')
   const [newRestaurantOwnerPassword, setNewRestaurantOwnerPassword] = useState('')
+  const [newRestaurantSupervisorId, setNewRestaurantSupervisorId] = useState('')
   const [creatingRestaurant, setCreatingRestaurant] = useState(false)
 
   // المهام
@@ -998,6 +1000,7 @@ export const Developer: React.FC = () => {
         city: newRestaurantCity.trim() || '',
         referredBy: user?.uid, // المطور هو من أضاف المطعم
         referrerType: 'developer',
+        ...(newRestaurantSupervisorId ? { supervisorId: newRestaurantSupervisorId } : {}),
         createdAt: serverTimestamp(),
       })
 
@@ -1010,6 +1013,7 @@ export const Developer: React.FC = () => {
       setNewRestaurantEmail('')
       setNewRestaurantOwnerEmail('')
       setNewRestaurantOwnerPassword('')
+      setNewRestaurantSupervisorId('')
       setShowAddRestaurant(false)
       
     } catch (err: any) {
@@ -2137,7 +2141,26 @@ export const Developer: React.FC = () => {
                 </div>
                 
                 <div className="border-t mt-4 pt-4">
-                  <h4 className="font-bold text-green-800 mb-3">👤 بيانات صاحب المطعم (لتسجيل الدخول)</h4>
+                  <h4 className="font-bold text-green-800 mb-3">�‍💼 تعيين مشرف على المطعم</h4>
+                  <select
+                    value={newRestaurantSupervisorId}
+                    onChange={e => setNewRestaurantSupervisorId(e.target.value)}
+                    className="w-full border rounded-xl p-3"
+                  >
+                    <option value="">-- بدون مشرف --</option>
+                    {users
+                      .filter(u => u.role === 'supervisor')
+                      .map(sup => (
+                        <option key={sup.uid} value={sup.uid}>
+                          👩‍💼 {sup.name || sup.email}
+                        </option>
+                      ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">المشرف يتابع المطعم ويديره من لوحة تحكم المشرفين</p>
+                </div>
+
+                <div className="border-t mt-4 pt-4">
+                  <h4 className="font-bold text-green-800 mb-3">�👤 بيانات صاحب المطعم (لتسجيل الدخول)</h4>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
                       <label className="text-sm text-gray-600 block mb-1">إيميل صاحب المطعم *</label>
@@ -2251,13 +2274,13 @@ export const Developer: React.FC = () => {
                           />
                         </div>
                         <div className="md:col-span-2">
-                          <label className="text-sm text-gray-600">ربط بمشرف (للعمولة)</label>
+                          <label className="text-sm text-gray-600">ربط بمشرف عمولة (admin)</label>
                           <select
                             value={restaurantForm.referredBy || ''}
                             onChange={e => setRestaurantForm({ ...restaurantForm, referredBy: e.target.value })}
                             className="w-full border rounded-xl p-2 mt-1"
                           >
-                            <option value="">-- بدون مشرف (المطور فقط) --</option>
+                            <option value="">-- بدون مشرف عمولة --</option>
                             {users
                               .filter(u => u.role === 'admin')
                               .map(admin => (
@@ -2268,6 +2291,26 @@ export const Developer: React.FC = () => {
                           </select>
                           <p className="text-xs text-gray-500 mt-1">
                             المشرف المرتبط يحصل على عمولة من طلبات هذا المطعم
+                          </p>
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="text-sm text-gray-600">👩‍💼 تعيين مشرف (supervisor)</label>
+                          <select
+                            value={restaurantForm.supervisorId || ''}
+                            onChange={e => setRestaurantForm({ ...restaurantForm, supervisorId: e.target.value || undefined })}
+                            className="w-full border rounded-xl p-2 mt-1"
+                          >
+                            <option value="">-- بدون مشرف --</option>
+                            {users
+                              .filter(u => u.role === 'supervisor')
+                              .map(sup => (
+                                <option key={sup.uid} value={sup.uid}>
+                                  👩‍💼 {sup.name || sup.email}
+                                </option>
+                              ))}
+                          </select>
+                          <p className="text-xs text-gray-500 mt-1">
+                            المشرف يتابع المطعم ويديره من لوحة تحكم المشرفين
                           </p>
                         </div>
                       </div>
@@ -2332,6 +2375,11 @@ export const Developer: React.FC = () => {
                           {restaurant.referredBy && (
                             <p className="text-purple-600">
                               👑 مضاف من: {admins.find(a => a.uid === restaurant.referredBy)?.name || restaurant.referredBy.slice(0, 8)}
+                            </p>
+                          )}
+                          {restaurant.supervisorId && (
+                            <p className="text-indigo-600">
+                              👩‍💼 المشرف: {users.find(u => u.uid === restaurant.supervisorId)?.name || restaurant.supervisorId.slice(0, 8)}
                             </p>
                           )}
                         </div>
@@ -2413,7 +2461,7 @@ export const Developer: React.FC = () => {
                             </button>
                           )}
                         </div>
-                        {/* ربط سريع بمشرف */}
+                        {/* ربط سريع بمشرف عمولة */}
                         <select
                           value={restaurant.referredBy || ''}
                           onChange={async (e) => {
@@ -2423,21 +2471,49 @@ export const Developer: React.FC = () => {
                                 referredBy: newAdminId || null,
                                 updatedAt: serverTimestamp()
                               })
-                              toast.success(newAdminId ? 'تم ربط المطعم بالمشرف' : 'تم إلغاء ربط المشرف')
+                              toast.success(newAdminId ? 'تم ربط المطعم بمشرف العمولة' : 'تم إلغاء ربط مشرف العمولة')
                               loadData()
                             } catch (err) {
                               toast.error('فشل في تحديث الربط')
                             }
                           }}
                           className="text-xs border rounded-lg p-1"
-                          title="ربط بمشرف"
+                          title="ربط بمشرف عمولة"
                         >
-                          <option value="">👤 بدون مشرف</option>
+                          <option value="">👑 بدون مشرف عمولة</option>
                           {users
                             .filter(u => u.role === 'admin')
                             .map(admin => (
                               <option key={admin.uid} value={admin.uid}>
                                 👑 {admin.name || admin.email}
+                              </option>
+                            ))}
+                        </select>
+                        {/* تعيين مشرف (supervisor) */}
+                        <select
+                          value={restaurant.supervisorId || ''}
+                          onChange={async (e) => {
+                            const newSupId = e.target.value
+                            try {
+                              await updateDoc(doc(db, 'restaurants', restaurant.id), {
+                                supervisorId: newSupId || null,
+                                updatedAt: serverTimestamp()
+                              })
+                              toast.success(newSupId ? 'تم تعيين المشرف للمطعم ✅' : 'تم إلغاء تعيين المشرف')
+                              loadData()
+                            } catch (err) {
+                              toast.error('فشل في تعيين المشرف')
+                            }
+                          }}
+                          className="text-xs border rounded-lg p-1"
+                          title="تعيين مشرف"
+                        >
+                          <option value="">👩‍💼 بدون مشرف</option>
+                          {users
+                            .filter(u => u.role === 'supervisor')
+                            .map(sup => (
+                              <option key={sup.uid} value={sup.uid}>
+                                👩‍💼 {sup.name || sup.email}
                               </option>
                             ))}
                         </select>
