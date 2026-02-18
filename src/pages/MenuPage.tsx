@@ -362,11 +362,12 @@ export const MenuPage: React.FC = () => {
   }
 
   // ✅ السماح للزوار بالإضافة للسلة (بدون تسجيل دخول)
-  // المستخدمين المسجلين: عملاء، أدمن، مطورين
+  // المستخدمين المسجلين: عملاء، أدمن، مطورين، أو المطعم (من متجر آخر)
   // أو زائر غير مسجل (user === null)
-  const canOrder = !user || (role === 'customer' || role === 'admin' || role === 'developer' || !role)
   const isStoreOpen = restaurant?.isOpen !== false
   const isOwnStore = user && restaurantId === user.uid
+  // المطعم يستطيع الطلب من متاجر أخرى كعميل (لكن ليس من متجره)
+  const canOrder = !user || (role === 'customer' || role === 'admin' || role === 'developer' || (role === 'owner' && !isOwnStore) || !role)
   const totalCartItems = cartItems.reduce((sum, i) => sum + i.qty, 0)
 
   const getTierBadge = (tier?: string) => {
