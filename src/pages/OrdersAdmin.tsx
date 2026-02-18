@@ -5,7 +5,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '@/firebase'
 import { useAuth } from '@/auth'
 import { useNavigate } from 'react-router-dom'
-import { MessageCircle, Star, User, Camera, Loader2, CheckCircle, Image, Volume2, VolumeX } from 'lucide-react'
+import { MessageCircle, Star, User, Camera, Loader2, CheckCircle, Image, Volume2, VolumeX, ShoppingBag, Store, Package } from 'lucide-react'
 import { RatingModal } from '@/components/RatingModal'
 import { useToast } from '@/components/ui/Toast'
 import { Rating } from '@/types'
@@ -45,7 +45,9 @@ export const OrdersAdmin: React.FC = () => {
   const { user } = useAuth()
   const nav = useNavigate()
   const toast = useToast()
-  const [orders, setOrders] = useState<Order[]>([])
+  const [orders, setOrders] = useState<Order[]>([]) // طلبات العملاء الواردة
+  const [myOrders, setMyOrders] = useState<Order[]>([]) // طلباتي كعميل
+  const [activeTab, setActiveTab] = useState<'incoming' | 'my_orders'>('incoming') // التبويب النشط
   const [error, setError] = useState<string | null>(null)
   const [deliveryFees, setDeliveryFees] = useState<Record<string, number>>({})
   
@@ -123,6 +125,33 @@ export const OrdersAdmin: React.FC = () => {
 
     return () => unsub()
   }, [restaurantUid, soundEnabled, toast])
+
+  // 📦 جلب طلباتي كعميل (من مطاعم أخرى)
+  useEffect(() => {
+    if (!restaurantUid) return
+
+    const unsub = onSnapshot(
+      collection(db, 'orders'),
+      (snap) => {
+        const all = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
+        // طلباتي كعميل = حيث أنا الـ customerId
+        const myCustomerOrders = all.filter((o: any) => o.customerId === restaurantUid)
+
+        myCustomerOrders.sort((a: any, b: any) => {
+          const ta = a.createdAt?.toMillis?.() ?? 0
+          const tb = b.createdAt?.toMillis?.() ?? 0
+          return tb - ta
+        })
+
+        setMyOrders(myCustomerOrders)
+      },
+      (err) => {
+        console.error('Firestore error (my orders):', err)
+      }
+    )
+
+    return () => unsub()
+  }, [restaurantUid])
 
   const updateStatus = async (id: string, status: string, order?: any) => {
     const updates: any = { 
@@ -314,6 +343,42 @@ export const OrdersAdmin: React.FC = () => {
         </button>
       </div>
 
+      {/* 📑 التبويبات */}
+      <div className="flex gap-2 bg-gray-100 p-1 rounded-xl">
+        <button
+          onClick={() => setActiveTab('incoming')}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-bold transition-all ${
+            activeTab === 'incoming'
+              ? 'bg-white text-sky-600 shadow-sm'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Store className="w-5 h-5" />
+          <span>طلبات العملاء</span>
+          {orders.filter(o => o.status === 'pending').length > 0 && (
+            <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full animate-pulse">
+              {orders.filter(o => o.status === 'pending').length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('my_orders')}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-bold transition-all ${
+            activeTab === 'my_orders'
+              ? 'bg-white text-amber-600 shadow-sm'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <ShoppingBag className="w-5 h-5" />
+          <span>طلباتي</span>
+          {myOrders.length > 0 && (
+            <span className="bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full">
+              {myOrders.length}
+            </span>
+          )}
+        </button>
+      </div>
+
       {/* نافذة التقييم */}
       {ratingModal && (
         <RatingModal
@@ -331,7 +396,16 @@ export const OrdersAdmin: React.FC = () => {
 
       {error && <div className="text-red-500 text-sm mb-2">{error}</div>}
 
-      {orders.map((o: any) => (
+      {/* ========== تبويب: طلبات العملاء ========== */}
+      {activeTab === 'incoming' && (
+        <>
+          {orders.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-2xl shadow">
+              <Store className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-500 font-semibold">لا توجد طلبات من العملاء حالياً</p>
+            </div>
+          ) : (
+            orders.map((o: any) => (
         <div 
           key={o.id} 
           className="bg-white rounded-2xl shadow-xl p-5 text-gray-900 space-y-4 transition hover:shadow-2xl"
@@ -559,10 +633,61 @@ export const OrdersAdmin: React.FC = () => {
             </div>
           )}
         </div>
-      ))}
+            ))
+          )}
+        </>
+      )}
 
-      {orders.length === 0 && !error && (
-        <div className="text-gray-400 text-center text-lg">🚫 لا توجد طلبات حالياً.</div>
+      {/* ========== تبويب: طلباتي كعميل ========== */}
+      {activeTab === 'my_orders' && (
+        <>
+          {myOrders.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-2xl shadow">
+              <ShoppingBag className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-500 font-semibold">لم تطلب من أي مطعم بعد</p>
+              <p className="text-gray-400 text-sm mt-2">يمكنك تصفح المطاعم والطلب كعميل</p>
+            </div>
+          ) : (
+            myOrders.map((o: any) => (
+              <div 
+                key={o.id} 
+                className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-200 rounded-2xl p-5 text-gray-900 space-y-4"
+              >
+                {/* 🧾 رأس الطلب */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div className="font-bold text-lg">
+                    <span className="text-amber-600">🛒 طلبي</span> #{o.id.slice(-6)}
+                  </div>
+                  <div className="font-extrabold text-xl text-amber-600">{o.total?.toFixed?.(2)} ر.س</div>
+                </div>
+
+                {/* اسم المطعم */}
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Store className="w-4 h-4" />
+                  <span className="font-medium">{o.restaurantName || 'مطعم'}</span>
+                </div>
+
+                {/* الأصناف */}
+                <div className="text-sm text-gray-600">
+                  {o.items?.map((i: any) => `${i.name} × ${i.qty}`).join(' • ')}
+                </div>
+
+                {/* الحالة */}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold">الحالة:</span>
+                  <span className={`px-3 py-1 rounded-full text-sm font-bold ${statusColor(o.status)}`}>
+                    {badge(o.status || 'pending')}
+                  </span>
+                </div>
+
+                {/* التاريخ */}
+                <div className="text-xs text-gray-400">
+                  {o.createdAt?.toDate?.()?.toLocaleString?.('ar-SA') || ''}
+                </div>
+              </div>
+            ))
+          )}
+        </>
       )}
     </div>
   )
