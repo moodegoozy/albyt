@@ -6,6 +6,8 @@
  * ✔ مغلق
  */
 
+import { playNotificationSound } from './notificationSound'
+
 // حالة الإشعارات
 let swRegistration: ServiceWorkerRegistration | null = null
 let notificationPermission: NotificationPermission = 'default'
@@ -29,6 +31,18 @@ export async function initializePushNotifications(): Promise<boolean> {
     // تسجيل Service Worker
     swRegistration = await navigator.serviceWorker.register('/sw.js')
     console.log('✅ Service Worker registered:', swRegistration)
+
+    // 🔊 استقبال رسائل من Service Worker لتشغيل الصوت
+    navigator.serviceWorker.addEventListener('message', async (event) => {
+      if (event.data && event.data.type === 'PLAY_NOTIFICATION_SOUND') {
+        console.log('[SW→App] طلب تشغيل صوت الإشعار')
+        try {
+          await playNotificationSound()
+        } catch (error) {
+          console.warn('⚠️ تعذر تشغيل الصوت من SW:', error)
+        }
+      }
+    })
 
     // طلب إذن الإشعارات
     notificationPermission = await Notification.requestPermission()
@@ -76,6 +90,13 @@ export async function showPushNotification(
   }
 ): Promise<boolean> {
   try {
+    // 🔊 تشغيل صوت الإشعار
+    try {
+      await playNotificationSound()
+    } catch (soundError) {
+      console.warn('⚠️ تعذر تشغيل صوت الإشعار:', soundError)
+    }
+    
     // التحقق من الإذن
     if (Notification.permission !== 'granted') {
       console.warn('⚠️ لا يوجد إذن للإشعارات')

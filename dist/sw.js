@@ -48,7 +48,15 @@ self.addEventListener('push', (event) => {
   }
 
   event.waitUntil(
-    self.registration.showNotification(data.title || APP_NAME, options)
+    // إرسال رسالة للصفحة لتشغيل الصوت
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        client.postMessage({ type: 'PLAY_NOTIFICATION_SOUND' })
+      }
+    }).then(() => {
+      // عرض الإشعار
+      return self.registration.showNotification(data.title || APP_NAME, options)
+    })
   )
 })
 

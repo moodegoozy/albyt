@@ -1,14 +1,15 @@
 // src/pages/OrdersAdmin.tsx
-import React, { useEffect, useMemo, useState, useRef } from 'react'
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { collection, doc, onSnapshot, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '@/firebase'
 import { useAuth } from '@/auth'
 import { useNavigate } from 'react-router-dom'
-import { MessageCircle, Star, User, Camera, Loader2, CheckCircle, Image } from 'lucide-react'
+import { MessageCircle, Star, User, Camera, Loader2, CheckCircle, Image, Volume2, VolumeX } from 'lucide-react'
 import { RatingModal } from '@/components/RatingModal'
 import { useToast } from '@/components/ui/Toast'
 import { Rating } from '@/types'
+import { playNotificationWithVibrate, initNotificationSound } from '@/utils/notificationSound'
 
 type Order = any
 
@@ -58,8 +59,18 @@ export const OrdersAdmin: React.FC = () => {
   // حالة رفع صورة الطلب
   const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // 🔊 صوت الإشعارات
+  const [soundEnabled, setSoundEnabled] = useState(true)
+  const previousOrderIdsRef = useRef<Set<string>>(new Set())
+  const isFirstLoadRef = useRef(true)
 
   const restaurantUid = useMemo(() => user?.uid ?? null, [user])
+  
+  // تهيئة صوت الإشعارات
+  useEffect(() => {
+    initNotificationSound()
+  }, [])
 
   useEffect(() => {
     if (!restaurantUid) return
@@ -80,6 +91,26 @@ export const OrdersAdmin: React.FC = () => {
           const tb = b.createdAt?.toMillis?.() ?? 0
           return tb - ta
         })
+        
+        // 🔊 اكتشاف الطلبات الجديدة وتشغيل الصوت
+        if (!isFirstLoadRef.current && soundEnabled) {
+          const currentIds = new Set(mine.map((o: any) => o.id))
+          const previousIds = previousOrderIdsRef.current
+          
+          // البحث عن طلبات جديدة (pending)
+          for (const order of mine) {
+            if (!previousIds.has(order.id) && order.status === 'pending') {
+              console.log('🔔 طلب جديد!', order.id)
+              playNotificationWithVibrate()
+              toast.success('🔔 طلب جديد!')
+              break // صوت واحد فقط حتى لو وصل أكثر من طلب
+            }
+          }
+        }
+        
+        // تحديث قائمة IDs السابقة
+        previousOrderIdsRef.current = new Set(mine.map((o: any) => o.id))
+        isFirstLoadRef.current = false
 
         setOrders(mine)
         setError(null)
@@ -91,7 +122,7 @@ export const OrdersAdmin: React.FC = () => {
     )
 
     return () => unsub()
-  }, [restaurantUid])
+  }, [restaurantUid, soundEnabled, toast])
 
   const updateStatus = async (id: string, status: string, order?: any) => {
     const updates: any = { 
@@ -255,7 +286,33 @@ export const OrdersAdmin: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-extrabold text-yellow-500">📋 إدارة الطلبات</h1>
+      {/* العنوان مع زر التحكم بالصوت */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-extrabold text-yellow-500">📋 إدارة الطلبات</h1>
+        
+        {/* 🔊 زر التحكم بصوت الإشعارات */}
+        <button
+          onClick={() => setSoundEnabled(!soundEnabled)}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
+            soundEnabled 
+              ? 'bg-sky-100 text-sky-700 hover:bg-sky-200' 
+              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+          }`}
+          title={soundEnabled ? 'إيقاف صوت الإشعارات' : 'تفعيل صوت الإشعارات'}
+        >
+          {soundEnabled ? (
+            <>
+              <Volume2 className="w-5 h-5" />
+              <span className="text-sm hidden sm:inline">الصوت مفعّل</span>
+            </>
+          ) : (
+            <>
+              <VolumeX className="w-5 h-5" />
+              <span className="text-sm hidden sm:inline">الصوت مغلق</span>
+            </>
+          )}
+        </button>
+      </div>
 
       {/* نافذة التقييم */}
       {ratingModal && (
