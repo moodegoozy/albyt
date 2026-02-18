@@ -7,6 +7,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/auth'
 import { useToast } from '@/components/ui/Toast'
 import { MenuItem, Restaurant, Promotion } from '@/types'
+import { OptimizedImage } from '@/components/OptimizedImage'
 import { 
   Megaphone, X, MapPin, Phone, Star, ShoppingBag, ArrowRight, 
   CheckCircle, Building2, Copy, Package, Clock, Plus, Minus,
@@ -641,7 +642,11 @@ export const MenuPage: React.FC = () => {
           </div>
 
           {activePromotion.mediaUrl && (
-            <img src={activePromotion.mediaUrl} alt="" className="w-full h-40 object-cover" />
+            <OptimizedImage 
+              src={activePromotion.mediaUrl} 
+              alt="إعلان" 
+              className="w-full h-40"
+            />
           )}
           <div className="p-4">
             {activePromotion.title && <h3 className="text-lg font-bold text-white mb-1">{activePromotion.title}</h3>}
@@ -959,19 +964,18 @@ const ItemCard: React.FC<ItemCardProps> = ({
     >
       {/* صورة الصنف */}
       <div className="relative aspect-square overflow-hidden">
-        {it.imageUrl ? (
-          <img 
-            src={it.imageUrl} 
-            alt={it.name} 
-            className={`w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ${
-              it.available === false ? 'grayscale' : ''
-            }`}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-            <span className="text-5xl opacity-30">🍽️</span>
-          </div>
-        )}
+        <OptimizedImage
+          src={it.imageUrl}
+          alt={it.name}
+          className={`w-full h-full group-hover:scale-110 transition-transform duration-500 ${
+            it.available === false ? 'grayscale' : ''
+          }`}
+          fallback={
+            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+              <span className="text-5xl opacity-30">🍽️</span>
+            </div>
+          }
+        />
         
         {/* شارة غير متاح (لصاحب المتجر فقط) */}
         {it.available === false && isOwnStore && (

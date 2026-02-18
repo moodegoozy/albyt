@@ -7,6 +7,7 @@ import { db } from "@/firebase";
 import { collection, getDocs, query, where, doc, getDoc } from "firebase/firestore";
 import { calculateDistance, MAX_DELIVERY_DISTANCE } from "@/utils/distance";
 import { SpecialOffer, MenuItem } from "@/types";
+import { OptimizedImage, OptimizedAvatar, ProductImage } from "@/components/OptimizedImage";
 import { 
   Store, ShoppingCart, Package, User, Truck, Shield, Code2, 
   ChefHat, LogIn, UserPlus, Loader2, Star, Heart, ArrowLeft, 
@@ -263,13 +264,12 @@ export const Landing: React.FC = () => {
                       </p>
                     </div>
                     <div className="p-2 flex items-center gap-2">
-                      {offer.restaurantLogo ? (
-                        <img src={offer.restaurantLogo} alt="" className="w-8 h-8 rounded-full object-cover" />
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-sky-100 flex items-center justify-center">
-                          <Store className="w-4 h-4 text-sky-500" />
-                        </div>
-                      )}
+                      <OptimizedAvatar 
+                        src={offer.restaurantLogo} 
+                        alt={offer.restaurantName || 'أسرة'} 
+                        size="sm" 
+                        fallbackText={offer.restaurantName}
+                      />
                       <span className="text-xs font-semibold text-gray-700 truncate">{offer.restaurantName || 'أسرة منتجة'}</span>
                     </div>
                   </Link>
@@ -300,13 +300,16 @@ export const Landing: React.FC = () => {
                   className="flex items-center gap-3 bg-white rounded-xl p-3 shadow-md active:scale-[0.98] transition-all"
                 >
                   {/* شعار الأسرة */}
-                  {r.logoUrl ? (
-                    <img src={r.logoUrl} alt={r.name} className="w-14 h-14 rounded-xl object-cover" />
-                  ) : (
-                    <div className="w-14 h-14 rounded-xl bg-sky-100 flex items-center justify-center">
-                      <Store className="w-7 h-7 text-sky-400" />
-                    </div>
-                  )}
+                  <OptimizedImage
+                    src={r.logoUrl}
+                    alt={r.name}
+                    className="w-14 h-14 rounded-xl"
+                    fallback={
+                      <div className="w-14 h-14 rounded-xl bg-sky-100 flex items-center justify-center">
+                        <Store className="w-7 h-7 text-sky-400" />
+                      </div>
+                    }
+                  />
                   
                   {/* المعلومات */}
                   <div className="flex-1 min-w-0">
@@ -361,13 +364,11 @@ export const Landing: React.FC = () => {
                   className="bg-white rounded-xl shadow-md overflow-hidden active:scale-95 transition-all"
                 >
                   <div className="relative aspect-square bg-sky-50">
-                    {item.imageUrl ? (
-                      <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Utensils className="w-10 h-10 text-sky-300" />
-                      </div>
-                    )}
+                    <ProductImage
+                      src={item.imageUrl}
+                      alt={item.name}
+                      className="rounded-none"
+                    />
                     <span className="absolute top-2 right-2 bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                       <Flame className="w-3 h-3" />
                       {item.orderCount}+

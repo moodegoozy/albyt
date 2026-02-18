@@ -9,6 +9,7 @@ import { useAuth } from '@/auth'
 import { calculateDistance, MAX_DELIVERY_DISTANCE } from '@/utils/distance'
 import { Promotion, MenuItem, SpecialOffer, Story, StoryGroup } from '@/types'
 import { StoryViewer } from '@/components/StoryViewer'
+import { OptimizedImage, OptimizedAvatar } from '@/components/OptimizedImage'
 import { isRamadan, OFFER_TYPE_LABELS, RamadanOfferType } from '@/utils/ramadanConfig'
 import { RamadanBanner, IftarCountdown } from '@/components/RamadanDecorations'
 
@@ -776,13 +777,12 @@ export const RestaurantsPage: React.FC = () => {
                   
                   {/* معلومات الأسرة */}
                   <div className="p-3 flex items-center gap-3">
-                    {offer.restaurantLogo ? (
-                      <img src={offer.restaurantLogo} alt="" className="w-10 h-10 rounded-full object-cover border-2 border-gray-100" />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-sky-100 flex items-center justify-center">
-                        <Store className="w-5 h-5 text-sky-500" />
-                      </div>
-                    )}
+                    <OptimizedAvatar
+                      src={offer.restaurantLogo}
+                      alt={offer.restaurantName || 'أسرة'}
+                      size="md"
+                      fallbackText={offer.restaurantName}
+                    />
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-gray-800 text-sm truncate">{offer.restaurantName || 'أسرة منتجة'}</p>
                       {offer.description && (
