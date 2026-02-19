@@ -134,7 +134,7 @@ export const OwnerWalletPage: React.FC = () => {
 
       orders.forEach((order: any) => {
         const createdAt = order.createdAt?.toDate?.() || new Date(order.createdAt)
-        const orderTotal = order.subtotal || 0 // نستخدم subtotal (بدون رسوم التوصيل)
+        const orderTotal = order.restaurantEarnings || order.subtotal || 0 // نستخدم أرباح المطعم الفعلية
         
         // الطلبات الأخيرة للعرض
         if (recentOrdersList.length < 20) {

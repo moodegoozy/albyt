@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import { onAuthStateChanged, signOut, User } from 'firebase/auth'
 import { auth, db } from './firebase'
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
-import { initializePushNotifications } from './utils/pushNotifications'
+import { initializePushNotifications, saveFCMToken } from './utils/pushNotifications'
 
 type Role = 'owner' | 'courier' | 'customer' | 'admin' | 'developer' | 'supervisor' | 'social_media' | 'support' | 'accountant'
 type GeoLocation = { lat: number; lng: number }
@@ -170,7 +170,9 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
         // 🔔 تفعيل الإشعارات الفورية عند تسجيل الدخول
         try {
           await initializePushNotifications()
-          console.log('✅ تم تفعيل الإشعارات')
+          // 📲 حفظ FCM token للمستخدم
+          await saveFCMToken(u.uid)
+          console.log('✅ تم تفعيل الإشعارات وحفظ FCM token')
         } catch (notifError) {
           console.warn('⚠️ تعذر تفعيل الإشعارات:', notifError)
         }

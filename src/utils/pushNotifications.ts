@@ -1,19 +1,27 @@
 /**
  * خدمة Push Notifications - سفرة البيت
  * إشعارات فورية تعمل في جميع الحالات:
- * ✔ التطبيق مفتوح
- * ✔ في الخلفية
- * ✔ مغلق
+ * ✔ التطبيق مفتوح (Foreground)
+ * ✔ في الخلفية (Background)
+ * ✔ مغلق (عبر FCM - Firebase Cloud Messaging)
  */
 
+import { getToken, onMessage, Messaging } from 'firebase/messaging'
+import { doc, setDoc } from 'firebase/firestore'
+import { db, getMessagingInstance } from '@/firebase'
 import { playNotificationSound } from './notificationSound'
+
+// VAPID Key من Firebase Console -> Project Settings -> Cloud Messaging
+// ملاحظة: يجب توليد مفتاح VAPID من Firebase Console إذا لم يكن موجوداً
+const VAPID_KEY = 'BHIFuJLc84TdosXcdvg6nTtI5B4fNZVhILjhuhC43ASE_kecI4PHUzzbXRELLQa0fY-x7bvwaRHUqOnyVGQ9hTQ'
 
 // حالة الإشعارات
 let swRegistration: ServiceWorkerRegistration | null = null
-let notificationPermission: NotificationPermission = 'default'
+let fcmToken: string | null = null
+let messagingInstance: Messaging | null = null
 
 /**
- * تسجيل Service Worker وطلب إذن الإشعارات
+ * تسجيل Service Worker وطلب إذن الإشعارات مع FCM
  */
 export async function initializePushNotifications(): Promise<boolean> {
   try {
@@ -28,36 +36,131 @@ export async function initializePushNotifications(): Promise<boolean> {
       return false
     }
 
-    // تسجيل Service Worker
-    swRegistration = await navigator.serviceWorker.register('/sw.js')
-    console.log('✅ Service Worker registered:', swRegistration)
+    // تسجيل Firebase Messaging Service Worker
+    swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js')
+    console.log('✅ FCM Service Worker registered:', swRegistration)
+
+    // انتظار تفعيل الـ Service Worker
+    await navigator.serviceWorker.ready
+    console.log('✅ Service Worker ready')
+
+    // طلب إذن الإشعارات
+    const permission = await Notification.requestPermission()
+    
+    if (permission !== 'granted') {
+      console.warn('⚠️ تم رفض إذن الإشعارات:', permission)
+      return false
+    }
+
+    console.log('✅ تم منح إذن الإشعارات')
+
+    // تهيئة Firebase Messaging
+    messagingInstance = await getMessagingInstance()
+    
+    if (messagingInstance && VAPID_KEY) {
+      // الحصول على FCM token
+      try {
+        fcmToken = await getToken(messagingInstance, {
+          vapidKey: VAPID_KEY,
+          serviceWorkerRegistration: swRegistration
+        })
+        
+        if (fcmToken) {
+          console.log('✅ FCM Token:', fcmToken.substring(0, 20) + '...')
+        }
+      } catch (tokenError) {
+        console.warn('⚠️ فشل الحصول على FCM token:', tokenError)
+      }
+
+      // 🔔 استقبال الإشعارات في المقدمة (التطبيق مفتوح)
+      onMessage(messagingInstance, async (payload) => {
+        console.log('🔔 [FCM] Foreground message:', payload)
+        
+        // تشغيل الصوت
+        try {
+          await playNotificationSound()
+        } catch (e) {
+          console.warn('⚠️ تعذر تشغيل الصوت:', e)
+        }
+
+        // عرض الإشعار
+        const title = payload.notification?.title || payload.data?.title || 'سفرة البيت'
+        const body = payload.notification?.body || payload.data?.body || 'لديك إشعار جديد'
+        
+        if (swRegistration) {
+          swRegistration.showNotification(title, {
+            body,
+            icon: '/icon-192.png',
+            badge: '/icon-192.png',
+            tag: 'fcm-foreground-' + Date.now(),
+            data: payload.data || {},
+            vibrate: [200, 100, 200],
+            requireInteraction: true,
+            dir: 'rtl',
+            lang: 'ar'
+          } as NotificationOptions)
+        }
+      })
+    } else {
+      console.warn('⚠️ FCM غير مفعّل - يُرجى إضافة VAPID_KEY')
+    }
 
     // 🔊 استقبال رسائل من Service Worker لتشغيل الصوت
     navigator.serviceWorker.addEventListener('message', async (event) => {
-      if (event.data && event.data.type === 'PLAY_NOTIFICATION_SOUND') {
-        console.log('[SW→App] طلب تشغيل صوت الإشعار')
+      if (event.data?.type === 'FCM_NOTIFICATION' || event.data?.type === 'PLAY_NOTIFICATION_SOUND') {
+        console.log('[SW→App] إشعار FCM')
         try {
           await playNotificationSound()
         } catch (error) {
-          console.warn('⚠️ تعذر تشغيل الصوت من SW:', error)
+          console.warn('⚠️ تعذر تشغيل الصوت:', error)
         }
       }
     })
 
-    // طلب إذن الإشعارات
-    notificationPermission = await Notification.requestPermission()
-    
-    if (notificationPermission === 'granted') {
-      console.log('✅ تم منح إذن الإشعارات')
-      return true
-    } else {
-      console.warn('⚠️ تم رفض إذن الإشعارات:', notificationPermission)
-      return false
-    }
+    return true
   } catch (error) {
     console.error('❌ فشل تهيئة الإشعارات:', error)
     return false
   }
+}
+
+/**
+ * حفظ FCM token للمستخدم في Firestore
+ */
+export async function saveFCMToken(userId: string): Promise<boolean> {
+  if (!fcmToken || !userId) {
+    console.warn('⚠️ لا يوجد FCM token أو userId')
+    return false
+  }
+
+  try {
+    // حفظ الـ token في مجموعة fcmTokens
+    await setDoc(doc(db, 'fcmTokens', userId), {
+      token: fcmToken,
+      updatedAt: new Date(),
+      platform: 'web',
+      userAgent: navigator.userAgent
+    }, { merge: true })
+
+    // تحديث حقل fcmToken في وثيقة المستخدم
+    await setDoc(doc(db, 'users', userId), {
+      fcmToken: fcmToken,
+      fcmTokenUpdatedAt: new Date()
+    }, { merge: true })
+
+    console.log('✅ تم حفظ FCM token للمستخدم:', userId)
+    return true
+  } catch (error) {
+    console.error('❌ فشل حفظ FCM token:', error)
+    return false
+  }
+}
+
+/**
+ * الحصول على FCM token الحالي
+ */
+export function getFCMToken(): string | null {
+  return fcmToken
 }
 
 /**
@@ -72,9 +175,7 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
     return 'granted'
   }
 
-  const permission = await Notification.requestPermission()
-  notificationPermission = permission
-  return permission
+  return await Notification.requestPermission()
 }
 
 /**
@@ -173,11 +274,13 @@ export function getNotificationStatus(): {
   supported: boolean
   permission: NotificationPermission
   swRegistered: boolean
+  fcmToken: string | null
 } {
   return {
     supported: 'Notification' in window && 'serviceWorker' in navigator,
     permission: Notification.permission,
-    swRegistered: !!swRegistration
+    swRegistered: !!swRegistration,
+    fcmToken: fcmToken
   }
 }
 

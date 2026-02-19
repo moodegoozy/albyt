@@ -162,6 +162,13 @@ export const RestaurantOrders: React.FC = () => {
     const order = orders.find(o => o.id === orderId)
     if (!order) return
 
+    // حماية ضد إعادة تحديد رسوم التوصيل
+    if ((order as any).deliveryFeeSetBy) {
+      toast.error('تم تحديد رسوم التوصيل مسبقاً')
+      setSavingFee(null)
+      return
+    }
+
     // حساب الإجمالي: نستخدم total الحالي (يشمل الخصومات والرسوم) + رسوم التوصيل
     const currentTotal = order.total || order.subtotal
     const newTotal = currentTotal + fee

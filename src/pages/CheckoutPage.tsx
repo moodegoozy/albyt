@@ -233,8 +233,9 @@ export const CheckoutPage: React.FC = () => {
     const SERVICE_FEE_PER_ITEM = PLATFORM_FEE_PER_ITEM + ADMIN_COMMISSION_PER_ITEM // 1.75
     const originalSubtotal = subtotal - (SERVICE_FEE_PER_ITEM * totalItemsCount) // سعر المنتجات الأصلي للمطعم
     
-    // تقسيم الدخل:
-    const restaurantEarnings = originalSubtotal // المطعم يحصل على السعر الأصلي
+    // تقسيم الدخل (مع مراعاة الخصم - الخصم يتحمله المطعم):
+    const discountFromRestaurant = discountAmount // المطعم يتحمل الخصم لأنه منشئ العرض
+    const restaurantEarnings = Math.max(0, originalSubtotal - discountFromRestaurant) // المطعم بعد الخصم
     const platformFee = PLATFORM_FEE_PER_ITEM * totalItemsCount // رسوم التطبيق (1 ر.س × عدد المنتجات)
     const adminCommission = referredByAdmin ? (ADMIN_COMMISSION_PER_ITEM * totalItemsCount) : 0 // عمولة المشرف
     const appEarnings = platformFee + (referredByAdmin ? 0 : (ADMIN_COMMISSION_PER_ITEM * totalItemsCount)) // التطبيق يأخذ عمولة المشرف إذا ما فيه مشرف
@@ -293,12 +294,14 @@ export const CheckoutPage: React.FC = () => {
       if (restaurantWalletSnap.exists()) {
         await updateDoc(restaurantWalletRef, {
           pendingBalance: increment(restaurantEarnings),
+          totalEarnings: increment(restaurantEarnings),
           updatedAt: serverTimestamp(),
         })
       } else {
         await setDoc(restaurantWalletRef, {
           balance: 0,
           pendingBalance: restaurantEarnings,
+          totalEarnings: restaurantEarnings,
           totalSales: 0,
           totalWithdrawn: 0,
           ownerType: 'restaurant',
@@ -445,7 +448,9 @@ export const CheckoutPage: React.FC = () => {
     const SERVICE_FEE_PER_ITEM = PLATFORM_FEE_PER_ITEM + ADMIN_COMMISSION_PER_ITEM
     const originalSubtotal = subtotal - (SERVICE_FEE_PER_ITEM * itemsCount)
     
-    const restaurantEarnings = originalSubtotal
+    // الخصم يتحمله المطعم (منشئ العرض)
+    const discountFromRestaurant = discountAmount
+    const restaurantEarnings = Math.max(0, originalSubtotal - discountFromRestaurant)
     const platformFee = PLATFORM_FEE_PER_ITEM * itemsCount
     const adminCommission = referredByAdmin ? (ADMIN_COMMISSION_PER_ITEM * itemsCount) : 0
     const appEarnings = platformFee + (referredByAdmin ? 0 : (ADMIN_COMMISSION_PER_ITEM * itemsCount))

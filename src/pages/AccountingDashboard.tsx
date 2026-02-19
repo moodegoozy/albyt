@@ -15,7 +15,7 @@ import { AppAccounting, DailyStats } from '@/types'
 
 // رسوم المنصة الثابتة
 const PLATFORM_FEE = 3.75
-const ADMIN_COMMISSION = 0.5
+const ADMIN_COMMISSION = 0.75 // نفس القيمة في CheckoutPage
 
 type MonthlyStats = {
   totalOrders: number
@@ -117,7 +117,7 @@ export const AccountingDashboard: React.FC = () => {
         if (order.status === 'delivered') {
           totalDeliveries++
           totalDeliveryFees += order.deliveryFee || 0
-          platformFees += order.courierPlatformFee || PLATFORM_FEE
+          platformFees += order.courierPlatformFee ?? PLATFORM_FEE
           if (order.adminCommission) {
             adminCommissions += order.adminCommission
           }

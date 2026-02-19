@@ -3,6 +3,7 @@ import { initializeApp, getApps, getApp } from "firebase/app"
 import { getAuth, indexedDBLocalPersistence, browserLocalPersistence, initializeAuth } from "firebase/auth"
 import { getFirestore } from "firebase/firestore"
 import { getStorage } from "firebase/storage"
+import { getMessaging, isSupported } from "firebase/messaging"
 
 const firebaseConfig = {
   apiKey: "AIzaSyC1iM3g3gGfu23GKLpDRQplBuHidPniFIk",
@@ -26,3 +27,12 @@ export const auth = getApps().length > 0
 
 export const db = getFirestore(app)
 export const storage = getStorage(app)
+
+// 🔔 Firebase Cloud Messaging للإشعارات
+export const getMessagingInstance = async () => {
+  const supported = await isSupported()
+  if (supported) {
+    return getMessaging(app)
+  }
+  return null
+}
