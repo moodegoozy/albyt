@@ -74,7 +74,7 @@ export async function initializePushNotifications(): Promise<boolean> {
 
       // 🔔 استقبال الإشعارات في المقدمة (التطبيق مفتوح)
       onMessage(messagingInstance, async (payload) => {
-        console.log('🔔 [FCM] Foreground message:', payload)
+        console.log('🔔 [FCM] Foreground message:', JSON.stringify(payload))
         
         // تشغيل الصوت
         try {
@@ -83,7 +83,14 @@ export async function initializePushNotifications(): Promise<boolean> {
           console.warn('⚠️ تعذر تشغيل الصوت:', e)
         }
 
-        // عرض الإشعار
+        // اهتزاز الجوال
+        try {
+          if ('vibrate' in navigator) {
+            navigator.vibrate([300, 100, 300, 100, 300])
+          }
+        } catch (e) { /* ignore */ }
+
+        // عرض الإشعار - data-only messages تأتي في payload.data
         const title = payload.notification?.title || payload.data?.title || 'سفرة البيت'
         const body = payload.notification?.body || payload.data?.body || 'لديك إشعار جديد'
         
@@ -92,13 +99,25 @@ export async function initializePushNotifications(): Promise<boolean> {
             body,
             icon: '/icon-192.png',
             badge: '/icon-192.png',
-            tag: 'fcm-foreground-' + Date.now(),
+            tag: payload.data?.tag || 'fcm-foreground-' + Date.now(),
             data: payload.data || {},
-            vibrate: [200, 100, 200],
+            vibrate: [300, 100, 300, 100, 300],
             requireInteraction: true,
             dir: 'rtl',
-            lang: 'ar'
+            lang: 'ar',
+            renotify: true,
+            silent: false,
           } as NotificationOptions)
+        } else {
+          // fallback: use Notification API directly
+          new Notification(title, {
+            body,
+            icon: '/icon-192.png',
+            dir: 'rtl',
+            lang: 'ar',
+            tag: payload.data?.tag || 'fcm-fg-' + Date.now(),
+            requireInteraction: true,
+          })
         }
       })
     } else {

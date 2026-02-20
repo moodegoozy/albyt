@@ -3,9 +3,10 @@
  * تظهر 3 خيارات: عميل، مندوب، أسرة منتجة
  */
 
-import React from 'react'
-import { Link } from 'react-router-dom'
+import React, { useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { ShoppingBag, Truck, ChefHat, ArrowRight, Smartphone } from 'lucide-react'
+import { useAuth } from '@/auth'
 
 type AccountType = {
   id: string
@@ -17,6 +18,13 @@ type AccountType = {
   shadowColor: string
   href: string
   features: string[]
+}
+
+const roleRedirectMap: Record<string, string> = {
+  owner: '/owner', admin: '/admin', developer: '/developer',
+  courier: '/courier', supervisor: '/supervisor',
+  social_media: '/social-media', support: '/support',
+  accountant: '/accounting', customer: '/'
 }
 
 const accountTypes: AccountType[] = [
@@ -67,6 +75,16 @@ const accountTypes: AccountType[] = [
 ]
 
 export const RegisterChoice: React.FC = () => {
+  const { user, role: currentRole, loading: authLoading } = useAuth()
+  const nav = useNavigate()
+
+  // إذا المستخدم مسجل دخول، يتم توجيهه تلقائياً
+  useEffect(() => {
+    if (!authLoading && user && currentRole) {
+      nav(roleRedirectMap[currentRole] || '/', { replace: true })
+    }
+  }, [authLoading, user, currentRole, nav])
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-200 via-slate-100 to-slate-200 px-4 py-8">
       <div className="max-w-md mx-auto">

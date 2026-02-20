@@ -7,6 +7,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Mail, Lock, LogIn, Sparkles, KeyRound, ArrowRight, Loader2, AlertTriangle, Shield } from 'lucide-react'
 import { useDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
+import { useAuth } from '@/auth'
 import { 
   checkRateLimitStatus, 
   logLoginAttempt, 
@@ -15,7 +16,31 @@ import {
   addAuditLog 
 } from '@/utils/authService'
 
+// توجيه المستخدم حسب دوره
+const getRoleRedirect = (role: string): string => {
+  switch (role) {
+    case 'owner': return '/owner'
+    case 'admin': return '/admin'
+    case 'developer': return '/developer'
+    case 'courier': return '/courier'
+    case 'supervisor': return '/supervisor'
+    case 'social_media': return '/social-media'
+    case 'support': return '/support'
+    case 'accountant': return '/accounting'
+    default: return '/'
+  }
+}
+
 export const Login: React.FC = () => {
+  const { user, role: currentRole, loading: authLoading } = useAuth()
+  const nav2 = useNavigate()
+
+  // إذا المستخدم مسجل دخول، يتم توجيهه تلقائياً
+  useEffect(() => {
+    if (!authLoading && user && currentRole) {
+      nav2(getRoleRedirect(currentRole), { replace: true })
+    }
+  }, [authLoading, user, currentRole, nav2])
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)

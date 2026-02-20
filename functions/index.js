@@ -31,12 +31,15 @@ exports.notifyRestaurantOnNewOrder = onDocumentCreated('orders/{orderId}', async
   console.log('📦 طلب جديد:', orderId, order)
   
   // الحصول على معرف صاحب المطعم
-  const ownerId = order.ownerId || order.restaurantOwnerId
+  // restaurantId هو نفس ownerId (doc ID = owner's UID)
+  const ownerId = order.restaurantId || order.ownerId || order.restaurantOwnerId
   
   if (!ownerId) {
-    console.error('❌ لا يوجد ownerId في الطلب')
+    console.error('❌ لا يوجد ownerId/restaurantId في الطلب:', JSON.stringify(order))
     return null
   }
+  
+  console.log('🔍 معرف المطعم/المالك:', ownerId)
   
   try {
     // الحصول على FCM token لصاحب المطعم
@@ -54,43 +57,28 @@ exports.notifyRestaurantOnNewOrder = onDocumentCreated('orders/{orderId}', async
       return null
     }
     
-    // تحضير رسالة الإشعار
+    // تحضير رسالة الإشعار - data-only لكي يعمل onBackgroundMessage في SW
+    // ملاحظة: لا نستخدم notification key لأن المتصفح يعرض الإشعار تلقائياً بدون اهتزاز/صوت
     const message = {
       token: fcmToken,
-      notification: {
-        title: '🛒 طلب جديد!',
-        body: `لديك طلب جديد من ${order.customerName || 'عميل'}`,
-      },
       data: {
         type: 'new_order',
         orderId: orderId,
-        click_action: '/orders',
-      },
-      android: {
-        notification: {
-          sound: 'default',
-          priority: 'high',
-          channelId: 'orders',
-        }
+        title: '🛒 طلب جديد!',
+        body: `لديك طلب جديد من ${order.customerName || 'عميل'}`,
+        click_action: '/owner/orders',
+        tag: 'new-order-' + orderId,
+        timestamp: Date.now().toString(),
       },
       webpush: {
-        notification: {
-          icon: '/icon-192.png',
-          badge: '/icon-192.png',
-          requireInteraction: 'true',
+        headers: {
+          Urgency: 'high',
+          TTL: '86400',
         },
-        fcmOptions: {
-          link: '/orders'
-        }
       },
-      apns: {
-        payload: {
-          aps: {
-            sound: 'default',
-            badge: 1,
-          }
-        }
-      }
+      android: {
+        priority: 'high',
+      },
     }
     
     // إرسال الإشعار
@@ -150,31 +138,27 @@ exports.notifyCourierOnOrderReady = onDocumentUpdated('orders/{orderId}', async 
       
       const fcmToken = tokenDoc.data().token
       
-      // إرسال الإشعار
+      // إرسال الإشعار - data-only
       const message = {
         token: fcmToken,
-        notification: {
-          title: '📦 طلب جاهز للاستلام!',
-          body: `الطلب ${orderId.substring(0, 8)} جاهز من المطعم`,
-        },
         data: {
           type: 'order_ready',
           orderId: orderId,
+          title: '📦 طلب جاهز للاستلام!',
+          body: `الطلب ${orderId.substring(0, 8)} جاهز من المطعم`,
           click_action: '/courier',
-        },
-        android: {
-          notification: {
-            sound: 'default',
-            priority: 'high',
-          }
+          tag: 'order-ready-' + orderId,
+          timestamp: Date.now().toString(),
         },
         webpush: {
-          notification: {
-            icon: '/icon-192.png',
-            badge: '/icon-192.png',
-            requireInteraction: 'true',
-          }
-        }
+          headers: {
+            Urgency: 'high',
+            TTL: '86400',
+          },
+        },
+        android: {
+          priority: 'high',
+        },
       }
       
       const response = await messaging.send(message)
@@ -244,25 +228,28 @@ exports.notifyCustomerOnOrderUpdate = onDocumentUpdated('orders/{orderId}', asyn
     
     const fcmToken = tokenDoc.data().token
     
-    // إرسال الإشعار
+    // إرسال الإشعار - data-only
     const message = {
       token: fcmToken,
-      notification: {
-        title: 'تحديث طلبك',
-        body: messageBody,
-      },
       data: {
         type: 'order_update',
         orderId: orderId,
         status: after.status,
+        title: 'تحديث طلبك',
+        body: messageBody,
         click_action: '/orders',
+        tag: 'order-update-' + orderId,
+        timestamp: Date.now().toString(),
       },
       webpush: {
-        notification: {
-          icon: '/icon-192.png',
-          badge: '/icon-192.png',
-        }
-      }
+        headers: {
+          Urgency: 'high',
+          TTL: '86400',
+        },
+      },
+      android: {
+        priority: 'high',
+      },
     }
     
     const response = await messaging.send(message)

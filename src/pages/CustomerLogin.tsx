@@ -6,6 +6,7 @@ import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firest
 import { Link, useNavigate } from 'react-router-dom'
 import { Phone, KeyRound, LogIn, ArrowRight, RefreshCw } from 'lucide-react'
 import { useDialog } from '@/components/ui/ConfirmDialog'
+import { useAuth } from '@/auth'
 
 // تنسيق رقم الجوال السعودي
 const formatPhoneNumber = (phone: string): string => {
@@ -26,6 +27,7 @@ const formatPhoneNumber = (phone: string): string => {
 }
 
 export const CustomerLogin: React.FC = () => {
+  const { user, role: currentRole, loading: authLoading } = useAuth()
   const [phone, setPhone] = useState('')
   const [otp, setOtp] = useState('')
   const [step, setStep] = useState<'phone' | 'otp'>('phone')
@@ -36,6 +38,17 @@ export const CustomerLogin: React.FC = () => {
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null)
   const nav = useNavigate()
   const dialog = useDialog()
+
+  // إذا المستخدم مسجل دخول، يتم توجيهه تلقائياً
+  useEffect(() => {
+    if (!authLoading && user && currentRole) {
+      const redirectMap: Record<string, string> = {
+        owner: '/owner', admin: '/admin', developer: '/developer',
+        courier: '/courier', supervisor: '/supervisor'
+      }
+      nav(redirectMap[currentRole] || '/', { replace: true })
+    }
+  }, [authLoading, user, currentRole, nav])
 
   // تهيئة reCAPTCHA
   useEffect(() => {

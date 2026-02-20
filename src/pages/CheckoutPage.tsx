@@ -243,6 +243,8 @@ export const CheckoutPage: React.FC = () => {
     // إنشاء الطلب مع معلومات العمولة
     const orderRef = await addDoc(collection(db, 'orders'), {
       customerId: user.uid,
+      customerName: user.displayName || user.email || 'عميل',
+      ownerId: restId, // مطلوب للإشعارات - نفس restaurantId
       restaurantId: restId,
       restaurantName: restaurant?.name || 'مطعم',
       items: items.map(i => ({
@@ -477,6 +479,8 @@ export const CheckoutPage: React.FC = () => {
       // إنشاء الطلب
       const orderRef = await addDoc(collection(db, 'orders'), {
         customerId: user.uid,
+        customerName: user.displayName || user.email || 'عميل',
+        ownerId: restId, // مطلوب للإشعارات - نفس restaurantId
         restaurantId: restId,
         restaurantName: restaurant?.name || 'مطعم',
         items: items.map(i => ({

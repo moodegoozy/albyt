@@ -6,8 +6,22 @@ import { doc, setDoc, addDoc, collection, serverTimestamp, updateDoc, increment,
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { User, Mail, Lock, Store, UserPlus, Truck, ChefHat, Users, MapPin, CheckSquare, Square, X, FileText, Shield } from 'lucide-react'
 import { SAUDI_CITIES } from '@/utils/cities'
+import { useAuth } from '@/auth'
 
 export const Register: React.FC = () => {
+  const { user, role: currentRole, loading: authLoading } = useAuth()
+  const navAuth = useNavigate()
+
+  // إذا المستخدم مسجل دخول، يتم توجيهه تلقائياً
+  useEffect(() => {
+    if (!authLoading && user && currentRole) {
+      const redirectMap: Record<string, string> = {
+        owner: '/owner', admin: '/admin', developer: '/developer',
+        courier: '/courier', supervisor: '/supervisor'
+      }
+      navAuth(redirectMap[currentRole] || '/', { replace: true })
+    }
+  }, [authLoading, user, currentRole, navAuth])
   const [searchParams] = useSearchParams()
   const referralRestaurantId = searchParams.get('ref_restaurant') // رابط الإحالة من الأسرة
   const typeParam = searchParams.get('type') // نوع الحساب من URL

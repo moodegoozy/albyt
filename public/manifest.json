@@ -27,5 +27,6 @@
   "scope": "/",
   "prefer_related_applications": false,
   "display_override": ["standalone", "minimal-ui"],
-  "handle_links": "preferred"
+  "handle_links": "preferred",
+  "gcm_sender_id": "103953800507"
 }

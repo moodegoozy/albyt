@@ -9,6 +9,7 @@ import { OrderTimer } from '@/components/OrderTimer'
 import { RatingModal } from '@/components/RatingModal'
 import { Package, MapPin, Truck, DollarSign, Check, Clock, X, AlertCircle, Store, Star, User } from 'lucide-react'
 import { notifyOrderAccepted, notifyOrderReady } from '@/utils/notificationService'
+import { playNotificationWithVibrate, initNotificationSound } from '@/utils/notificationSound'
 
 // رسوم المنصة على المندوب
 const COURIER_PLATFORM_FEE = 3.75
@@ -36,6 +37,12 @@ export const RestaurantOrders: React.FC = () => {
     orderId: string;
     targetName: string;
   } | null>(null)
+  const [prevOrderCount, setPrevOrderCount] = useState<number | null>(null)
+
+  // تهيئة صوت الإشعار
+  useEffect(() => {
+    initNotificationSound()
+  }, [])
 
   useEffect(() => {
     if (!user) return
@@ -46,7 +53,17 @@ export const RestaurantOrders: React.FC = () => {
       orderBy('createdAt', 'desc')
     )
     const unsub = onSnapshot(q, (snap) => {
-      setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order)))
+      const newOrders = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order))
+      
+      // 🔊 تشغيل صوت عند وصول طلب جديد pending
+      const pendingCount = newOrders.filter(o => o.status === 'pending').length
+      if (prevOrderCount !== null && pendingCount > (orders.filter(o => o.status === 'pending').length)) {
+        playNotificationWithVibrate().catch(() => {})
+        toast?.show('🛒 طلب جديد!', { type: 'info' })
+      }
+      setPrevOrderCount(newOrders.length)
+      
+      setOrders(newOrders)
       setLoading(false)
     }, (err) => {
       console.error('خطأ في جلب الطلبات:', err)
