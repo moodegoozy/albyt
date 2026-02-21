@@ -96,7 +96,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-sky-50 via-white to-sky-50 text-sky-900">
       {/* الشريط العلوي + رأس الصفحة - ثابتين في أعلى الشاشة تماماً */}
-      <div className="fixed top-0 left-0 right-0 z-50 pt-safe bg-amber-500">
+      <div className="fixed top-0 left-0 right-0 z-50 pt-safe bg-sky-600">
         <BetaBanner />
         <Header />
       </div>
