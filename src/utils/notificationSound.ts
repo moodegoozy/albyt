@@ -1,6 +1,7 @@
 /**
  * خدمة صوت الإشعارات - سفرة البيت
  * صوت مشابه لواتساب يعمل عند وصول طلب جديد للأسرة/المطعم
+ * 🍎 محسّن للعمل على iOS WebView
  */
 
 // مسار ملف الصوت
@@ -8,7 +9,74 @@ const NOTIFICATION_SOUND_URL = '/notification.mp3'
 
 // حالة الصوت
 let notificationAudio: HTMLAudioElement | null = null
+let audioContext: AudioContext | null = null
+let audioBuffer: AudioBuffer | null = null
 let audioInitialized = false
+let userInteracted = false // هل المستخدم تفاعل مع الصفحة؟
+
+/**
+ * الكشف عن iOS
+ */
+function isIOS(): boolean {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+}
+
+/**
+ * تفعيل الصوت بعد تفاعل المستخدم (مطلوب لـ iOS)
+ * يجب استدعاؤها من زر أو حدث click
+ */
+export async function enableSoundForIOS(): Promise<boolean> {
+  try {
+    userInteracted = true
+    
+    // إنشاء AudioContext (يعمل أفضل على iOS)
+    if (!audioContext) {
+      audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+    }
+    
+    // استئناف AudioContext إذا كان معلقاً
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume()
+    }
+    
+    // تحميل الصوت في AudioBuffer
+    if (!audioBuffer) {
+      const response = await fetch(NOTIFICATION_SOUND_URL)
+      const arrayBuffer = await response.arrayBuffer()
+      audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
+    }
+    
+    // تشغيل صوت صامت لفتح الصلاحية
+    const silentOscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+    gainNode.gain.value = 0.001 // صامت تقريباً
+    silentOscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+    silentOscillator.start()
+    silentOscillator.stop(audioContext.currentTime + 0.1)
+    
+    // أيضاً تهيئة Audio element كـ fallback
+    if (!notificationAudio) {
+      notificationAudio = new Audio(NOTIFICATION_SOUND_URL)
+      notificationAudio.volume = 0.8
+      notificationAudio.preload = 'auto'
+      // محاولة تشغيل صامت
+      notificationAudio.muted = true
+      await notificationAudio.play().catch(() => {})
+      notificationAudio.pause()
+      notificationAudio.muted = false
+      notificationAudio.currentTime = 0
+    }
+    
+    audioInitialized = true
+    console.log('🔊 ✅ تم تفعيل الصوت للـ iOS')
+    return true
+  } catch (error) {
+    console.error('❌ فشل تفعيل الصوت:', error)
+    return false
+  }
+}
 
 /**
  * تهيئة صوت الإشعارات
@@ -19,9 +87,13 @@ export function initNotificationSound(): void {
   
   try {
     notificationAudio = new Audio(NOTIFICATION_SOUND_URL)
-    notificationAudio.volume = 0.8 // صوت عالي نسبياً
+    notificationAudio.volume = 0.8
     notificationAudio.preload = 'auto'
-    audioInitialized = true
+    
+    // على iOS، نحتاج تفاعل المستخدم أولاً
+    if (!isIOS()) {
+      audioInitialized = true
+    }
     console.log('🔊 تم تهيئة صوت الإشعارات')
   } catch (error) {
     console.error('❌ فشل تهيئة صوت الإشعارات:', error)
@@ -34,26 +106,37 @@ export function initNotificationSound(): void {
  */
 export async function playNotificationSound(): Promise<void> {
   try {
-    // تهيئة الصوت إذا لم يتم
+    // على iOS، إذا لم يتفاعل المستخدم، لا يمكن تشغيل الصوت
+    if (isIOS() && !userInteracted) {
+      console.warn('⚠️ iOS: يجب الضغط على زر تفعيل الصوت أولاً')
+      return
+    }
+    
+    // محاولة استخدام AudioContext (أفضل لـ iOS)
+    if (audioContext && audioBuffer && audioContext.state === 'running') {
+      const source = audioContext.createBufferSource()
+      source.buffer = audioBuffer
+      source.connect(audioContext.destination)
+      source.start(0)
+      console.log('🔔 تم تشغيل صوت الإشعار (AudioContext)')
+      return
+    }
+    
+    // Fallback: Audio element
     if (!audioInitialized) {
       initNotificationSound()
     }
 
     if (!notificationAudio) {
-      // إنشاء audio جديد إذا لم يتوفر
       notificationAudio = new Audio(NOTIFICATION_SOUND_URL)
       notificationAudio.volume = 0.8
     }
 
-    // إعادة الصوت للبداية إذا كان يعمل
     notificationAudio.currentTime = 0
-    
-    // تشغيل الصوت
     await notificationAudio.play()
     console.log('🔔 تم تشغيل صوت الإشعار')
   } catch (error) {
-    // قد يفشل الصوت إذا لم يتفاعل المستخدم مع الصفحة بعد
-    console.warn('⚠️ تعذر تشغيل الصوت (قد يحتاج تفاعل المستخدم):', error)
+    console.warn('⚠️ تعذر تشغيل الصوت:', error)
   }
 }
 

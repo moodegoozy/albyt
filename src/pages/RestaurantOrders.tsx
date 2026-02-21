@@ -7,9 +7,9 @@ import { Order, Rating, ORDER_TIME_LIMITS } from '@/types'
 import { useToast } from '@/components/ui/Toast'
 import { OrderTimer } from '@/components/OrderTimer'
 import { RatingModal } from '@/components/RatingModal'
-import { Package, MapPin, Truck, DollarSign, Check, Clock, X, AlertCircle, Store, Star, User } from 'lucide-react'
+import { Package, MapPin, Truck, DollarSign, Check, Clock, X, AlertCircle, Store, Star, User, Volume2, VolumeX, Bell } from 'lucide-react'
 import { notifyOrderAccepted, notifyOrderReady } from '@/utils/notificationService'
-import { playNotificationWithVibrate, initNotificationSound } from '@/utils/notificationSound'
+import { playNotificationWithVibrate, initNotificationSound, enableSoundForIOS } from '@/utils/notificationSound'
 
 // رسوم المنصة على المندوب
 const COURIER_PLATFORM_FEE = 3.75
@@ -38,10 +38,36 @@ export const RestaurantOrders: React.FC = () => {
     targetName: string;
   } | null>(null)
   const [prevOrderCount, setPrevOrderCount] = useState<number | null>(null)
+  const [soundEnabled, setSoundEnabled] = useState(false)
+  const [isIOS, setIsIOS] = useState(false)
+
+  // تحقق من iOS
+  useEffect(() => {
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    setIsIOS(ios)
+  }, [])
+
+  // تفعيل الصوت (مطلوب للـ iOS)
+  const handleEnableSound = async () => {
+    const success = await enableSoundForIOS()
+    if (success) {
+      setSoundEnabled(true)
+      toast?.show('✅ تم تفعيل الإشعارات الصوتية', { type: 'success' })
+      // تشغيل صوت تجريبي
+      playNotificationWithVibrate().catch(() => {})
+    } else {
+      toast?.show('❌ تعذر تفعيل الصوت', { type: 'error' })
+    }
+  }
 
   // تهيئة صوت الإشعار
   useEffect(() => {
     initNotificationSound()
+    // على غير iOS، الصوت يعمل مباشرة
+    if (!(/iPad|iPhone|iPod/.test(navigator.userAgent))) {
+      setSoundEnabled(true)
+    }
   }, [])
 
   useEffect(() => {
@@ -214,15 +240,46 @@ export const RestaurantOrders: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-200 via-slate-100 to-slate-200 py-6 px-4">
       <div className="max-w-4xl mx-auto">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-12 h-12 bg-gradient-to-br from-sky-500 to-sky-600 rounded-xl flex items-center justify-center">
-            <Package className="w-6 h-6 text-white" />
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-gradient-to-br from-sky-500 to-sky-600 rounded-xl flex items-center justify-center">
+              <Package className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-sky-900">طلبات الأسرة</h1>
+              <p className="text-sky-600 text-sm">{orders.length} طلب</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-sky-900">طلبات الأسرة</h1>
-            <p className="text-sky-600 text-sm">{orders.length} طلب</p>
-          </div>
+          
+          {/* زر تفعيل الصوت - مطلوب للـ iOS */}
+          {!soundEnabled && (
+            <button
+              onClick={handleEnableSound}
+              className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-xl font-bold animate-pulse shadow-lg"
+            >
+              <Bell className="w-5 h-5" />
+              <span>فعّل الصوت</span>
+            </button>
+          )}
+          
+          {soundEnabled && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-green-100 text-green-700 rounded-xl text-sm">
+              <Volume2 className="w-4 h-4" />
+              <span>الصوت مفعّل</span>
+            </div>
+          )}
         </div>
+
+        {/* تنبيه iOS */}
+        {isIOS && !soundEnabled && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-start gap-3">
+            <Bell className="w-5 h-5 text-amber-500 mt-0.5" />
+            <div>
+              <p className="text-amber-800 font-semibold text-sm">⚠️ لن تسمع صوت الطلبات الجديدة!</p>
+              <p className="text-amber-600 text-xs mt-1">اضغط على زر "فعّل الصوت" لتفعيل الإشعارات الصوتية</p>
+            </div>
+          </div>
+        )}
 
         {orders.length === 0 && (
           <div className="glass-card rounded-2xl p-10 text-center">
