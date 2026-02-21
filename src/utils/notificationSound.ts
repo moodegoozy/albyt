@@ -1,7 +1,7 @@
 /**
  * خدمة صوت الإشعارات - سفرة البيت
  * صوت مشابه لواتساب يعمل عند وصول طلب جديد للأسرة/المطعم
- * 🍎 محسّن للعمل على iOS WebView
+ * 🍎 محسّن للعمل على iOS - يفعّل تلقائياً عند أول تفاعل
  */
 
 // مسار ملف الصوت
@@ -12,7 +12,8 @@ let notificationAudio: HTMLAudioElement | null = null
 let audioContext: AudioContext | null = null
 let audioBuffer: AudioBuffer | null = null
 let audioInitialized = false
-let userInteracted = false // هل المستخدم تفاعل مع الصفحة؟
+let userInteracted = false
+let autoEnableListenerAdded = false
 
 /**
  * الكشف عن iOS
@@ -23,45 +24,35 @@ function isIOS(): boolean {
 }
 
 /**
- * تفعيل الصوت بعد تفاعل المستخدم (مطلوب لـ iOS)
- * يجب استدعاؤها من زر أو حدث click
+ * تفعيل الصوت تلقائياً - يُستدعى من أي تفاعل
  */
-export async function enableSoundForIOS(): Promise<boolean> {
+async function autoEnableSound(): Promise<void> {
+  if (userInteracted) return
+  userInteracted = true
+  
   try {
-    userInteracted = true
-    
-    // إنشاء AudioContext (يعمل أفضل على iOS)
+    // إنشاء AudioContext
     if (!audioContext) {
       audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
     }
     
-    // استئناف AudioContext إذا كان معلقاً
+    // استئناف AudioContext
     if (audioContext.state === 'suspended') {
       await audioContext.resume()
     }
     
-    // تحميل الصوت في AudioBuffer
+    // تحميل الصوت
     if (!audioBuffer) {
       const response = await fetch(NOTIFICATION_SOUND_URL)
       const arrayBuffer = await response.arrayBuffer()
       audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
     }
     
-    // تشغيل صوت صامت لفتح الصلاحية
-    const silentOscillator = audioContext.createOscillator()
-    const gainNode = audioContext.createGain()
-    gainNode.gain.value = 0.001 // صامت تقريباً
-    silentOscillator.connect(gainNode)
-    gainNode.connect(audioContext.destination)
-    silentOscillator.start()
-    silentOscillator.stop(audioContext.currentTime + 0.1)
-    
-    // أيضاً تهيئة Audio element كـ fallback
+    // تهيئة Audio element
     if (!notificationAudio) {
       notificationAudio = new Audio(NOTIFICATION_SOUND_URL)
       notificationAudio.volume = 0.8
       notificationAudio.preload = 'auto'
-      // محاولة تشغيل صامت
       notificationAudio.muted = true
       await notificationAudio.play().catch(() => {})
       notificationAudio.pause()
@@ -70,29 +61,59 @@ export async function enableSoundForIOS(): Promise<boolean> {
     }
     
     audioInitialized = true
-    console.log('🔊 ✅ تم تفعيل الصوت للـ iOS')
-    return true
+    console.log('🔊 ✅ تم تفعيل الصوت تلقائياً')
   } catch (error) {
-    console.error('❌ فشل تفعيل الصوت:', error)
-    return false
+    console.warn('⚠️ فشل تفعيل الصوت التلقائي:', error)
   }
 }
 
 /**
- * تهيئة صوت الإشعارات
- * يجب استدعاؤها مرة واحدة عند تحميل التطبيق
+ * إضافة مستمع للتفعيل التلقائي عند أول تفاعل
+ */
+function setupAutoEnable(): void {
+  if (autoEnableListenerAdded) return
+  autoEnableListenerAdded = true
+  
+  const events = ['click', 'touchstart', 'touchend', 'keydown', 'scroll']
+  
+  const handleInteraction = () => {
+    autoEnableSound()
+    // إزالة المستمعين بعد أول تفاعل
+    events.forEach(event => {
+      document.removeEventListener(event, handleInteraction, true)
+    })
+  }
+  
+  events.forEach(event => {
+    document.addEventListener(event, handleInteraction, { capture: true, passive: true, once: true })
+  })
+}
+
+/**
+ * تفعيل الصوت يدوياً (للاستخدام من زر إذا لزم)
+ */
+export async function enableSoundForIOS(): Promise<boolean> {
+  await autoEnableSound()
+  return userInteracted && audioInitialized
+}
+
+/**
+ * تهيئة صوت الإشعارات - تُستدعى عند تحميل التطبيق
  */
 export function initNotificationSound(): void {
-  if (audioInitialized) return
+  if (audioInitialized && !isIOS()) return
   
   try {
     notificationAudio = new Audio(NOTIFICATION_SOUND_URL)
     notificationAudio.volume = 0.8
     notificationAudio.preload = 'auto'
     
-    // على iOS، نحتاج تفاعل المستخدم أولاً
+    // إعداد التفعيل التلقائي عند أول تفاعل
+    setupAutoEnable()
+    
     if (!isIOS()) {
       audioInitialized = true
+      userInteracted = true
     }
     console.log('🔊 تم تهيئة صوت الإشعارات')
   } catch (error) {
@@ -102,31 +123,20 @@ export function initNotificationSound(): void {
 
 /**
  * تشغيل صوت الإشعار
- * يُستخدم عند وصول طلب جديد
  */
 export async function playNotificationSound(): Promise<void> {
   try {
-    // على iOS، إذا لم يتفاعل المستخدم، لا يمكن تشغيل الصوت
-    if (isIOS() && !userInteracted) {
-      console.warn('⚠️ iOS: يجب الضغط على زر تفعيل الصوت أولاً')
-      return
-    }
-    
-    // محاولة استخدام AudioContext (أفضل لـ iOS)
+    // محاولة استخدام AudioContext أولاً
     if (audioContext && audioBuffer && audioContext.state === 'running') {
       const source = audioContext.createBufferSource()
       source.buffer = audioBuffer
       source.connect(audioContext.destination)
       source.start(0)
-      console.log('🔔 تم تشغيل صوت الإشعار (AudioContext)')
+      console.log('🔔 تم تشغيل صوت الإشعار')
       return
     }
     
     // Fallback: Audio element
-    if (!audioInitialized) {
-      initNotificationSound()
-    }
-
     if (!notificationAudio) {
       notificationAudio = new Audio(NOTIFICATION_SOUND_URL)
       notificationAudio.volume = 0.8
