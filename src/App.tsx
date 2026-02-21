@@ -96,14 +96,14 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-sky-50 via-white to-sky-50 text-sky-900">
       {/* الشريط العلوي + رأس الصفحة - ثابتين في أعلى الشاشة تماماً */}
-      <div className="fixed top-0 left-0 right-0 z-50">
+      <div className="fixed top-0 left-0 right-0 z-50 pt-safe bg-amber-500">
         <BetaBanner />
         <TopBar />
         <Header />
       </div>
 
-      {/* مسافة فارغة بحجم الهيدر */}
-      <div className="h-[130px] sm:h-[150px]" />
+      {/* مسافة فارغة بحجم الهيدر + safe area */}
+      <div className="h-[140px] sm:h-[160px] mt-safe" />
 
       {/* 🛒 زر السلة العائم - يظهر دائماً عند وجود عناصر */}
       <FloatingCartButton />
