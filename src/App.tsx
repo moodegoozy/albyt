@@ -98,12 +98,11 @@ export default function App() {
       {/* الشريط العلوي + رأس الصفحة - ثابتين في أعلى الشاشة تماماً */}
       <div className="fixed top-0 left-0 right-0 z-50 pt-safe bg-amber-500">
         <BetaBanner />
-        <TopBar />
         <Header />
       </div>
 
       {/* مسافة فارغة بحجم الهيدر + safe area */}
-      <div className="h-[140px] sm:h-[160px] mt-safe" />
+      <div className="h-[110px] sm:h-[130px] mt-safe" />
 
       {/* 🛒 زر السلة العائم - يظهر دائماً عند وجود عناصر */}
       <FloatingCartButton />
